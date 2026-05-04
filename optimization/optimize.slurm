@@ -44,10 +44,10 @@ echo "#############################"
 module load Python/3.10
 
 python3.10 -m venv venv
-venv/bin/pip install -r requirements.txt
+venv/bin/pip install -e .
 
 # run optimization script from virtual environment
-venv/bin/python optimization/classification.py \
+venv/bin/python -m optimization.optimize research --type training \
     --trials=10\
     --study_name=reservoir-optimization \
     --job_id=${SLURM_ARRAY_TASK_ID} \
