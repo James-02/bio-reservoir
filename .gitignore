@@ -1,6 +1,23 @@
 *__pycache__/
 *.pytest_cache/
+*.venv/
+*.egg-info/
 venv/
 results/
 reservoirpy/
 logs/
+data/*
+.vscode/
+rest_raw.json
+
+# latex intermediate files
+**.blg
+**.bbl
+**.aux
+**.log
+**acs-supplementary.bib
+refs/
+future/
+
+# local-only infrastructure wrappers (not for publication)
+scripts/deploy*.sh

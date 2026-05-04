@@ -1,126 +1,189 @@
 # Reservoir Computing with Genetic Oscillators
 
-This project focuses on utilizing reservoir computing with genetic oscillators for arrhythmia classification, but also details the potential for forecasting.
+A reservoir computing framework built on coupled genetic oscillators for ECG arrhythmia classification. Each reservoir node is a quorum-sensing oscillator modelled by delay differential equations (DDEs), implemented as a [ReservoirPy](https://github.com/reservoirpy/reservoirpy) `Node`.
 
-We implement a reservoir of genetic oscillators as a `reservoirpy` integrated Node, within the `reservoir` module of this project.
+> For a comprehensive overview, see our associated research paper.
 
-> For a more comprehensive overview, read our associated research paper [here](https://drive.google.com/file/d/1-DE62t1VozBo9oBrw9A5g346j_tCDANF/view?usp=sharing).
+## Project Overview
 
-# Environment Setup
-To set up a local development environment, follow these steps:
+![Graphical TOC](static/graphical-toc.png)
+
+High-level overview of the biological reservoir computing pipeline: ECG sequences perturb quorum-sensing genetic oscillators, the coupled reservoir transforms those inputs into a high-dimensional dynamical state, and a lightweight readout performs the final classification.
+
+## Environment Setup
 
 ```bash
-# Create virtual environment
 python -m venv venv
-
-# Install dependencies
-venv/bin/pip install -r requirements.txt
+source venv/bin/activate
+pip install -e .[dev]
 ```
 
+## Example Usage
 
-# Example Usage
 ```python
+from bioreservoir import BioReservoir, distance_matrix
+from utils.preprocessing import load_ecg_data
+from training import cross_validate
+from utils.analysis import compute_mean_metrics
+
+# Load arrhythmia ECG data (balanced 5-class)
+X_train, Y_train, X_test, Y_test = load_ecg_data(rows=1000)
+
+# Initialise reservoir and readout
+import reservoirpy as rpy
 from reservoirpy.nodes import Ridge
 
-from reservoir.reservoir import OscillatorReservoir
+reservoir = BioReservoir(units=100)
+readout = Ridge(ridge=1e-6)
 
-from utils.preprocessing import load_ecg_data
-from utils.classification import classify
-from utils.analysis import compute_mean_metrics
-from utils.visualisation import plot_confusion_matrix, plot_tsne_clustering
+# Combine train+test for cross-validation
+import numpy as np
+X = np.concatenate([X_train, X_test])
+Y = np.concatenate([Y_train, Y_test])
 
-# load arrhythmia inputs and targets for training and testing
-X_train, Y_train, X_test, Y_test = load_ecg_data()
-
-# initialize reservoir node
-timesteps = X_train.shape[1]
-reservoir = OscillatorReservoir(units=100, timesteps=timesteps)
-
-# initialize readout node
-readout = Ridge(ridge=1e-5)
-
-# perform 5 fold cross-validation classification
-folds = 5
-metrics = classify(reservoir, readout, X_train, Y_train, X_test, Y_test, folds=folds)
-
-# compute mean metrics across folds
-avg_metrics = compute_mean_metrics(metrics)
-
-# visualize metrics
-plot_confusion_matrix(avg_metrics)
-plot_tsne_clustering(avg_metrics)
-
+# 5-fold cross-validation
+results = cross_validate(reservoir, readout, X, Y, folds=5)
 ```
-> Note: more examples can be found in the [tutorials](https://github.com/James-02/dissertation/tree/main/tutorials) module.
 
-# Modules 
-- **Tutorials**: Contains juypter notebook tutorials for the processes of `classification`, `forecasting`, and `optimization` using our `OscillatorReservoir` node for reservoir computing.
+## Project Structure
 
-- **Reservoir**: Contains the implementation of the genetic oscillator-based reservoir computer, based upon a system of delay differential equations, encapsulated within a `reservoirpy` integrated Node.
+- **bioreservoir/** — Core library: DDE solver, `BioReservoir` node, topology generation (distance-based spatial kernels).
+- **training/** — Cross-validation pipeline, classification helpers, profiling utilities.
+- **optimization/** — Optuna hyperparameter studies, study registry, and CLI commands for running/evaluating studies.
+- **utils/** — Preprocessing (ECG loading, augmentation, scaling), analysis metrics, visualisation, and result management.
+- **scripts/** — Standalone experiment scripts and analysis helpers.
+- **data/ecg/** — MIT-BIH arrhythmia dataset files.
+- **results/** — Stored outputs: fold runs, metrics, optimisation studies, reservoir states.
 
-- **Utils**: Contains modules for preprocessing, classification, and visualization related to arrhythmia classification using reservoir computing.
+## How It Works
 
-- **Optimization**: Includes executable scripts for hyperparameter optimization using Optuna. Additionally, a SLURM script is provided as an example of how to use it with computing clusters.
+1. **Genetic oscillator nodes** — Each node simulates two coupled genes (luxI and aiiA) that produce an intracellular AHL signal (Hi) which diffuses externally (He). The system is driven by a system of DDEs with delayed negative feedback.
 
-# Project Overview
-- **Dynamic Behavior of Genetic Oscillators**: Genetic oscillators, driven by expression processes, demonstrate dynamic behavior.
+2. **External input** — ECG time-series samples are fed through He, representing the influence of the extracellular environment on the oscillator dynamics.
 
-- **Utilizing Dynamic Behavior**: We leverage this dynamic behavior to convert a single input into a high-dimensional representation.
+3. **Reservoir network** — A spatial topology of oscillator nodes is constructed with distance-dependent coupling weights (Gaussian or exponential decay kernels).
 
-- **Modeling Genetic Oscillators**: Each genetic oscillator node is simulated using a system of delay differential equations, coordinating the behavior of two coupled genes: luxI (I) and aiiA (A). LuxI produces an AHL chemical signal (Hi), which diffuses and binds to neighboring cells' luxI repressors (He). Our external input is bound to He outside of the cell, representing influence of the external intercellular environment. We also apply a coupling strength coefficient to our input, representing cell-to-cell interaction.
+4. **State extraction** — At each timestep the concentration of each node's luxI gene is read out, producing a high-dimensional state representation of the input.
 
-- **Constructing Reservoir Network**: We build a network of genetic oscillators to form our reservoir. The edges of each oscillator node are weighted to reflect intrinsic connectivity.
+5. **Classification** — A readout layer (Ridge, KNN, or Random Forest) is trained on the final reservoir states to classify the input into arrhythmia categories.
 
-- **Reservoir State Representation**: Time series data is fed through the reservoir. At each time point, the concentration of luxI gene serves as the reservoir state.
+## Visualisation
 
-- **High-Dimensional Representation**: The final reservoir state of each time series provides a high-dimensional representation of system dynamics for each instance.
+### Biopixel Reservoir Model
+![Biopixel Reservoir Model](static/biopixel-reservoir-model-3-subfigures.png)
 
-- **Classification Process**: We train a readout layer with reservoir states and corresponding labels.
+**(a)** Schematic of a quorum-sensing genetic oscillator (biopixel) comprising luxI, aiiA, intracellular AHL (Hi), and extracellular AHL (He). **(b)** Effective input scales showing how external ECG drive and recurrent coupling modulate gene expression dynamics. **(c)** Reservoir computing architecture: ECG time-series inputs are fed through a network of coupled oscillator nodes, and the final luxI concentrations are read out for classification.
 
-- **Linear Learning Method**: The readout layer employs a linear learning method to compute the probability of each label.
+### Reservoir Dynamics and Topology
+![Reservoir Drive and Topology](static/reservoir_drive_topology_heatmap.png)
 
-# Visualization
-## Genetic Oscillators
-![Genetic Oscillator States](static/genetic-oscillator.png)
-**Figure 1.** Concentrations of a single genetic oscillator's variables depicted over a sine wave spanning a time period of 1100 steps. Notably, the initial 100 timesteps, illustrated by dotted lines, signify the warmup stage, during which initial gene concentrations are induced.
+Characterisation of reservoir dynamics and spatial topology. Panels show the relative magnitude of input and recurrent drive contributions, reservoir state heatmaps over time, distance-based spatial weight kernels, and topology connectivity structure.
 
-## Reservoir Computing
-![Reservoir states over an ECG time series](static/states.png)
-**Figure 2.** Reservoir states over an ECG time series representing the concentration of the luxI gene, for each reservoir node, at each time point.
+### ECG Dataset and Preprocessing
+![ECG Dataset Characterisation](static/samples_noise_scalers-subfigures.png)
 
-## Echo State Network Model
-![Reservoir Computer](static/reservoir-computer.png)
-**Figure 3.** Visualization of our `OscillatorReservoir` node integrated within an echo state network architecture for  time-series classification. Notably, the `W` weight matrices define the connectivity of the layers.
+**(a)** Class-averaged ECG waveforms for each heartbeat category with 10–90% percentile bands showing intra-class variability. **(b)** Additive Gaussian noise augmentation applied to a single ECG instance. **(c)** Effect of different preprocessing scalers on the input waveform shape.
 
-## Arrhythmia
-![Full ECG Wave](static/full_ecg_wave.png)
-**Figure 4.** Full ECG wave visualization, with a highlighted segment representing how we derive our classification dataset from the wider MIT-BIH arrhythmia database.
+### Raw MIT-BIH ECG Segment
+![Raw ECG Segment](static/ecg-10s-segment.png)
 
-## Classification
-![Categorical Confusion Matrix](static/categorical_confusion_matrix.png)
-**Figure 5.** Confusion matrix of predictions for each arrhythmia label using our `OscillatorReservoir` approach to categorical classification.
+Example raw ECG segment from the source MIT-BIH record exploration workflow, showing the morphology and annotation context before conversion into single-beat classification instances.
 
-## Forecasting
-![Forecasting](static/forecasting.png)
-**Figure 6.** Visualization of a 10-timestep ahead forecasting of the mackey glass dataset using our `OscillatorReservoir`, optimized using `optimization/forecasting.py`.
+### DDE Solver Validation
+![Solver Validation](static/solver_validation.png)
 
-## Optimization
-![Classification Importances](static/classification-importances.png)
-**Figure 7.** Visualization of `OscillatorReservoir` hyperparameter importances for categorical arrhythmia classification, discovered through our `optimization/classification.py` script.
+Convergence analysis of the RK4 DDE solver, validating numerical accuracy across step sizes.
 
-# Acknowledgements
-**reservoirpy**: This reservoir computing library is instrumental for our reservoir computing implementation, our `OscillatorReservoir` class extends the reservoirpy `Node` class. 
-  - [reservoirpy](https://github.com/reservoirpy/reservoirpy)
+### Classification Results (Balanced 5-Class)
+![Balanced Categorical Confusion Matrix](static/balanced-categorical-confusion-matrix.png)
 
-**Optuna**: Optuna is a hyperparameter optimization framework which has been significant in shaping this project.
+Aggregated confusion matrix across five folds for the balanced five-class arrhythmia task (N=1000, KNN k=4, distance-weighted). Off-diagonal values indicate common misclassification patterns.
+
+### Classification Results (Binary)
+![Binary Confusion Matrix](static/binary-confusion-matrix.png)
+
+Aggregated confusion matrix across five folds for the binary Normal vs Arrhythmia task (N=1000, Random Forest).
+
+### Hyperparameter Optimisation
+![Optimisation Slice Plot](static/r1a-refined-slice.png)
+
+Updated Optuna slice plot generated from the training study evaluation command for the Phase 2 joint optimisation (r1a-refined, distance-based topology). Each panel shows per-trial macro F1-score as a function of one hyperparameter.
+
+### Readout Optimisation
+![Readout Slice Plot](static/ro1-readout-slice.png)
+
+Optuna slice plot generated from the balanced readout optimisation study (ro1-readout), showing how classifier-specific hyperparameters affect macro F1 across the frozen-state readout search.
+
+## Optimisation CLI
+
+Use the unified optimisation CLI to run studies, inspect the best trials, and regenerate diagnostic plots. See `python -m optimization.optimize --help` for the full option set.
+
+### Run Studies
+
+```bash
+python -m optimization.optimize research --type training --study r1a-refined --processes 32
+python -m optimization.optimize research --type readout --study ro1-readout --trial_name r1a-refined-best --processes 32
+```
+
+### Evaluate Studies
+
+```bash
+python -m optimization.optimize evaluate --type readout --study ro1-readout --plots slice --show metrics
+python -m optimization.optimize evaluate --type training --study r1a-refined --plots slice --show metrics
+```
+
+Both commands generate plots into `results/optimization/`.
+
+### Host-Agnostic Reproducibility Scripts
+
+Some studies are intentionally script-driven rather than Optuna-driven. These remain reproducible because they are self-contained Python entrypoints with no host-specific orchestration:
+
+- [scripts/run_ablation.py](scripts/run_ablation.py) — Ablation conditions with fixed reservoir and RF readout.
+- [scripts/run_heterogeneity.py](scripts/run_heterogeneity.py) — Parameter heterogeneity robustness grid.
+
+Run these locally in the same Python environment as the optimisation CLI.
+
+> [!TIP]
+> Use `--help` to see what else is available
+
+Example output from the readout evaluation:
+
+```text
+========================================================================
+	ALL classifiers — ro1-readout
+========================================================================
+		f1  trial classifier  knn_n_neighbors  knn_p knn_weights  accuracy     f1   f1_std  n_folds  precision  recall  runtime
+0.8907    542        KNN                4  1.037    distance    0.8899 0.8907 0.006768        5     0.8941  0.8899    792.6
+
+	Summary — top   10: mean=0.8907  std=0.0001  min=0.8904  max=0.8907
+	Summary — all   914: mean=0.7982  std=0.2079  min=0.0662  max=0.8907
+```
+
+Example output from the training evaluation:
+
+```text
+========================================================================
+	study — r1a-refined
+========================================================================
+		f1  trial  cell_coupling  dde_scaling  fade_alpha  input_connectivity  input_scaling  p_excite  rc_scaling  sparsity  units  warmup  accuracy     f1  precision  recall  runtime
+0.9047    416          12.75    0.0006439   2.803e-05              0.5282         0.0277    0.8354    0.007036     0.576   1000      50    0.9041 0.9047     0.9096  0.9041     2401
+
+	Summary — top   10: mean=0.9014  std=0.0019  min=0.8988  max=0.9047
+	Summary — all   768: mean=0.8481  std=0.0748  min=0.1924  max=0.9047
+```
+
+## Acknowledgements
+
+**ReservoirPy** — Our `BioReservoir` class extends the ReservoirPy `Node` class.
+- [reservoirpy](https://github.com/reservoirpy/reservoirpy)
+
+**Optuna** — Hyperparameter optimisation framework used for study-based tuning.
 - [Optuna](https://github.com/optuna/optuna)
 
-**Genetic Oscillators**: Our approach builds upon the research into coupled genetic oscillators within colonies of bacteria.
-The following papers were instrumental:
-  - [A sensing array of radically coupled genetic 'biopixels'](https://doi.org/10.1038/nature10722) by Prindle et al. (2011)
-  - [A synchronized quorum of genetic clocks](https://doi.org/10.1038/nature08753) by Danino et al. (2010)
+**Genetic Oscillators** — Our approach builds upon research into coupled genetic oscillators within bacterial colonies:
+- [A sensing array of radically coupled genetic 'biopixels'](https://doi.org/10.1038/nature10722) — Prindle et al. (2011)
+- [A synchronized quorum of genetic clocks](https://doi.org/10.1038/nature08753) — Danino et al. (2010)
 
-**Arrhythmia Dataset**:
-We take our dataset from Kaggle, which was used within the following paper for arrhythmia classification.
-  - [Kaggle Heartbeat Dataset](https://www.kaggle.com/datasets/shayanfazeli/heartbeat) by Shayan Fazeli
-  - [ECG Heartbeat Classification: A Deep Transferable Representation](http://dx.doi.org/10.1109/ICHI.2018.00092) by Kachuee et al. (2018)
+**Arrhythmia Dataset** — MIT-BIH dataset from Kaggle:
+- [Kaggle Heartbeat Dataset](https://www.kaggle.com/datasets/shayanfazeli/heartbeat) — Shayan Fazeli
+- [ECG Heartbeat Classification: A Deep Transferable Representation](http://dx.doi.org/10.1109/ICHI.2018.00092) — Kachuee et al. (2018)
