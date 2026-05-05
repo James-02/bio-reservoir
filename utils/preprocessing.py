@@ -480,7 +480,13 @@ def augment_data(
     # perfectly balanced classes. For each class c with count N_c, we
     # generate approximately ``noise_ratio * N_c`` augmented samples.
     classes, counts = np.unique(Y_flat, return_counts=True)
-    num_classes = len(classes)
+    # Derive num_classes from the original one-hot width (if available) so
+    # that the augmented labels always have the correct dimensionality, even
+    # when a class is absent from this particular fold/subset.
+    if len(Y.shape) > 1 and Y.shape[-1] > 1:
+        num_classes = Y.shape[-1]
+    else:
+        num_classes = len(classes)
 
     X_augmented = np.empty((0, X.shape[1], X.shape[2]))
     Y_augmented = np.empty(0)

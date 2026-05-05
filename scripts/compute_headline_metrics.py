@@ -12,8 +12,6 @@ Usage:
 
 from __future__ import annotations
 
-import sys
-import os
 import numpy as np
 from sklearn.metrics import (
     classification_report,
@@ -26,7 +24,6 @@ from sklearn.metrics import (
 from sklearn.ensemble import RandomForestClassifier
 from joblib import Parallel, delayed
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.results import FoldArtifact
 
 SEED = 6337

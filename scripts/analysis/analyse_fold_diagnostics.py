@@ -297,7 +297,7 @@ def main() -> int:
     # Aggregate metrics (same as analyse_fold_results.py, but always recomputed from saved arrays)
     agg = evaluate_performance(y_true_raw, y_pred_raw)
     print("Aggregate (recomputed):")
-    for k in ["accuracy", "f1", "precision", "recall", "rmse"]:
+    for k in ["accuracy", "f1", "precision", "recall", "mcc", "kappa"]:
         print(f"  {k}: {agg[k]:.4f}")
 
     if args.plots:

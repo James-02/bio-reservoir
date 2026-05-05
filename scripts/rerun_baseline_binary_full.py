@@ -1,18 +1,19 @@
 #!/usr/bin/env python
 """Re-run the b3-baseline-binary-v4 best trial (KNN) on the full binary dataset.
 
-Extracts the exact KNN hyperparameters from trial 356 of b3-baseline-binary-v4
-and evaluates them with 5-fold stratified CV on the full balanced binary
-dataset (~37,714 instances), matching the headline binary task size.
-
-No noise augmentation (consistent with all v4 headline evaluations).
+Evaluates the KNN hyperparameters from trial 356 of b3-baseline-binary-v4
+with 5-fold stratified CV on the full balanced binary dataset (~37,714
+instances), matching the headline binary task size.
 
 Usage:
     python scripts/rerun_baseline_binary_full.py
+    python scripts/rerun_baseline_binary_full.py --rows 10000 --folds 3 --workers 3
 """
 
+import argparse
 import time
 from concurrent.futures import ProcessPoolExecutor
+
 import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import StratifiedKFold
@@ -78,14 +79,28 @@ def _run_fold(args):
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Re-run baseline binary KNN trial with stratified CV.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--rows", type=int, default=50000,
+                        help="Max rows to load from the ECG dataset.")
+    parser.add_argument("--folds", type=int, default=N_FOLDS,
+                        help="Number of stratified CV folds.")
+    parser.add_argument("--workers", type=int, default=5,
+                        help="Parallel fold workers.")
+    parser.add_argument("--seed", type=int, default=SEED,
+                        help="Random seed for reproducibility.")
+    args = parser.parse_args()
+
     print("Loading full binary dataset...")
     X_train, Y_train, X_test, Y_test = load_ecg_data(
-        rows=50000,
+        rows=args.rows,
         binary=True,
         balance_classes=True,
         max_per_class=None,
         scaler_type="sequence_zscore",
-        seed=SEED,
+        seed=args.seed,
         noise_rate=0.0,
         noise_ratio=0.0,
     )
@@ -104,7 +119,7 @@ def main():
     print(f"KNN hypers: {KNN_HYPERS}")
     print()
 
-    skf = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=SEED)
+    skf = StratifiedKFold(n_splits=args.folds, shuffle=True, random_state=args.seed)
     fold_args = [
         (fold_i, train_idx, val_idx, X, Y)
         for fold_i, (train_idx, val_idx) in enumerate(skf.split(X, y_1d))
@@ -112,8 +127,8 @@ def main():
 
     overall_t0 = time.perf_counter()
 
-    print(f"Running {N_FOLDS} folds in parallel (5 workers)...")
-    with ProcessPoolExecutor(max_workers=5) as pool:
+    print(f"Running {args.folds} folds in parallel ({args.workers} workers)...")
+    with ProcessPoolExecutor(max_workers=args.workers) as pool:
         results = list(pool.map(_run_fold, fold_args))
 
     results.sort(key=lambda r: r["fold_i"])
