@@ -1,0 +1,646 @@
+\documentclass[journal=asbcd6,manuscript=article,keywords]{achemso}
+
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{subcaption}
+\usepackage{array}
+\usepackage{amssymb}
+\usepackage{siunitx}
+\usepackage{url}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{tikz}
+
+\usetikzlibrary{positioning, arrows.meta}
+
+\title{Reservoir Computing with Quorum-Sensing Genetic Oscillators for Biosignal Classification}
+
+\author{James Newsome}
+\affiliation[Newcastle]{School of Computing, Newcastle University, Newcastle upon Tyne, NE1 7RU, United Kingdom}
+
+\author{Tim Rudge}
+\affiliation[Newcastle]{School of Computing, Newcastle University, Newcastle upon Tyne, NE1 7RU, United Kingdom}
+
+\author{Gizem Buldum}
+\email{gizem.buldum@newcastle.ac.uk}
+\affiliation[Newcastle]{School of Computing, Newcastle University, Newcastle upon Tyne, NE1 7RU, United Kingdom}
+
+\keywords{Reservoir Computing, Genetic Oscillators, Biosignal Classification, Echo State Network, Synthetic Biology, Arrhythmia Detection}
+
+\begin{document}
+
+\begin{abstract}
+Reservoir computing offers a compelling framework for biological computation, as complex temporal processing can be achieved without training internal network dynamics.
+Here, we evaluate in silico a biologically grounded reservoir computing architecture composed of coupled quorum-sensing genetic oscillators, which serve as natural encoders of temporal information. 
+Each reservoir node simulates a two-gene LuxI/AiiA circuit with a delayed activator--inhibitor feedback architecture mediated by intracellular and extracellular acyl-homoserine lactone (AHL), producing rich oscillatory dynamics. 
+Spatial coupling between nodes is implemented using a distance-based interaction kernel, motivated by experimentally observed quorum-sensing ranges. 
+We evaluate the computational capability of this system on a rich temporal benchmark: multi-class classification of single-lead electrocardiogram (ECG) signals.
+Our reservoir achieves a macro F1-score of $0.892 \pm 0.013$ on balanced five-class arrhythmia classification using five-fold cross-validation with a 4015-sample subset, increasing to $0.911 \pm 0.004$ with more natural class imbalance, and $0.961 \pm 0.002$ for binary arrhythmia detection. 
+This approach reduces the computational and metabolic cost of learning relative to fully trained networks as the reservoir dynamics remain fixed and only the readout is trained, making it attractive for future biological implementations where training internal circuit parameters is impractical.
+Our results establish quorum-sensing oscillator networks as a viable substrate for reservoir computing, and our systematic optimization approach enables the exploration of genetic circuit designs in silico before committing to costly wet-lab builds.
+\end{abstract}
+
+% ---------- Main Content ----------
+
+\section{Introduction}
+
+Synthetic biology has produced a range of engineered genetic circuits capable of computation, including switches, amplifiers, memory elements, and oscillators~\cite{Green2014,Bonnet2013,Gardner2000,Elowitz2000,Uriu2016}. 
+Among these, the quorum-sensing oscillator of Danino et al.~\cite{Danino2010} was a landmark achievement, demonstrating synchronized, population-level oscillations across \textit{E. coli} colonies. 
+Such oscillators generate structured, time-varying gene expression patterns through delayed feedback regulation~\cite{Goldbeter2012,Uriu2016}. 
+These spatiotemporal dynamics enable living cells to encode, process, and respond to fluctuating environmental signals in real time, motivating their use as computational substrates for Reservoir Computing (RC).
+
+RC, formalized in the echo-state approach to recurrent neural networks (RNNs), offers a simple yet powerful paradigm for temporal pattern recognition~\cite{Jaeger2001,Zhang2023}. 
+An RC system comprises an input layer, a high-dimensional fixed dynamical reservoir, and a trainable readout layer~\cite{Jaeger2001,Nakajima2020}. 
+The reservoir's internal weights are fixed upon initialization, allowing input signals to perturb its dynamics and produce diverse nonlinear responses with fading memory of past inputs~\cite{Tanaka2019}. 
+This separation of dynamic representation and training reduces the computational cost and risk of overfitting compared to fully trained deep networks, making RC attractive when a lightweight readout is desirable and encouraging physical reservoir implementations~\cite{Konkoli2018,Wang2024}.
+
+Biological systems, such as interacting chemical networks within cells or microbial cultures, are natural candidates for reservoir computing. They are driven by external signals, exhibit nonlinear dynamics, and possess fading memory. These are precisely the properties that determine a dynamical system's computational capacity~\cite{Dambre2012}. 
+In engineered microbial consortia~\cite{Scott2016}, external chemical or environmental stimuli can influence the reservoir by modulating quorum-sensing pathways and diffusive signaling.
+For instance, \textit{E. coli} populations can coordinate gene expression via acyl-homoserine lactone (AHL) signaling molecules~\cite{Reading2006}, providing a mechanism for both intra- and inter-node coupling in a biological reservoir, with delays, nonlinearity, and spatial coupling emerging naturally from gene regulation and molecular transport. 
+Similarly, in the arsenic biosensor designed by Prindle et al.~\cite{Prindle2011}, arsenite modulates the period of synchronized quorum-sensing oscillations across an array of thousands of \textit{E. coli} biopixels, with inter-biopixel coupling achieved through gas-phase H$_2$O$_2$ redox signaling rather than AHL alone. 
+The oscillatory period, read out via GFP fluorescence (sfGFP in Prindle et al.~\cite{Prindle2011}; yemGFP in Danino et al.~\cite{Danino2010}), serves as the biosensor output.
+
+To date, RC has been applied to various molecular, physical, and simulated substrates~\cite{Tanaka2019}, including synthetic active particles~\cite{Wang2024}. 
+DNA-based reservoir computing, based on nucleic-acid reaction networks, was first proposed in 2013 using simulated deoxyribozyme oscillators, achieving up to 90\% accuracy on simplified temporal tasks~\cite{Goudarzi2013}, and has since been extended to DNA strand-displacement oscillator reservoirs~\cite{Liu2022} and cascaded DNA memristors~\cite{Liu2024}. 
+Separately, Sumi et al.~\cite{Sumi2023} showed that cultured biological neuronal networks can serve as physical reservoirs, achieving spoken digit classification using optogenetically driven micropatterned rat cortical neurons.
+Most recently, Ahavi et al.~\cite{Ahavi2024} experimentally demonstrated reservoir computing with living \textit{E. coli} populations.
+Our work differs from these approaches by modeling gene expression dynamics in living cells through experimentally validated delay differential equations (DDEs) and spatially coupled quorum sensing.
+
+Integrating biologically realistic genetic oscillator models into RC frameworks remains mostly unexplored, particularly those incorporating experimentally informed delays, diffusion ranges, and spatial coupling. 
+Such integration could provide a biologically plausible computational architecture, potentially translatable to the wet-lab. 
+Moreover, modeling these dynamics in silico allows the exploration and optimization of synthetic gene circuits before costly experimental implementation.
+
+In this work, we implement a gene-based reservoir computer using the open-source RC framework ``ReservoirPy''~\cite{Trouvain2020}. 
+Each reservoir node simulates a quorum-sensing genetic bio-pixel modeled by delay differential equations capturing transcriptional, translational, and signaling delays, with parameters taken from the design of a genetic clock by Danino et al.~\cite{Danino2010}. 
+Coupling between oscillators allows the network to exhibit complex spatiotemporal dynamics in response to input perturbations. 
+These dynamics project incoming signals into a high-dimensional space, enabling a simple readout classifier to discriminate between classes~\cite{Maass2002}. 
+
+We evaluate the temporal processing capacity of this architecture on multi-class electrocardiogram (ECG) arrhythmia classification using the MIT-BIH Arrhythmia Database~\cite{Moody2001} with preprocessing from Kachuee et al.~\cite{Kachuee2018}. 
+ECG signals offer rich, well-characterized temporal structure and established baselines, making them a strong benchmark for assessing whether the reservoir can map time-series inputs into separable high-dimensional state representations.
+Our model achieves competitive performance on balanced and unbalanced five-class classification as well as binary arrhythmia detection.
+
+By modeling coupled quorum-sensing genetic oscillators within a reservoir computing framework, this work introduces a biologically grounded dynamical substrate for temporal information processing. 
+Although more computationally intensive than conventional neuronal reservoirs, the architecture captures key features of gene regulatory systems, including delays, nonlinearity, and spatial coupling, that are difficult to represent in abstract models. 
+This approach enables systematic exploration of how genetic circuit dynamics can be used for computation while remaining compatible with established reservoir computing workflows. 
+We demonstrate the feasibility of this model on a real-world biomedical signal classification task and provide a flexible computational framework to support future studies in biologically inspired computing, biosensing, and synthetic gene circuit design.
+
+\section{Results}
+We first report the headline balanced, unbalanced, and binary classification results, then compare topology and readout choices as well as comparative baselines, and finally summarize the optimization and ablation studies that support the mechanistic interpretation. 
+The reservoir was selected through a four-phase optimization workflow: Phase~1 screened individual parameter groups, Phase~2 jointly refined the full configuration, Phase~3 evaluated alternative task settings, and Phase~4 optimized the readout on frozen reservoir states. 
+Detailed study names, search ranges, and per-study diagnostics are reported in the Supporting Information.
+
+\subsection{Reservoir Configuration Exploration}
+
+A four-phase hierarchical optimization strategy was used to identify the final reservoir configuration (full details in the Supporting Information Table~S5). 
+Phase~1 screened individual parameter groups and showed that signal amplitude scaling, reservoir size, and readout aggregation were the strongest levers on performance. 
+Phase~2 then jointly refined the full reservoir configuration, using two similar studies to compare reservoir topologies, confirming that the balance between external drive and recurrent feedback is more important than fine-grained tuning of most structural parameters once the reservoir is in a viable regime. 
+Phase~3 evaluated the selected configuration under class imbalance and binary classification, and Phase~4 optimized the readout on frozen reservoir states. 
+
+The headline conclusion from this workflow is that performance depends most strongly on operating the oscillator network in a low-amplitude, input-responsive regime rather than on any single architectural detail. 
+The Phase~2 slice plot (Figure~\ref{fig:P2-distance-slice}) supports this: for most parameters, both high- and low-performing trials occur across the full value range, indicating that poor results arise from unfavorable parameter combinations rather than from any single parameter setting.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\textwidth]{figures/article/P2-distance-slice.pdf}
+    \caption{Optuna slice plot for the Phase~2 joint optimization (P2-distance, distance-based topology, 768 TPE trials). 
+    Each panel shows per-trial macro F1-score as a function of one hyperparameter, revealing the marginal sensitivity landscape across 13 jointly optimized parameters.}
+    \label{fig:P2-distance-slice}
+\end{figure}
+
+\subsection{Readout Classifier Exploration}
+\label{sec:readout-optimization}
+
+After determining the optimal reservoir configuration in optimization Phases 1--3, we assessed whether readout algorithm selection could improve classification by optimizing the readout layer on frozen reservoir states. 
+Seven classifier families were evaluated for each task, each with Optuna-optimized hyperparameters (Table~\ref{tab:readout-comparison}).
+
+\begin{table}
+    \centering
+    \caption{Best macro F1-score per readout classifier across three tasks, optimized via TPE on frozen reservoir states with five-fold cross-validation.
+    Binary readout selection used a $4{,}015$-instance subset for parity with the balanced five-class study; the headline binary result ($F_1 = 0.961$) was obtained by applying the selected readout to the full class-balanced $37{,}714$-instance binary dataset. 
+    Bold indicates best per column.}
+    \label{tab:readout-comparison}
+    \small
+    \begin{tabular}{lccc}
+        \toprule
+        Classifier & Balanced 5-class & Unbalanced 5-class & Binary \\
+        \midrule
+        Random Forest    & \textbf{0.895} & \textbf{0.916} & \textbf{0.933} \\
+        Gradient Boosting & 0.887 & 0.897 & 0.931 \\
+        KNN              & 0.883 & 0.891 & 0.929 \\
+        Ridge Classifier & 0.862 & 0.880 & 0.921 \\
+        Logistic Regression & 0.862 & 0.878 & 0.917 \\
+        SVM              & 0.850 & 0.849 & 0.907 \\
+        Decision Tree    & 0.823 & 0.849 & 0.896 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Random forest performed the best on all three tasks, although Gradient Boosting (GB) and K-Nearest Neighbors (KNN) also exhibited competitive performance.
+Within the genetic oscillator reservoir, the dominance of ensemble classifiers (random forest, gradient boosting) over parametric models (ridge, logistic regression) indicates that the learned state geometry is better separated by nonlinear ensemble boundaries than by linear decision surfaces. 
+By contrast, a separately optimized ESN favored a ridge classifier (Section~\ref{sec:baseline-comparisons}), emphasizing that readout choice is part of the baseline definition and should be re-optimized for each reservoir family rather than transferred unchanged.
+
+\subsection{Balanced Five-Class ECG Classification}
+
+Using the optimized reservoir configuration ($N = 1000$ quorum-sensing oscillator nodes, distance-based topology, random forest readout), we evaluated classification performance on the downsampled balanced five-class ECG arrhythmia task using five-fold stratified cross-validation. 
+The model achieved a macro F1-score of $0.892 \pm 0.013$, with accuracy $0.891$, Matthews correlation coefficient (MCC)~\cite{Matthews1975} $= 0.864$, and Cohen's $\kappa$~\cite{Cohen1960} $= 0.864$ (Table~\ref{tab:balanced-metrics}). 
+As the reservoir configuration was selected using a single data fold to reduce computational cost, these standard deviations reflect fold-to-fold variation in the final evaluation rather than total model-selection uncertainty.
+In Table~\ref{tab:balanced-metrics} we can see that the inter-fold variance is low ($\sigma \leq 0.025$), indicating stable generalization across data partitions. 
+
+\begin{table}
+    \centering
+    \caption{Per-class classification metrics for the balanced five-class task (mean $\pm$ std across five folds, $N = 1000$, RF readout, $4{,}015$ total CV pool).}
+    \label{tab:balanced-metrics}
+    \small
+    \begin{tabular}{lccccc}
+        \toprule
+        Class & Precision & Recall & F1-score & Train & Test \\
+        \midrule
+        Normal (N)     & $0.794 \pm 0.033$ & $0.859 \pm 0.016$ & $0.825 \pm 0.019$ & ${\sim}642$ & ${\sim}161$ \\
+        Supraventricular (S) & $0.886 \pm 0.009$ & $0.839 \pm 0.031$ & $0.862 \pm 0.016$ & ${\sim}642$ & ${\sim}161$ \\
+        Ventricular (V) & $0.904 \pm 0.027$ & $0.897 \pm 0.019$ & $0.900 \pm 0.019$ & ${\sim}642$ & ${\sim}161$ \\
+        Fusion (F)     & $0.915 \pm 0.026$ & $0.908 \pm 0.029$ & $0.911 \pm 0.025$ & ${\sim}642$ & ${\sim}161$ \\
+        Unknown (Q)    & $0.968 \pm 0.029$ & $0.951 \pm 0.016$ & $0.959 \pm 0.018$ & ${\sim}642$ & ${\sim}161$ \\
+        \midrule
+        Macro avg.     &       &        & $0.892 \pm 0.013$ & & \\
+        Total Instances &       &        &                    & ${\sim}3{,}212$ & 803 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Performance varied across arrhythmia classes: the Unknown (Q) class was classified most reliably ($F_1 = 0.959$), while Normal (N) heartbeats were the most frequently misclassified ($F_1 = 0.825$), primarily through confusion with Supraventricular (S) beats (Figure~\ref{fig:five-class-results}a), consistent with their morphological similarity displayed in Figure~\ref{fig:dataset-figure}a. N and S both lack distinctive morphological features, their mean waveforms decay to near-baseline after the initial QRS deflection, making them difficult to distinguish from each other, particularly given the wide intra-class variability visible in the S percentile band. 
+By contrast, F and Q exhibit consistent secondary waveform structure (a broad post-QRS hump and a late secondary peak, respectively) that survives averaging and provides the readout with more separable temporal signatures.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\textwidth]{figures/article/headline-conf-matrices.pdf}
+    \caption{Headline classification confusion matrices, aggregated across five folds. 
+    (a)~Balanced five-class configuration. Normal (N) and Supraventricular (S) show the highest mutual confusion. 
+    (b)~Unbalanced five-class configuration. Additional training data for the more medically common classes improves their individual performance. 
+    (c)~Binary classification, where Normal retains the higher recall and Arrhythmia the higher precision.}
+    \label{fig:five-class-results}
+\end{figure}
+
+\subsection{Effect of Class Imbalance and Dataset Size}
+
+The balanced five-class task limits total data to $4{,}015$ instances by downsampling all classes to the smallest (Fusion, 803). 
+To assess how performance scales with additional data, we increased the per-class cap from $1\times$ (803) to $5\times$ ($4{,}015$), allowing each class to contribute up to the cap or its available count, whichever is smaller; stratified five-fold cross-validation preserves the resulting unequal class proportions. 
+Macro F1 increased from $0.887$ at $1\times$ to $0.904$ at $5\times$ under five-fold cross-validation using the pre-readout-optimization KNN readout (Table~S12), indicating that the reservoir benefits directly from additional training.
+
+Using the full $5\times$ unbalanced configuration with five-fold cross-validation, the model achieved a macro F1-score of $0.911 \pm 0.004$, with accuracy $0.926$, MCC $= 0.904$, and Cohen's $\kappa = 0.903$ (Table~\ref{tab:unbalanced-metrics}).
+
+\begin{table}
+    \centering
+    \caption{Per-class classification metrics for the unbalanced five-class task (mean $\pm$ std across five folds, $N = 1000$, RF readout, $5\times$ per-class cap, $16{,}107$ total CV pool).}
+    \label{tab:unbalanced-metrics}
+    \small
+    \begin{tabular}{lccccc}
+        \toprule
+        Class & Precision & Recall & F1-score & Train & Test \\
+        \midrule
+        Normal (N)     & $0.865 \pm 0.013$ & $0.935 \pm 0.004$ & $0.899 \pm 0.006$ & ${\sim}3{,}340$ & ${\sim}835$ \\
+        Supraventricular (S) & $0.920 \pm 0.006$ & $0.845 \pm 0.018$ & $0.881 \pm 0.009$ & ${\sim}2{,}223$ & ${\sim}556$ \\
+        Ventricular (V) & $0.949 \pm 0.007$ & $0.937 \pm 0.011$ & $0.942 \pm 0.002$ & ${\sim}3{,}340$ & ${\sim}835$ \\
+        Fusion (F)     & $0.865 \pm 0.035$ & $0.841 \pm 0.029$ & $0.852 \pm 0.016$ & ${\sim}642$ & ${\sim}161$ \\
+        Unknown (Q)    & $0.985 \pm 0.003$ & $0.977 \pm 0.006$ & $0.981 \pm 0.004$ & ${\sim}3{,}340$ & ${\sim}835$ \\
+        \midrule
+        Macro avg.     &       &        & $0.911 \pm 0.004$ & & \\
+        Total Instances  &       &        &                    & ${\sim}12{,}885$ & ${\sim}3{,}222$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Classes that reached the per-class size cap (Normal, Ventricular, and Unknown) showed the largest F1 gains over the balanced setting (e.g. Normal $+F_1 = 0.074$). 
+Of the two classes that could not reach the cap, Supraventricular saw a small improvement ($+F_1 = 0.019$), proportional to its slight increase in training data, 
+while the smallest class (Fusion) actually suffered worse performance ($-F_1 = 0.059$) as it did not receive any more training data (Figure~\ref{fig:five-class-results}b). 
+This pattern indicates that per-class F1 scales primarily with the amount of available training data rather than with any architectural feature of the reservoir.
+We use Macro F1 here specifically with imbalanced classes as it ensures that the model's ability to detect dangerous, rare arrhythmia types is not masked by high performance on the more medically common, Normal beats.
+
+\subsection{Binary Arrhythmia Detection}
+
+For a clinically oriented screening task, we merged all non-Normal classes into a single Arrhythmia category and performed binary classification using the same reservoir configuration. 
+Both classes were balanced to the smaller merged class size ($18{,}857$ instances per class; $37{,}714$ total CV pool), yielding approximately $7{,}542$ test instances and ${\sim}30{,}172$ training instances (${\sim}15{,}086$ per class). 
+The model achieved a macro F1-score of $0.961 \pm 0.002$, with accuracy $0.961$, MCC $= 0.923$, and Cohen's $\kappa = 0.923$ (Table~\ref{tab:binary-metrics}), with the Arrhythmia class achieving higher precision ($0.979$) and the Normal class achieving higher recall ($0.980$). 
+
+\begin{table}
+    \centering
+    \caption{Per-class classification metrics for the binary task (mean $\pm$ std across five folds, $N = 1000$, RF readout, $37{,}714$ total CV pool).}
+    \label{tab:binary-metrics}
+    \small
+    \begin{tabular}{lccccc}
+        \toprule
+        Class & Precision & Recall & F1-score & Train & Test \\
+        \midrule
+        Normal       & $0.945 \pm 0.003$ & $0.980 \pm 0.003$ & $0.962 \pm 0.002$ & ${\sim}15{,}086$ & ${\sim}3{,}771$ \\
+        Arrhythmia   & $0.979 \pm 0.003$ & $0.943 \pm 0.003$ & $0.961 \pm 0.002$ & ${\sim}15{,}086$ & ${\sim}3{,}771$ \\
+        \midrule
+        Macro avg.   &       &       & $0.961 \pm 0.002$ & & \\
+        Total Instances &       &       &                    & ${\sim}30{,}172$ & ${\sim}7{,}542$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+ 
+The aggregated binary confusion matrix in Figure~\ref{fig:five-class-results}c shows the same asymmetric error profile seen in the per-class metrics: Normal beats retain the higher recall whereas Arrhythmia achieves the higher precision, indicating that the classifier can reject normal rhythms reliably while still maintaining high abnormal-beat sensitivity. 
+This operating point may be useful in screening-style settings where balancing missed arrhythmias against false alarms matters.
+
+\subsection{Distance-Based vs.\ Random Reservoir Topology}
+\label{sec:topology-comparison}
+
+A central hypothesis of this work is that biologically motivated distance-based coupling, informed by an experimentally measured local interaction scale~\cite{Yanez2020}, provides a meaningful inductive bias for reservoir computing. 
+To test this, we conducted an unbiased comparison between two topology types: (i)~a distance-based interaction kernel with exponential spatial decay (P2-distance), and (ii)~a random Gaussian connectivity matrix (P2-random). 
+Both topologies were independently optimized on a single fold using 768 and 800 TPE trials respectively, searching the full parameter space simultaneously under identical search constraints.
+
+Using each study's best trial, we re-ran the classification task with five-fold cross-validation for the final result: the distance-based topology achieved $F_1 = 0.890 \pm 0.007$ (MCC $= 0.863$, $\kappa = 0.862$), outperforming the random topology at $F_1 = 0.881 \pm 0.015$ (MCC $= 0.851$, $\kappa = 0.850$). 
+During single-fold optimization, both topologies achieved comparable peak performance ($F_1 = 0.905$ distance vs.\ $F_1 = 0.907$ random), but the distance topology proved more resilient to data partitioning. 
+
+A paired $t$-test on per-fold F1 scores gave $t(4) = 1.46$, $p = 0.217$ (Wilcoxon $W = 3.0$, $p = 0.313$, Cohen's $d = 0.65$, 95\% CI~$[-0.008, +0.027]$). The effect size is moderate but does not reach significance with five folds. 
+Nevertheless, it is directionally consistent with the hypothesis that biologically grounded local coupling constrains the search space toward more stable solutions. 
+The headline re-runs in Table~\ref{tab:headline-summary} applied the Phase~4 random forest readout (optimized on distance-topology states) to both topologies for cross-task comparability; because this readout was not independently re-optimized on random-topology states, it may slightly favor the distance topology, though the directional advantage is consistent across both readout choices.
+Complete parameter comparisons for both topologies are provided in the Supporting Information (Tables~S9--S11).
+
+\subsection{Comparable Baselines}\label{sec:baseline-comparisons}
+
+Table~\ref{tab:headline-summary} consolidates all headline results, baselines, and the random topology comparison.
+To benchmark the biological reservoir against a conventional reservoir-computing baseline, we optimized a standard leaky-neuron integrator echo state network (ESN) implemented in ReservoirPy under the same preprocessing, balanced five-class dataset, macro-F1 objective, and frozen-state readout-selection workflow (details in the Supporting Information Figure~S9). 
+The best ESN training trial achieved a single-fold macro F1-score of $0.879$ using KNN as a base readout. After a 1008-trial readout study re-selected a ridge classifier, the five-fold rerun reached $F_1 = 0.896 \pm 0.010$.
+This places the ESN at comparable performance to the biological reservoir, as the difference is well within the inter-fold variability of both models.
+
+\begin{table}
+    \centering
+    \caption{Summary of headline classification results and baselines. 
+    All values from five-fold stratified cross-validation ($N = 1000$, distance-based topology, unless noted).
+    Per-stage wall-time profiling is reported in the Supporting Information (Table~S16).}
+    \label{tab:headline-summary}
+    \small
+    \begin{tabular}{llccccc}
+        \toprule
+        Task & Model & F1 (mean $\pm$ std) & Acc. & MCC & Readout & Wall time \\
+        \midrule
+        \multirow{4}{*}{\shortstack[l]{Balanced\\5-class}}
+        & BioReservoir (dist.) & $0.892 \pm 0.013$ & 0.891 & 0.864 & RF & ${\sim}10$\,min \\
+        & BioReservoir (rand.)$^{a}$ & $0.885 \pm 0.017$ & 0.885 & 0.856 & RF & ${\sim}5$\,h \\
+        & Leaky ESN & $0.896 \pm 0.010$ & 0.896 & 0.870 & Ridge & ${\sim}2$\,min \\
+        & No-reservoir & $0.886 \pm 0.013$ & 0.886 & 0.858 & SVM & ${\sim}6$\,s \\
+        \midrule
+        \multirow{2}{*}{\shortstack[l]{Unbalanced\\5-class}}
+        & BioReservoir (dist.) & $0.911 \pm 0.004$ & 0.926 & 0.904 & RF & ${\sim}22$\,min \\
+        & No-reservoir & $0.915 \pm 0.004$ & 0.932 & 0.911 & SVM & ${\sim}52$\,s \\
+        \midrule
+        \multirow{2}{*}{Binary}
+        & BioReservoir (dist.) & $0.961 \pm 0.002$ & 0.961 & 0.923 & RF & ${\sim}64$\,min \\
+        & No-reservoir & $0.964 \pm 0.001$ & 0.964 & 0.928 & KNN & ${\sim}51$\,s \\
+        \bottomrule
+    \end{tabular}
+    \vspace{0.3em}
+    \begin{flushleft}
+        \scriptsize
+        $^{a}$~Random Gaussian topology (Table~S10) with an RF readout from P4-readout-balanced (optimized on distance-topology states).
+    \end{flushleft}
+\end{table}
+
+For another comparison, we also trained classifiers directly on the raw z-scored ECG signals without a reservoir.
+The best no-reservoir classifier was SVM for the balanced and unbalanced five-class tasks, and KNN for binary classification; in each case the no-reservoir baseline matched or very slightly exceeded our reservoir (Table~\ref{tab:headline-summary}).
+However, this headline comparison obscures a key motivation for biological reservoir computing: in a future physical implementation, the reservoir would perform nonlinear transformations directly in living cells, eliminating the need for a complex digital classifier. 
+A per-classifier analysis (Table~S18) reveals that simple linear readouts, such as ridge regression or logistic regression, receive a large performance boost (up to $+0.14$ F1) when operating on reservoir states instead of raw features. 
+This is critical for synthetic biology, where implementing a deeply nonlinear classifier in vivo is severely constrained by genetic design capacity and metabolic burden. 
+By delegating the nonlinear transformation to the intrinsic dynamics of the quorum-sensing reservoir, simpler readouts can achieve competitive performance. 
+The full raw-feature comparison is reported in the Supporting Information (Tables~S17--S18).
+
+\subsection{Ablation Analysis}
+\label{sec:ablation}
+
+Three targeted ablations on the balanced five-class pipeline, using the same reservoir configuration and Phase~4 random forest readout as the headline result, support the mechanistic claims of the model. 
+Removing recurrent coupling reduced macro F1 from $0.892$ to $0.844$ ($-5.4\%$), removing the transcriptional delay reduced it to $0.793$ ($-11.1\%$), and scrambling the temporal order of each ECG segment collapsed performance to $0.220$, near random. 
+These controls indicate that classification depends on both inter-node coupling and delayed feedback, and that the reservoir is exploiting genuine temporal structure rather than static amplitude statistics alone. 
+Per-condition means, standard deviations, and experimental details are reported in Table~S19.
+
+\section{Discussion}
+This study demonstrates that reservoirs composed of quorum-sensing genetic oscillators, modeled using experimentally validated kinetic parameters~\cite{Danino2010}, can perform competitively on biomedical signal classification tasks. 
+The oscillator reservoir performs strongly on balanced five-class arrhythmia classification and remains competitive under both class imbalance and binary detection.
+Kachuee et al.~\cite{Kachuee2018} reported 93.4\% accuracy on the same MIT-BIH dataset using a deep residual convolutional neural network, evaluated on a held-out test set of $4{,}079$ augmentation-balanced samples (${\sim}819$ per class); training set size and augmentation method were not reported, but the remaining pool comprises up to ${\sim}105{,}000$ beats (Table~S2).
+Our balanced protocol downsamples all classes to 803 and evaluates via five-fold stratified cross-validation, so total evaluation coverage is comparable ($4{,}015$ vs.\ $4{,}079$ tested instances) but per-fold training sets (${\sim}3{,}212$ instances) are substantially smaller.
+Despite this asymmetry, the genetic oscillator reservoir achieves competitive multi-class classification ($89.1\%$ accuracy) entirely through fixed biological dynamics and a simple non-parametric readout, without the representational capacity of 13 trainable weight layers.
+
+As another comparison, we optimized a leaky ESN in identical fashion to our model, which reached $F_1 = 0.896 \pm 0.010$ on the same balanced five-class protocol, so the two reservoir architectures achieve comparable macro F1.
+These results highlight the intrinsic computational utility of coupled gene regulatory dynamics: competitive classification is achieved without the trainable representational capacity of deep neural networks.
+
+Compared to prior molecular reservoir computing approaches, which are formulated in deoxyribozyme~\cite{Goudarzi2013} and DNA strand-displacement~\cite{Liu2022} reaction networks, the present architecture operates at the gene regulatory level, incorporating transcriptional and translational delays, enzymatic degradation, and diffusive intercellular coupling. 
+These features are absent from the earlier DNA-based reservoirs and arise naturally in living gene circuits~\cite{Danino2010}, positioning quorum-sensing oscillators closer to in vivo implementation. 
+Ahavi et al.~\cite{Ahavi2024} recently demonstrated reservoir computing with living bacterial populations experimentally; the in silico framework presented here complements such efforts by enabling systematic hyperparameter optimization and design-space exploration before committing to costly experimental builds.
+Because the reservoir dynamics remain fixed, performance scales directly with training data (Table~S12) without requiring architectural modifications, an important property for applications where labelled data may accumulate over time.
+
+\subsection{Challenges and Opportunities}\label{sec:challenges}
+The main design trade-off in the present study is between biological realism and simulation performance. 
+At $N = 1000$, dedicated profiling gave a per-instance simulation cost of approximately \SI{72}{\milli\second}, corresponding to five-fold wall-clock runtimes of roughly 10 minutes for the balanced task, 22 minutes for the unbalanced task, and 64 minutes for the binary task on the same 64 physical-core server using five parallel folds (Table~\ref{tab:headline-summary}). 
+The matched ESN baseline completed the balanced five-fold run in under 2 minutes. 
+More than 95\% of wall-clock time is spent in DDE integration, so runtime scales mainly with the number of evaluated instances rather than with readout fitting (Table~S16). 
+That overhead constrains large-scale in silico benchmarking, but it is also a consequence of choosing a mechanistically grounded oscillator model whose nonlinear dynamics would be instantiated directly rather than numerically integrated in a physical implementation.
+
+Related trade-offs affect how the present results should be interpreted. 
+All experiments used a single benchmark dataset, and the balanced five-class setting remains relatively small ($4{,}015$ instances). 
+Although MIT-BIH is a standard reference~\cite{Moody2001}, generalization to other temporal tasks and larger datasets remains to be demonstrated. 
+In addition, the Kachuee preprocessing uses beat-wise rather than patient-wise splitting, so cross-validation folds may contain beats from the same patient. 
+That choice matches the source release and is difficult to avoid for balanced five-class evaluation because the minority classes are concentrated in very few records, but it likely yields more optimistic performance than a strict patient-wise protocol~\cite{deChazal2004}.
+
+Similarly, the reported five-fold scores are post-selection estimates: Phases~1--2 used a single fold as a proxy during optimization, and we did not run fully nested cross-validation because the multi-phase search was already computationally expensive. 
+However, the strong generalization observed in the Phase~3 five-fold cross-validation confirms that the configurations identified in Phase~1 and 2 did not overfit to the proxy fold. 
+The fold-to-fold standard deviations capture sampling variability of the selected model, not the full uncertainty introduced by model selection.
+
+Furthermore, the DDE solver runs in arbitrary computational time units, whereas the Danino oscillator exhibits periods of approximately 52--90 minutes in vivo~\cite{Danino2010}, so a physical implementation would require recorded inputs to be replayed over biological timescales. 
+This timescale mismatch rules out real-time processing of fast physiological signals such as ECG; however, it is compatible with slow biosensing tasks whose natural timescales overlap with gene-expression dynamics, including environmental toxin monitoring (hours to days), circadian hormone profiling, gut-microbiome metabolite tracking, and slow-varying agricultural or water-quality signals~\cite{Chancharoenthana2023,Guerra2023,Wang2022,Negahdary2023}. 
+
+The ECG benchmark was chosen precisely because its rich temporal structure and well-established baselines make it a stringent test of computational capability, even though it may not represent a target deployment scenario for a biological device.
+The biological model also remains idealized: it omits growth, division, metabolic burden, and flow-induced anisotropy, and it treats some device-calibrated density terms as fixed rather than dynamic. 
+These simplifications were deliberate so that the computational role of delayed, quorum-coupled dynamics could be isolated first, and therefore the current implementation should be regarded as a proof-of-concept design study rather than a near-term real-time device model.
+
+A major anticipated barrier to biological reservoir computing is the inherent noisiness of living biological systems, including variations in individual cell viability, lifespan, and gene expression limits.
+We addressed this biological realism through a dedicated heterogeneity analysis (Figure~S10) to approximate physical cell behavior.
+Classification performance remained close to or above the homogeneous baseline across all tested levels of node-to-node kinetic variability ($F_1 = 0.885$--$0.894$ vs.\ baseline $0.889$), with only a $-0.4\%$ reduction at $\mathrm{CV} = 0.5$. 
+This suggests that the coupled, distributed nature of the quorum-sensing reservoir buffers against cell-to-cell variability in the model, though confirming this robustness experimentally remains an important next step alongside broader datasets and more efficient simulation pipelines.
+
+\subsection{Software Framework}
+The most immediate contribution of this work is a publicly available, modular software platform for simulating, visualizing, benchmarking, and stress-testing biologically grounded reservoir architectures before committing to experimental builds. 
+The BioReservoir codebase is openly available on GitHub~\cite{JamesGitHub2024}, and it decouples oscillator models, reservoir topology, and readout algorithms so that researchers can substitute components, benchmark alternative designs, and test hypotheses without modifying the simulation core. 
+The codebase includes profiling, comprehensive metrics reporting, and visualization tools for cross-validation diagnostics. 
+All experiments are reproducible with fixed random seeds and pinned dependency versions, and the framework requires only a standard Python environment with no specialized hardware, lowering the barrier to adoption for synthetic biology and engineering biology groups exploring computational gene circuit design.
+
+\subsection{Future wet-lab Implementation}
+Oscillator-based temporal classifiers remain plausible in biosensing and monitoring settings where noisy sequential signals must be interpreted under tight power or integration constraints, including gut health monitoring, time-series forecasting, livestock disease surveillance, and environmental sensing~\cite{Chancharoenthana2023,Guerra2023,Wang2022,Negahdary2023}.
+A plausible longer-term realization of our in silico setup would use trapped microcolonies as reservoir nodes, with each trap functioning as a single reservoir node whose population-averaged dynamics correspond to the mean-field DDE model used here.
+The input signal $c \, \lambda \, \alpha_u \, u(t)$ would be delivered as a time-varying inducer concentration via programmable microfluidic perfusion, for example digitally controlled syringe pumps stepping through a discretized concentration waveform at intervals matching the DDE timestep~\cite{Rackus2015}.
+To prevent the microfluidic flow from rapidly washing away the extracellular AHL ($H_e$) required for inter-colony spatial coupling, trap geometries with diffusion-limited signaling chambers or engineered flow rates could be employed. This would ensure that localized chemical signals accumulate and couple neighboring populations even as the external driving inducer is refreshed.
+
+The reservoir readout ($LuxI$ and $H_e$) would be measured optically: LuxI can be tracked via a translational sfGFP fusion under the \textit{PluxI} promoter, and external AHL can be reported by a separate constitutive-LuxR reporter strain in an adjacent sensing chamber, both imaged by standard time-lapse fluorescence microscopy~\cite{Danino2010,Prindle2011}.
+
+The optimization results provide directly testable design specifications for such a device.
+Although the Phase~2 optimum was $N = 1000$ nodes, the Phase~1 reservoir-size sweep (Figure~S6) showed that classification performance plateaus above $N \approx 300$, so a physically realizable array of 250--300 traps would retain most of the computational capacity while greatly reducing fabrication complexity.
+Traps would be spaced according to the $R \approx 8.2$ nearest-neighbour interaction range informed by experimentally observed quorum-sensing diffusion scales~\cite{Yanez2020}.
+Phase~1 also showed negligible performance difference between purely excitatory and mixed-sign coupling (Figure~S4), so a single-strain design with purely excitatory AHL coupling ($p_{\mathrm{excite}} = 1$) would avoid the need for multi-strain repressor sub-populations.
+Input connectivity of $\approx 0.53$ could be achieved by selectively routing inducer delivery to roughly half the traps, for example via microfluidic channel design~\cite{Rackus2015} or electrode-gated redox-mediated induction~\cite{Tschirhart2017}.
+
+Prior demonstrations of multicellular NOR-gate circuits and layered intracellular logic indicate that at least some downstream decision logic could, in principle, also be implemented genetically rather than digitally~\cite{Tamsir2011,Moon2012}.
+In that sense, the present study offers experimentally useful design constraints on reservoir size, coupling locality, and observable state variables, while also contributing a practical tool for a field in which reservoir computing and engineered biological dynamics are drawing increasing attention as complementary routes to adaptive, low-power information processing.
+
+\section{Methods}
+
+\subsection{Simulating Gene Expression in Quorum-Coupled Bio-Pixels}
+The reservoir consists of an array of genetic “bio-pixels” modeled as quorum-sensing transcriptional oscillators derived from the synchronized genetic clock reported by Danino et al.~\cite{Danino2010}. 
+The dynamical equations are identical to those reported in that work, except for discretization and the addition of external input. 
+Here we describe the single-node dynamical model, integration into the reservoir architecture is detailed in a subsequent section.
+
+Quorum sensing in Gram-negative bacteria is mediated by diffusible \textit{N}-acyl homoserine lactones (AHLs), synthesized by LuxI-family enzymes and detected by LuxR-type transcriptional regulators to coordinate population-level gene expression~\cite{Fuqua2002}. 
+In the Danino oscillator, LuxI synthesizes AHL, which binds LuxR to activate the \textit{PluxI} promoter, driving expression of both \textit{luxI} and the AHL lactonase \textit{aiiA}. AiiA hydrolyzes AHL, thereby lowering signal concentration and attenuating quorum-sensing activation~\cite{Dong2000}. 
+This delayed activator--inhibitor architecture generates coupled positive and negative feedback, enabling sustained oscillatory dynamics and population-level synchronization~\cite{Danino2010}. 
+LuxR was assumed to be constitutively expressed and was not modeled explicitly, consistent with the reduced-order formulation of Danino et al.
+
+For each bio-pixel $j$, the state variables are intracellular LuxI ($I^{(j)}$), intracellular AiiA ($A^{(j)}$), intracellular AHL ($H_i^{(j)}$), and a local extracellular AHL variable ($H_e^{(j)}$). 
+The extracellular variable represents a per-cell microenvironment; no shared extracellular pool was modeled, coupling is handled at the reservoir level. 
+Each node should therefore be interpreted as a mean-field surrogate for a small trapped microcolony with population-averaged dynamics, rather than as a literal single cell.
+
+Promoter activation is described by a delayed Hill-type response,
+\begin{equation}
+    P(t) =
+    \frac{\delta + \alpha H_i(t-\tau)^2}
+    {1 + k_1 H_i(t-\tau)^2},
+\end{equation}
+where $\tau$ represents effective transcriptional and translational latency.
+
+The bio-pixel dynamics are given by~\cite{Danino2010}:
+\begin{align}
+    \frac{dA}{dt} &=
+    C_A \left[1 - \left(\frac{\rho}{\rho_0}\right)^4 \right]
+    P(t)
+    - \frac{\gamma_A A}{1 + f (A + I)}, \\
+    \frac{dI}{dt} &=
+    C_I \left[1 - \left(\frac{\rho}{\rho_0}\right)^4 \right]
+    P(t)
+    - \frac{\gamma_I I}{1 + f (A + I)}, \\
+    \frac{dH_i}{dt} &=
+    b \frac{I}{1 + k I}
+    - \frac{\gamma_H A H_i}{1 + g A}
+    + D (H_e + x_t - H_i), \\
+    \frac{dH_e}{dt} &=
+    -\frac{\rho}{1 - \rho} D (H_e - H_i)
+    - \mu H_e,
+\end{align}
+where $x_t$ denotes an externally applied input signal at time $t$, modeled as an additive perturbation to the effective extracellular drive term entering the diffusion flux into $H_i$. 
+The density parameters $\rho$ and $\rho_0$ are treated as fixed constants inherited from Danino et al., so the associated growth-modulation factor is not itself dynamically updated during simulation.
+Together, these delay differential equations (DDEs) define the single-node dynamics. The following sections describe the numerical solver, readout pipeline, and reservoir-level coupling.
+
+All biological rate constants, parameter values, and units were adopted directly from the experimentally validated model of Danino et al.~\cite{Danino2010} and are listed in Table~S1. 
+No intrinsic kinetic parameters were tuned for the classification experiments; we assess resistance to cell-to-cell kinetic variability separately to characterize the architecture's biological plausibility (Figure~S10).
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\linewidth]{figures/article/biopixel-reservoir-model-3-subfigures.pdf}
+    \caption{Overview of the genetic bio-pixel model and reservoir computing architecture. 
+    (a)~Schematic of a single quorum-sensing bio-pixel adapted from Danino et al.~\cite{Danino2010}: LuxI synthesizes AHL, which activates transcription via delayed positive feedback, while AiiA degrades AHL to form a negative feedback loop. 
+    External inputs perturb the effective extracellular drive term $(H_e + x_t)$ entering the diffusion flux into $H_i$. 
+    (b)~Intracellular LuxI concentration of a single bio-pixel driven by a representative ECG input at four input scaling levels (baseline with no input, $10^{-3}$, $5 \times 10^{-3}$, and $10^{-2}$). The dashed region indicates the warmup interval before input onset. At $10^{-3}$, the input begins to modulate oscillation amplitude and phase; at $10^{-2}$, the input strongly reshapes the transient dynamics.
+    (c)~Reservoir architecture: spatially distributed bio-pixels communicate through distance-dependent AHL coupling via local extracellular AHL pools.
+    One ECG sample value is injected per integration timestep, and the resulting time-averaged $LuxI + H_e$ state vector across all nodes is passed to a readout classifier for fitting with the true label.}
+    \label{fig:biopixel-reservoir-oscillations}
+\end{figure}
+
+\subsection{Numerical Integration}
+The simulation operates on two nested timescales.
+Each of the 187 sample points in an ECG segment defines one \textit{external timestep}; the reservoir advances by one discrete step per ECG sample, so the reservoir and input timescales are aligned.
+Within each external timestep, a fourth-order Runge--Kutta (RK4) solver~\cite{Butcher2016} performs 64 internal \textit{substeps} to resolve the oscillator dynamics at higher temporal resolution.
+The DDE delay $\tau = 10$ is defined in units of external timesteps.
+
+Delayed terms were stored in a rotating history buffer.
+Within each substep, the delayed value $H_i(t-\tau)$ was evaluated once by linear interpolation of the history buffer and held constant across all four RK4 stages (frozen-delay formulation), making the overall scheme globally first-order accurate, $\mathcal{O}(h^1)$. 
+The RK4 update reduces local truncation error in the non-delayed terms.
+Convergence was verified against a scalar DDE with closed-form solution (Figure~S1, fitted slopes 1.00--1.01) and on the biological model by refinement from 24 to 96 substeps (relative error below $10^{-4}$ at 64 substeps).
+The number of substeps (64) was selected during Phase~1 optimization as a balance between numerical accuracy and computational cost.
+
+Initial conditions were sampled from log-normal distributions representing low basal expression (Table~S1).
+Because the Danino oscillator possesses a globally attracting limit cycle, a zero-input warmup of 50 external timesteps sufficed to eliminate transient dependence on initial conditions. 
+The post-warmup state was stored and deterministically restored before each ECG instance, so all instances began from identical reservoir conditions.
+
+\subsection{Readout and State Aggregation}
+Two aggregation mechanisms were employed.
+First, \textit{RK4 state aggregation}: within each external timestep, the states from the final $K_{\mathrm{RK4}}$ substeps were averaged to reduce high-frequency numerical fluctuations.
+Second, \textit{readout state aggregation}: for each input segment, the readout received either the first or last $K_{\mathrm{readout}}$ external timesteps, or the full signal mean.
+Phase~2 optimization selected the full signal mean, yielding a single time-averaged state vector per segment.
+
+Two of the four node state variables, intracellular LuxI ($I$) and extracellular AHL ($H_e$), were selected as observed outputs, giving a $2N$-dimensional feature vector.
+The aggregated state vector was supplied to a trainable readout layer; only readout weights were trained, and all reservoir parameters remained fixed after initialization.
+The readout classifier was selected via hyperparameter optimization (Section~\ref{sec:optimization}, Table~\ref{tab:readout-comparison}).
+
+\subsection{Reservoir Architecture and Topology}
+The reservoir consists of $N$ genetically inspired nonlinear oscillator units arranged in a two-dimensional spatial domain. 
+Each node is assigned coordinates uniformly sampled in the unit square $[0,1]^2$, representing spatially distributed microbial populations. 
+Recurrent connectivity is defined through a distance-dependent interaction kernel:
+
+\begin{equation}
+W_{ij} = \exp\!\left(-\left(\frac{D_{ij}}{\ell}\right)^2\right),
+\end{equation}
+
+where $D_{ij}$ denotes the Euclidean distance between nodes $i$ and $j$, and $\ell$ is a characteristic interaction length scale.
+
+To provide a biologically interpretable parameterization, the interaction range was specified in units of mean nearest-neighbor distance (``cell diameters''). 
+Given an interaction range $R$ and a fade level $\alpha_f$ (the residual kernel weight at distance $R$), the corresponding length scale was computed as:
+
+\begin{equation}
+\ell = \frac{R}{\sqrt{-\ln \alpha_f}}.
+\end{equation}
+
+We used $R \approx 8.2$, chosen as a biologically motivated local length scale rather than as a direct measurement of AHL diffusion. 
+This value matches the order of the $r_0 = 8.23 \pm 1.69$ cell radial length scale reported for dense bacterial colonies by Y\'a\~nez et al.~\cite{Yanez2020}.
+The fade level $\alpha_f$ was optimized in Phase~2 (best value $\approx 2.8 \times 10^{-5}$, corresponding to sharp spatial decay), though performance was insensitive to this parameter across several orders of magnitude (Figure~S4).
+
+Connections beyond radius $R$ were optionally removed via geometric cutoff, enforcing locality consistent with diffusive quorum sensing interactions. 
+Recurrent weight signs were determined by a Bernoulli random variable with excitatory probability $p_{\mathrm{excite}}$; each non-zero weight was multiplied by $+1$ (excitatory) or $-1$ (inhibitory) accordingly. 
+Phase~2 optimization converged to $p_{\mathrm{excite}} \approx 0.84$, yielding a predominantly excitatory but partially inhibitory coupling matrix; signed connectivity was used for all reported experiments.
+However, Phase~1 showed negligible performance difference between purely excitatory ($p_{\mathrm{excite}} = 1$) and mixed-sign coupling (Figure~S4), suggesting a simpler single-strain architecture may suffice for initial experimental builds (see Section~\ref{sec:challenges}).
+Following construction, the recurrent matrix was normalized to unit spectral radius ($\rho(W) = 1$).
+
+During simulation, the recurrent matrix was scaled by a gain parameter $\alpha_r$; for the values used here ($\alpha_r \sim 10^{-2}$), the reservoir operates well below the classical echo-state regime~\cite{Jaeger2001,Nakajima2020}, with nonlinear dynamics arising intrinsically from the genetic oscillator model. 
+Where specified, additional random sparsification (density parameter $s$) was applied.
+Input weights were drawn from a Bernoulli distribution over $\{-1, +1\}$ with partial connectivity ($\approx 0.53$), such that approximately half the reservoir nodes received direct input at each timestep.
+Additive Gaussian process noise was injected at the input ($\sigma_{\mathrm{in}} \approx 0.014$) and recurrent ($\sigma_{\mathrm{rc}} \approx 0.24$) stages to improve generalization.
+
+The total drive applied to node $i$ at time $t$ combines the scaled input and recurrent feedback:
+
+\begin{equation}
+x_i(t) = c \, \lambda \!\left[\alpha_u \, w^{\mathrm{in}}_i \, u(t) \;+\; \alpha_r \sum_j W_{ij} \, r_j(t{-}1)\right]
+\end{equation}
+
+where $u(t)$ is the raw ECG input at timestep $t$, $\alpha_u$ is the input scaling, $\alpha_r$ is the recurrent gain, $r_j(t{-}1)$ is the previous observed output of node $j$, $\lambda$ is a DDE scaling coefficient, and $c$ is a cell coupling gain that together map the combined drive into the oscillator's linear-response regime.
+Because the observed output vector contains both $I$ and $H_e$ per node ($2N$ features total), the recurrent sum couples each oscillator to a distance-weighted combination of both variables across the network rather than to extracellular AHL alone. 
+This provides richer recurrent dynamics while the biological topology constrains the spatial coupling structure.
+
+Phase~2 optimization (Section~\ref{sec:optimization}, Table~S9) converged to $\alpha_u \approx 2.8 \times 10^{-2}$, $\alpha_r \approx 7.0 \times 10^{-3}$, $\lambda \approx 6.4 \times 10^{-4}$, $c \approx 12.8$, and sparsity $s \approx 0.58$; remaining parameter values are listed in Table~S9.
+Single-node amplitude sweep experiments (Figure~\ref{fig:biopixel-reservoir-oscillations}b) confirmed sustained oscillatory dynamics for $|x(t)| \lesssim 5 \times 10^{-3}$, all reported experiments remained within this regime.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\linewidth]{figures/article/reservoir_drive_topology_heatmap.pdf}
+    \caption{Reservoir dynamics and spatial topology. 
+    Visualization parameters differ from the headline configuration (Table~S9) for visual clarity: panels~(a,~c) use $N=1000$, $\alpha_u=10^{-1}$, $\alpha_r=10^{-3}$, whereas panels~(b,~d) use $N=250$. 
+    (a)~Mean absolute magnitude of input, recurrent, and net drive components across nodes at each timestep (log scale), with the corresponding ECG waveform below. Input-driven dynamics dominate during high-amplitude ECG phases; recurrent interactions sustain activity during quiescent intervals. 
+    (b)~Distance-dependent coupling kernel with vertical reference lines at one mean nearest-neighbor diameter and at the $R \approx 8.2$ cell diameter interaction range~\cite{Yanez2020}, depicting the decay of coupling strength.
+    (c)~Temporal evolution of intracellular LuxI across all nodes for a single ECG instance, showing progressive waveform dispersion. Each bio-pixel acquires a slightly different phase offset, but at the population level all nodes exhibit similar patterns, with peak LuxI amplitude increasing across successive oscillation periods as the input-driven perturbation accumulates. 
+    (d)~Spatial realization of the reservoir as a two-dimensional colony with signed, locally coupled edges. Each node depicts a genetic "bio-pixel" in our reservoir, and the edges depict their recurrent influence on nodes within their local environment.}
+    \label{fig:reservoir-drive-topology-heatmap}
+\end{figure}
+
+\subsection{Dataset Preprocessing}\label{sec:dataset-preprocessing}
+We used the MIT-BIH Arrhythmia Database~\cite{Moody2001} in the pre-segmented form released by Kachuee et al.~\cite{Kachuee2018}. In the CSV release used here, the working dataset contains 109,446 single-heartbeat ECG segments sampled at 125\,Hz with 187 samples per beat ($\approx$1.5\,s duration). Following the five-class heartbeat grouping used by Kachuee et al. in accordance with the AAMI EC57 standard for classifying cardiac arrhythmias~\cite{AAMI1998}, beats were labeled as Normal (N), Supraventricular ectopic (S), Ventricular ectopic (V), Fusion (F), and Unknown (Q). Class-averaged waveforms and intra-class variability are shown in Figure~\ref{fig:dataset-figure}a. 
+For the balanced five-class task, each class was subsampled to the smallest class size (Fusion, 803 samples), yielding 803 samples per class (4\,015 total). 
+This pool was evaluated using stratified five-fold cross-validation, with each fold producing approximately 642 training and 161 test samples per class. 
+For the unbalanced task, each class contributes up to a per-class cap or its available count, whichever is smaller. 
+The cap ranges from $1\times$ (803) to $5\times$ (4\,015) the minority-class size. 
+Stratified five-fold cross-validation preserves the resulting unequal class proportions in each fold (see Table~S3). 
+Labels were one-hot encoded for multi-class classification.
+
+The raw ECG segments in the Kachuee CSV files are normalized to $[0,1]$ at source~\cite{Kachuee2018}. We applied per-sequence z-score normalization on top of this, replacing the source scaling for all downstream processing (Figure~\ref{fig:dataset-figure}c). 
+Per-sequence normalization demonstrated superior classification performance over global z-score and was therefore used in all reported experiments. 
+Because normalization statistics were computed independently for each individual sequence, no information from the test set influenced training, preventing data leakage. 
+We evaluated additive Gaussian noise augmentation during the Phase~1 hyperparameter search, where it appeared mildly beneficial at $N = 250$ reservoir nodes. 
+However, a dedicated 49-point grid search at the final operating point ($N = 1000$, five-fold cross-validation) found the effect negligible: the best augmentation setting matched the non-augmented baseline at $F_1 = 0.884$ (Table~S5, Section~S2.3). 
+Noise augmentation was therefore excluded from all headline evaluations.
+In addition to five-class classification, we evaluated a binary task in which all non-normal classes were merged into a single arrhythmia category, with classes again balanced to the smaller class size.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\linewidth]{figures/article/samples_noise_scalers-subfigures.pdf}
+    \caption{ECG dataset characterization, augmentation, and preprocessing strategies. 
+    (a) Class-averaged ECG waveforms for each heartbeat category (Normal, Supraventricular, Ventricular, Fusion, and Unknown). 
+    Solid lines denote the mean waveform across samples within each class, and shaded regions indicate the 10--90\% percentile range at each timepoint, illustrating intra-class variability. 
+    (b) Example of additive Gaussian noise augmentation applied to a single ECG instance. 
+    The original waveform (training data) is perturbed by zero-mean Gaussian noise scaled to a fraction of the sequence standard deviation, generating augmented samples while preserving overall waveform morphology. 
+    (c) Comparison of normalization strategies applied to an ECG sequence. The reference signal is shown after min–max scaling to $[0,1]$. 
+    Standard global z-score normalization and per-sequence (sample-wise) z-score normalization are overlaid for comparison. 
+    Per-sequence z-score normalization was used for classification experiments because it preserves beat morphology while removing across-beat amplitude bias, which is more relevant to this task than absolute signal scale.}
+    \label{fig:dataset-figure}
+\end{figure}
+
+\subsection{Classification Methodology}
+For each ECG instance, the reservoir was driven with the 187-point input waveform as described above, and the signal-mean state vector was recorded as a fixed-dimensional feature representation.
+The reservoir state and delay history buffer were reset to identical post-warmup initial conditions before each instance to prevent leakage across samples.
+
+All headline results were evaluated using stratified five-fold cross-validation with macro F1-score as the primary metric.
+For each fold, the dataset was shuffled with a fixed random seed and split into training (80\%) and test (20\%) subsets while preserving class proportions.
+Some preliminary optimization studies (Phases~1--2; see Section~\ref{sec:optimization}) used a single fold to reduce runtime.
+
+After collecting state vectors for all training instances in a fold, a readout classifier was fitted on the corresponding labels; the reservoir weights remained fixed throughout.
+Test-set state vectors were then passed to the trained readout for prediction.
+Seven readout classifier families from scikit-learn~\cite{Pedregosa2011} were evaluated in Phase~4 (KNN, random forest, gradient boosting, ridge classifier, logistic regression, SVM, and decision tree); random forest was selected for all headline tasks.
+The same pipeline was applied to a standard leaky ESN baseline implemented in ReservoirPy, so the comparison differed only in reservoir dynamics.
+
+For each fold, performance was quantified using accuracy, precision, recall, macro F1-score, Matthews correlation coefficient (MCC)~\cite{Matthews1975}, and Cohen's $\kappa$~\cite{Cohen1960}.
+Macro F1 is the primary reporting metric: for balanced tasks it equals weighted F1, and for the unbalanced task it avoids inflating the headline by majority-class performance.
+Final metrics are reported as the mean and standard deviation across five folds.
+
+\subsection{Hyperparameter Optimization}\label{sec:optimization}
+Hyperparameter optimization was performed using Optuna~\cite{Akiba2019} via Bayesian optimization with a Tree-structured Parzen Estimator (TPE) sampler~\cite{Watanabe2023}, following a four-phase hierarchical strategy for the biological reservoir, with separate optimization studies for the ESN and no-reservoir baselines. 
+Macro F1-score served as the primary Optuna objective for all optimization studies, including all Phase~4 readout studies and the ESN comparator. 
+Studies were distributed across dedicated servers running a Linux RHEL~9 Operating System (OS), with between 12 and 64 asynchronous parallel workers per host based on the available CPU cores, sharing a single SQLite-backed Optuna database per study.
+
+\textit{Phase~1} comprised eleven independent single-factor sensitivity studies, each isolating one parameter group while all other parameters were held fixed at a shared baseline configuration. 
+To reduce computational cost during the exploratory phase, each trial was evaluated on a single stratified cross-validation fold ($4,015$ instances, 80/20 train/test split). 
+Per-trial wall time ranged from approximately 430 to 1250\,s at $N = 250$ reservoir nodes, with peak memory usage below 600\,MB per worker. 
+Trial budgets ranged from 6 grid points for the categorical scaler selection study to 288 TPE trials for the signal amplitude scaling study. 
+The parameter groups examined in Phase~1 were: (i)~dataset normalization strategy, (ii)~signal amplitude scaling coefficients, (iii)~DDE numerical integration parameters, (iv)~distance-based topology structural parameters, (v)~random Gaussian topology parameters, (vi)~inter-nodal coupling strength, (vii)~input layer connectivity and observed reservoir state variables, (viii)~readout aggregation strategy, (ix)~data augmentation noise, (x)~reservoir process noise, and (xi)~reservoir size. 
+Baseline parameter values were updated from Phase~1 best-trial results before initiating Phase~2.
+
+\textit{Phase~2} comprised two parallel joint refinement studies (P2-distance: distance-based topology; P2-random: random Gaussian topology), each searching all salient reservoir, DDE integration, topology, input, and readout parameters simultaneously over 768 and 800 TPE trials respectively on a single fold. 
+Running both topology variants under an identical trial budget and parameter search space corrected for the confounding present in Phase~1, where the shared baseline parameters had been established under a distance-topology prior. 
+The best Phase~2 configuration was selected as the final model for downstream evaluation.
+
+\textit{Phase~3} evaluated the best Phase~2 configuration (P2-distance, distance-based topology) under additional task settings using five-fold stratified cross-validation. 
+First, a dedicated noise-augmentation grid search ($7 \times 7 = 49$ points, covering noise rates $0$--$0.3$ and augmentation ratios $0$--$0.3$) confirmed that data augmentation was negligible at the final $N = 1000$ operating point ($\Delta F_1 < 0.001$); augmentation was therefore dropped from all downstream evaluations.
+Second, a five-fold cross-validated grid search over the maximum samples per class ($1\times$--$5\times$) characterized performance under increasing class imbalance. 
+Third, a binary classification variant (Normal vs.\ Arrhythmia) was assessed using the same reservoir parameters.
+
+\textit{Phase~4} optimized the readout classifier on frozen reservoir states generated by the Phase~2/3 configurations. 
+Seven classifier families (KNN, gradient boosting, random forest, ridge, logistic regression, SVM, decision tree) were evaluated with classifier-specific hyperparameters searched via TPE, using five-fold cross-validation F1-score as the objective. 
+This phase isolated the contribution of readout algorithm selection from reservoir dynamics. 
+Complete search ranges, best-trial parameter values, and per-study performance summaries are provided in the Supporting Information (Tables~S6--S15; Figures~S2--S8).
+
+In addition to these four BioReservoir phases, we ran two comparison tracks.
+First, a leaky ESN baseline (ReservoirPy) was optimized on the balanced five-class task under the same preprocessing, objective, and single-fold protocol: 240 TPE trials searched reservoir size, input scaling and connectivity, recurrent connectivity, spectral radius, leak rate, activation, bias, and noise.
+The best ESN states were passed into a separate 1008-trial frozen-state readout study, and the selected readout (ridge classifier) was evaluated in a five-fold final rerun.
+Second, we trained the same seven classifier families directly on the raw z-scored 187-dimensional ECG features (no reservoir) to establish a feature-space baseline.
+Both comparison tracks used the same CV protocol and macro F1 objective, yielding directly matched baselines.
+
+% ------------------------- End of main text -----------------------------
+
+\section*{Data Availability}
+All code used in this study is available at: https://github.com/James-02/bio-reservoir \\
+The MIT-BIH Arrhythmia Database is publicly available at: https://doi.org/10.13026/C2F305
+
+\section*{Author Information}
+
+\subsection*{Corresponding Author}
+*Gizem Buldum --- School of Computing, Newcastle University, Newcastle upon Tyne, NE1 7RU, United Kingdom. \\
+Email: gizem.buldum@newcastle.ac.uk
+
+\subsection*{Author Contributions}
+Author contributions are defined using the NISO Contributor Roles Taxonomy (CRediT). \\
+J.N.: Investigation, Methodology, Software, Validation, Formal Analysis, Data Curation, Visualization, Writing -- original draft. \\
+T.R.: Conceptualization, Supervision. \\
+G.B.: Supervision, Writing -- review \& editing.
+
+\subsection*{Notes}
+The authors declare no competing financial interest.
+
+\begin{acknowledgement}
+The authors thank Millie-Rose Hurst for her support in understanding electrocardiograms and arrhythmias.
+The authors also acknowledge the use of Anthropic's Claude Opus 4.6 AI model as an editorial aid for reviewing clarity and grammar in the manuscript.
+\end{acknowledgement}
+
+\begin{suppinfo}
+Supporting Information includes model parameters, convergence analysis, reservoir characterization, hyperparameter optimization details, dataset preprocessing, ablation studies, heterogeneity analysis, and per-class metrics.
+\end{suppinfo}
+
+\begin{tocentry}
+    \includegraphics[width=\linewidth]{figures/article/graphical-toc.pdf}
+\end{tocentry}
+
+% ---------- References ----------
+\bibliography{references}
+
+\end{document}

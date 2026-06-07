@@ -43,6 +43,7 @@ from sklearn.neighbors import KNeighborsClassifier
 
 
 from utils.preprocessing import load_ecg_data
+from utils.analysis import compute_class_dicts
 from training import classify, cross_validate
 from training.profiling import ResourceMonitor
 from optimization.base import (
@@ -59,7 +60,6 @@ from optimization.base import (
 from optimization.environment import get_environment
 from optimization.reservoirs import build_reservoir
 from optimization.studies import BASELINE, get_study, list_studies
-from utils.analysis import compute_class_dicts
 
 logger = logging.getLogger(__name__)
 
@@ -394,7 +394,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     trial.set_user_attr("metric_n_folds",   len(_folds_data))
 
     # Per-fold breakdown (scalars + MCC/kappa)
-    for fold_dict in metrics.get("folds", []):
+    for fold_dict in _folds_data:
         fi = fold_dict.get("fold_index", 0)
         trial.set_user_attr(f"fold_{fi}_f1",        fold_dict.get("f1",        float("nan")))
         trial.set_user_attr(f"fold_{fi}_f1_macro",  fold_dict.get("f1_macro",  float("nan")))
@@ -413,7 +413,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     # Per-class metrics: mean AND std across folds
     _CLASS_KEY_MAP = {"f1-score": "f1", "precision": "precision",
                       "recall": "recall", "support": "support"}
-    fold_class_dicts = [fd.get("class_metrics", {}) for fd in metrics.get("folds", [])]
+    fold_class_dicts = [fd.get("class_metrics", {}) for fd in _folds_data]
     if fold_class_dicts:
         _class_stats = compute_class_dicts(fold_class_dicts)
         for cls_key, cls_vals in _class_stats.items():
@@ -592,7 +592,26 @@ def cmd_rerun_best(args: argparse.Namespace) -> None:
         preserve_split=preserve_split,
     )
     reservoir, _reservoir_attrs = build_reservoir(params, seed=seed)
-    readout = ScikitLearnNode(KNeighborsClassifier, model_hypers=_KNN_HYPERS)
+
+    readout_study_name = getattr(args, "readout_study", None)
+    if readout_study_name:
+        from optimization.readout import choose_classifier
+        ro_storage = get_default_storage(readout_study_name)
+        ro_study = optuna.load_study(study_name=readout_study_name, storage=ro_storage)
+        readout_trial_number = getattr(args, "readout_trial", None)
+        if readout_trial_number is not None:
+            ro_best = ro_study.trials[readout_trial_number]
+        else:
+            ro_best = ro_study.best_trial
+        clf_name = ro_best.params["classifier"]
+        clf_class, clf_hypers = choose_classifier(ro_best, clf_name, seed=seed)
+        logger.info(
+            "Using readout from study '%s' trial %d: %s %s",
+            readout_study_name, ro_best.number, clf_name, clf_hypers,
+        )
+        readout = ScikitLearnNode(clf_class, model_hypers=clf_hypers)
+    else:
+        readout = ScikitLearnNode(KNeighborsClassifier, model_hypers=_KNN_HYPERS)
 
     _ra = str(params.get("readout_aggregation", "final"))
     _rw = int(params.get("readout_window", 1)) if _ra == "last_N" else 1

@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# ---------------------------------------------------------------------------
+# Project metadata
+# ---------------------------------------------------------------------------
+[project]
+name = "bioreservoir"
+version = "0.1.0"
+description = "Genetic oscillator reservoir computer for ECG arrhythmia classification"
+readme = "README.md"
+requires-python = ">=3.9"
+
+# Research-paper environment pins.
+#
+# This repository is used as a reproducible research codebase rather than as a
+# broadly reusable library, so we pin the exact dependency versions used for the
+# reported experiments directly in project metadata. This allows
+# `pip install -e ".[dev]"` to reproduce the intended environment without a
+# separate resolver path.
+dependencies = [
+    "matplotlib==3.8.3",
+    "numpy==1.26.4",
+    "pandas==2.2.3",
+    "reservoirpy==0.3.11",
+    "scikit-learn==1.5.0",
+    "scipy==1.13.0",
+    "seaborn==0.13.2",
+    "pillow==10.3.0",
+    "pyarrow==15.0.0",
+    "optuna==3.6.1",
+    "numba==0.60.0",
+    "joblib==1.4.2",
+    "psutil==5.8.0",
+    "wfdb==4.3.0",
+    "kagglehub==0.3.13",
+]
+
+[project.optional-dependencies]
+# pip install -e ".[dev]"
+dev = [
+    "pytest==8.0.2",
+    "pytest-cov==7.0.0",
+]
+
+# ---------------------------------------------------------------------------
+# Package discovery — only install the library packages, not scripts/tests
+# ---------------------------------------------------------------------------
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bioreservoir*", "training*", "utils*", "optimization*"]
+exclude = ["tests*", "scripts*"]
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts   = "-p no:typeguard -v"
+filterwarnings = ["ignore::UserWarning"]
+
+# ---------------------------------------------------------------------------
+# Coverage
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["bioreservoir", "training", "utils", "optimization"]
+omit   = ["tests/*", "scripts/*"]
