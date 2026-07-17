@@ -32,13 +32,12 @@
 
 \begin{abstract}
 Reservoir computing offers a compelling framework for biological computation, as complex temporal processing can be achieved without training internal network dynamics.
-Here, we evaluate in silico a biologically grounded reservoir computing architecture composed of coupled quorum-sensing genetic oscillators, which serve as natural encoders of temporal information. 
-Each reservoir node simulates a two-gene LuxI/AiiA circuit with a delayed activator--inhibitor feedback architecture mediated by intracellular and extracellular acyl-homoserine lactone (AHL), producing rich oscillatory dynamics. 
+Here, we explore the potential of coupled quorum-sensing genetic oscillators as computational substrates for reservoir computing. Each reservoir node simulates a two-gene LuxI/AiiA circuit with a delayed activator--inhibitor feedback architecture mediated by intracellular and extracellular acyl-homoserine lactone (AHL), producing rich oscillatory dynamics. 
 Spatial coupling between nodes is implemented using a distance-based interaction kernel, motivated by experimentally observed quorum-sensing ranges. 
 We evaluate the computational capability of this system on a rich temporal benchmark: multi-class classification of single-lead electrocardiogram (ECG) signals.
 Our reservoir achieves a macro F1-score of $0.892 \pm 0.013$ on balanced five-class arrhythmia classification using five-fold cross-validation with a 4015-sample subset, increasing to $0.911 \pm 0.004$ with more natural class imbalance, and $0.961 \pm 0.002$ for binary arrhythmia detection. 
 This approach reduces the computational and metabolic cost of learning relative to fully trained networks as the reservoir dynamics remain fixed and only the readout is trained, making it attractive for future biological implementations where training internal circuit parameters is impractical.
-Our results establish quorum-sensing oscillator networks as a viable substrate for reservoir computing, and our systematic optimization approach enables the exploration of genetic circuit designs in silico before committing to costly wet-lab builds.
+This reusable framework enables the design and evaluation of genetic oscillator-based architectures in silico before committing to costly wet-lab builds. Our work extends the application of synthetic bacterial gene networks beyond sensing and regulation, and demonstrates how concepts from synthetic biology and biocomputing can be combined to create new methods of biological information processing.
 \end{abstract}
 
 % ---------- Main Content ----------
@@ -381,6 +380,10 @@ Input connectivity of $\approx 0.53$ could be achieved by selectively routing in
 Prior demonstrations of multicellular NOR-gate circuits and layered intracellular logic indicate that at least some downstream decision logic could, in principle, also be implemented genetically rather than digitally~\cite{Tamsir2011,Moon2012}.
 In that sense, the present study offers experimentally useful design constraints on reservoir size, coupling locality, and observable state variables, while also contributing a practical tool for a field in which reservoir computing and engineered biological dynamics are drawing increasing attention as complementary routes to adaptive, low-power information processing.
 
+\section{Conclusion}
+
+Since the inception of engineered genetic circuits, researchers have explored the predictive capabilities in cellular processes. Oscillators generate time-varying patterns that can serve as natural encoders of temporal information; however, this remains largely unexplored. By framing coupled genetic oscillators as a reservoir, our work presents an innovative application of cellular reprogramming. The results provide a foundation for future research into engineered biosystems that can sense and classify complex signals, which could one day serve as small and low-power biological computers.
+
 \section{Methods}
 
 \subsection{Simulating Gene Expression in Quorum-Coupled Bio-Pixels}
@@ -637,7 +640,7 @@ Supporting Information includes model parameters, convergence analysis, reservoi
 \end{suppinfo}
 
 \begin{tocentry}
-    \includegraphics[width=\linewidth]{figures/article/graphical-toc.pdf}
+    \includegraphics[width=\linewidth]{figures/article/TOC.png}
 \end{tocentry}
 
 % ---------- References ----------
