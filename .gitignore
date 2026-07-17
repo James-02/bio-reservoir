@@ -7,6 +7,7 @@ results/
 reservoirpy/
 logs/
 data/*
+report/
 .vscode/
 rest_raw.json
 
@@ -21,3 +22,5 @@ future/
 
 # local-only infrastructure wrappers (not for publication)
 scripts/deploy*.sh
+optimization/deploy.py
+optimization/collect.py
