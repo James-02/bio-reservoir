@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v4
@@ -39,8 +39,6 @@ jobs:
   integration-tests:
     name: Integration tests
     runs-on: ubuntu-latest
-    # Only run integration tests on pushes to main / PRs targeting main.
-    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
 
     steps:
       - uses: actions/checkout@v4
