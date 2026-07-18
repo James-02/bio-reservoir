@@ -1,0 +1,32 @@
+# Codecov configuration
+# Docs: https://docs.codecov.com/docs/codecov-yaml
+# Recipes: https://docs.codecov.com/docs/common-recipe-list
+
+coverage:
+  # Round to whole percentages and treat coverage between 60–100% as "good".
+  precision: 2
+  round: down
+  range: "60...100"
+
+  status:
+    # Project coverage check on a pull request (whole-repo coverage).
+    project:
+      default:
+        target: auto        # compare against the PR base commit
+        threshold: 1%        # tolerate a <=1% drop without complaining
+        # Report-only for now (never fails the PR check) because the frozen
+        # research code is still largely untested. Set to `false` (or remove)
+        # to make the project check blocking once coverage is built up.
+        informational: true
+    # Patch coverage check: coverage of the lines changed in the PR.
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+        informational: true
+
+# Show project + patch coverage changes on the pull-request comment.
+comment:
+  layout: "reach, diff, flags, components, files"
+  behavior: default
+  require_changes: false     # always post the comment, even with no change
