@@ -6,7 +6,7 @@ A reservoir computing framework built on coupled genetic oscillators for ECG arr
 
 ## Project Overview
 
-![Graphical TOC](static/graphical-toc.png)
+![Graphical TOC](.github/static/graphical-toc.png)
 
 High-level overview of the biological reservoir computing pipeline: ECG sequences perturb quorum-sensing genetic oscillators, the coupled reservoir transforms those inputs into a high-dimensional dynamical state, and a lightweight readout performs the final classification.
 
@@ -70,47 +70,47 @@ results = cross_validate(reservoir, readout, X, Y, folds=5)
 ## Visualisation
 
 ### Biopixel Reservoir Model
-![Biopixel Reservoir Model](static/biopixel-reservoir-model-3-subfigures.png)
+![Biopixel Reservoir Model](.github/static/biopixel-reservoir-model-3-subfigures.png)
 
 **(a)** Schematic of a quorum-sensing genetic oscillator (biopixel) comprising luxI, aiiA, intracellular AHL (Hi), and extracellular AHL (He). **(b)** Effective input scales showing how external ECG drive and recurrent coupling modulate gene expression dynamics. **(c)** Reservoir computing architecture: ECG time-series inputs are fed through a network of coupled oscillator nodes, and the final luxI concentrations are read out for classification.
 
 ### Reservoir Dynamics and Topology
-![Reservoir Drive and Topology](static/reservoir_drive_topology_heatmap.png)
+![Reservoir Drive and Topology](.github/static/reservoir_drive_topology_heatmap.png)
 
 Characterisation of reservoir dynamics and spatial topology. Panels show the relative magnitude of input and recurrent drive contributions, reservoir state heatmaps over time, distance-based spatial weight kernels, and topology connectivity structure.
 
 ### ECG Dataset and Preprocessing
-![ECG Dataset Characterisation](static/samples_noise_scalers-subfigures.png)
+![ECG Dataset Characterisation](.github/static/samples_noise_scalers-subfigures.png)
 
 **(a)** Class-averaged ECG waveforms for each heartbeat category with 10–90% percentile bands showing intra-class variability. **(b)** Additive Gaussian noise augmentation applied to a single ECG instance. **(c)** Effect of different preprocessing scalers on the input waveform shape.
 
 ### Raw MIT-BIH ECG Segment
-![Raw ECG Segment](static/ecg-10s-segment.png)
+![Raw ECG Segment](.github/static/ecg-10s-segment.png)
 
 Example raw ECG segment from the source MIT-BIH record exploration workflow, showing the morphology and annotation context before conversion into single-beat classification instances.
 
 ### DDE Solver Validation
-![Solver Validation](static/solver_validation.png)
+![Solver Validation](.github/static/solver_validation.png)
 
 Convergence analysis of the RK4 DDE solver, validating numerical accuracy across step sizes.
 
 ### Classification Results (Balanced 5-Class)
-![Balanced Categorical Confusion Matrix](static/balanced-categorical-confusion-matrix.png)
+![Balanced Categorical Confusion Matrix](.github/static/balanced-categorical-confusion-matrix.png)
 
 Aggregated confusion matrix across five folds for the balanced five-class arrhythmia task (N=1000, KNN k=4, distance-weighted). Off-diagonal values indicate common misclassification patterns.
 
 ### Classification Results (Binary)
-![Binary Confusion Matrix](static/binary-confusion-matrix.png)
+![Binary Confusion Matrix](.github/static/binary-confusion-matrix.png)
 
 Aggregated confusion matrix across five folds for the binary Normal vs Arrhythmia task (N=1000, Random Forest).
 
 ### Hyperparameter Optimisation
-![Optimisation Slice Plot](static/r1a-refined-slice.png)
+![Optimisation Slice Plot](.github/static/r1a-refined-slice.png)
 
 Updated Optuna slice plot generated from the training study evaluation command for the Phase 2 joint optimisation (r1a-refined, distance-based topology). Each panel shows per-trial macro F1-score as a function of one hyperparameter.
 
 ### Readout Optimisation
-![Readout Slice Plot](static/ro1-readout-slice.png)
+![Readout Slice Plot](.github/static/ro1-readout-slice.png)
 
 Optuna slice plot generated from the balanced readout optimisation study (ro1-readout), showing how classifier-specific hyperparameters affect macro F1 across the frozen-state readout search.
 
