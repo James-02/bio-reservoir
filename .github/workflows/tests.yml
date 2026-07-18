@@ -12,6 +12,27 @@ on:
       - main
 
 jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    # TODO: Remove `continue-on-error` (make blocking) after we fix existing issues
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: ruff check
+        run: ruff check --output-format=github .
+
+      - name: ruff format (check only)
+        run: ruff format --check .
+
   unit-tests:
     name: Unit tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -34,8 +55,27 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run unit tests
-        run: pytest tests/unit/ -v --tb=short
+      # pytest-github-actions-annotate-failures will annotate failing assertions inline
+      - name: Run unit tests with coverage
+        # TODO: set NUMBA_DISABLE_JIT=1 locally for fuller coverage of the numba-compiled DDE core (omitted for faster CI).
+        run: >
+          pytest tests/unit/ -v --tb=short
+          --cov --cov-report=xml --cov-report=html --cov-report=term-missing
+
+      - name: Upload coverage HTML report
+        if: matrix.python-version == '3.11'  # chose a version from matrix
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: htmlcov/
+          if-no-files-found: warn
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.11'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
 
   integration-tests:
     name: Integration tests
