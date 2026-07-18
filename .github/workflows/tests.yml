@@ -2,9 +2,14 @@ name: Tests
 
 on:
   push:
-    branches: ["**"]
+    branches:
+      - main
+    tags:
+      - "v*"
+
   pull_request:
-    branches: ["**"]
+    branches:
+      - main
 
 jobs:
   unit-tests:
