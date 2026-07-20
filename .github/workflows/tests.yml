@@ -2,24 +2,57 @@ name: Tests
 
 on:
   push:
-    branches: ["**"]
+    branches:
+      - main
+    tags:
+      - "v*"
+
   pull_request:
-    branches: ["**"]
+    branches:
+      - main
+
+# Least-privilege GITHUB_TOKEN for all jobs. This workflow only reads the repo
+# (checkout); Codecov uploads use CODECOV_TOKEN, not GITHUB_TOKEN.
+permissions:
+  contents: read
 
 jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+        # TODO: Remove `continue-on-error` (make blocking) after we fix existing issues
+      - name: ruff check
+        continue-on-error: true
+        run: ruff check --output-format=github .
+
+      - name: ruff format (check only)
+        continue-on-error: true
+        run: ruff format --check .
+
   unit-tests:
     name: Unit tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        # TODO: Extend once the dependency pins are relaxed / updated to support 3.13-3.14
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -28,20 +61,49 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run unit tests
-        run: pytest tests/unit/ -v --tb=short
+      # pytest-github-actions-annotate-failures will annotate failing assertions inline
+      - name: Run unit tests with coverage
+        # TODO: set NUMBA_DISABLE_JIT=1 locally for fuller coverage of the numba-compiled DDE core (omitted for faster CI).
+        run: >
+          pytest tests/unit/ -v --tb=short
+          --cov --cov-report=xml --cov-report=html --cov-report=term-missing
+          --junitxml=junit.xml -o junit_family=legacy
+
+      - name: Upload coverage HTML report
+        if: matrix.python-version == '3.11'  # chose a version from matrix
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-html
+          path: htmlcov/
+          if-no-files-found: warn
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.11'
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.xml
+          fail_ci_if_error: false
+
+      # Test Analytics: upload JUnit results (failure/flaky-test reporting).
+      # Runs even when tests fail so failures are reported to Codecov.
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          report_type: test_results
+          files: junit.xml
 
   integration-tests:
     name: Integration tests
     runs-on: ubuntu-latest
-    # Only run integration tests on pushes to main / PRs targeting main.
-    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python 3.9
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.9"
 
@@ -51,4 +113,12 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run integration tests
-        run: pytest tests/integration/ -v --tb=short
+        run: pytest tests/integration/ -v --tb=short --junitxml=junit.xml -o junit_family=legacy
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          report_type: test_results
+          files: junit.xml

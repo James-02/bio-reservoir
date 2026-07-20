@@ -42,6 +42,8 @@ dependencies = [
 dev = [
     "pytest==8.0.2",
     "pytest-cov==7.0.0",
+    "ruff>=0.6",
+    "pytest-github-actions-annotate-failures>=0.2",
 ]
 
 # ---------------------------------------------------------------------------
@@ -66,3 +68,14 @@ filterwarnings = ["ignore::UserWarning"]
 [tool.coverage.run]
 source = ["bioreservoir", "training", "utils", "optimization"]
 omit   = ["tests/*", "scripts/*"]
+
+# ---------------------------------------------------------------------------
+# Ruff (lint + format)
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length    = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+# Start lenient (errors, pyflakes, import-sort, pyupgrade, bugbear); tighten later.
+select = ["E", "F", "I", "UP", "B"]
