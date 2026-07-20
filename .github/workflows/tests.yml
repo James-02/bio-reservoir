@@ -11,6 +11,11 @@ on:
     branches:
       - main
 
+# Least-privilege GITHUB_TOKEN for all jobs. This workflow only reads the repo
+# (checkout); Codecov uploads use CODECOV_TOKEN, not GITHUB_TOKEN.
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint (ruff)
