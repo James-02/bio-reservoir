@@ -11,6 +11,12 @@ report/
 .vscode/
 rest_raw.json
 
+# coverage / test-result artefacts (generated in CI)
+.coverage
+coverage.xml
+htmlcov/
+junit.xml
+
 # latex intermediate files
 **.blg
 **.bbl
@@ -19,6 +25,10 @@ rest_raw.json
 **acs-supplementary.bib
 refs/
 future/
+
+# local environment configuration (copied from config.env.example)
+config.env
+.env
 
 # local-only infrastructure wrappers (not for publication)
 scripts/deploy*.sh
