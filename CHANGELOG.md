@@ -26,6 +26,9 @@ Each entry is marked **[science]** if it changes a reported number, or
   CPU, memory, OS and Python in `results/metrics/hosts.json`.
 - [engineering] `uv.lock` locks every dependency for Python 3.9-3.12 (`uv sync`);
   `requires-python` is now `>=3.9,<3.13`, matching the supported versions.
+- [engineering] Golden-master test (N = 20, synthetic beats) and a statistical sentinel
+  (N = 200, 600 real beats, 2 folds) pin the `v0.1` model; both references were generated
+  with the `v0.1` code (`tests/golden_master.py`).
 
 ### Fixed
 
