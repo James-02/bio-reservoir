@@ -25,7 +25,9 @@ Each entry is marked **[science]** if it changes a reported number, or
   `config.env`; hosts are referred to by label, and `--inventory` records each host's
   CPU, memory, OS and Python in `results/metrics/hosts.json`.
 - [engineering] `uv.lock` locks every dependency for Python 3.9-3.12 (`uv sync`);
-  `requires-python` is now `>=3.9,<3.13`, matching the supported versions.
+  `requires-python` is now `>=3.9,<3.13`, matching the supported versions. CI installs
+  from the lock, runs the integration tests on the real dataset (Kaggle secrets), and
+  requires 80% coverage of changed lines.
 - [engineering] Regression tests against the `v0.1` code: the model regression test
   (N = 20, synthetic beats; reservoir states and features) and the pipeline regression
   test (N = 200, 600 real beats, 2 folds; macro-F1 within 0.02). Both references were
