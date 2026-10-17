@@ -34,7 +34,7 @@ def ensure_kaggle_heartbeat_files(
     wanted = [str(name) for name in filenames]
     candidate_roots = [Path(data_dir)]
 
-    env_root = os.getenv("KAGGLE_HEARTBEAT_DIR")
+    env_root = config.get("KAGGLE_HEARTBEAT_DIR")
     if env_root:
         candidate_roots.append(Path(env_root))
 
