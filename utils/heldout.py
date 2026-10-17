@@ -34,15 +34,21 @@ PILOT_SHA1 = {1: "14b37f4db9e4a2ae262f9b869ca696e7ad19c397",
               2: "c2a6e3bb52c3e8916618c87cf83f83e875294e77"}
 STATUS = {1: "consulted during the revision pilots", 2: "consulted during the revision pilots",
           3: "sealed: confirmatory, not evaluated"}
-DATASET = Path("data") / "ecg" / "ecg_data.npz"
 DRAWS_FILE = config.PROJECT_ROOT / "experiments" / "heldout" / "draws.json"
 
 
-def sha256_file(path: Path) -> str:
+def dataset_path() -> Path:
+    return config.data_dir() / "ecg" / "ecg_data.npz"
+
+
+def content_sha256(path: Path) -> str:
+    """SHA-256 of the X and Y arrays (unlike the file's, unchanged when the cache is rebuilt)."""
     digest = hashlib.sha256()
-    with open(path, "rb") as f:
-        for block in iter(lambda: f.read(1 << 20), b""):
-            digest.update(block)
+    with np.load(path, allow_pickle=True) as data:
+        for key in ("X", "Y"):
+            array = np.ascontiguousarray(data[key])
+            digest.update(str((array.dtype.str, array.shape)).encode())
+            digest.update(array.tobytes())
     return digest.hexdigest()
 
 
@@ -92,8 +98,8 @@ def describe(draws: dict[int, np.ndarray], y: np.ndarray, matched: int, dataset:
     record = {
         "description": "Held-out beats unused by every v0.1 optimisation phase "
                        "(utils/heldout.py)",
-        "dataset": {"path": dataset.as_posix(),
-                    "sha256": sha256_file(config.PROJECT_ROOT / dataset), "beats": int(len(y))},
+        "dataset": {"path": "data/ecg/ecg_data.npz", "content_sha256": content_sha256(dataset),
+                    "beats": int(len(y))},
         "pool": {"instances": POOL_INSTANCES, "seed": SEED, "matched_beats": matched},
         "classes": {str(c): name for c, name in CLASSES.items()},
         "draws": {},
@@ -144,7 +150,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     mode.add_argument("--check", action="store_true", help="Rebuild and verify the draws.")
     args = parser.parse_args(argv)
 
-    draws, y, matched = build_draws(config.PROJECT_ROOT / DATASET)
+    draws, y, matched = build_draws(dataset_path())
     recorded = json.loads(DRAWS_FILE.read_text()) if DRAWS_FILE.is_file() else {}
     if args.write:
         if recorded:
@@ -153,14 +159,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         if problems:
             raise SystemExit("\n".join(problems))
         DRAWS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        DRAWS_FILE.write_text(dumps(describe(draws, y, matched, DATASET)))
+        DRAWS_FILE.write_text(dumps(describe(draws, y, matched, dataset_path())))
         print(f"wrote {DRAWS_FILE}")
     else:
         if not recorded:
             raise SystemExit(f"{DRAWS_FILE} not found")
         problems = check(recorded, draws)
-        if sha256_file(config.PROJECT_ROOT / DATASET) != recorded["dataset"]["sha256"]:
-            problems.append(f"{DATASET} differs from the recorded checksum")
+        if content_sha256(dataset_path()) != recorded["dataset"]["content_sha256"]:
+            problems.append(f"{dataset_path()} differs from the recorded dataset")
         if problems:
             raise SystemExit("\n".join(problems))
         print("held-out draws verified")

@@ -137,7 +137,7 @@ ruff format .                        # format
 
 - **Never tune on held-out beats.** The draws in `experiments/heldout/draws.json` are
   never used for selection; draw 3 is evaluated once, for the confirmatory test.
-  Never rewrite that file.
+  Never change the beat IDs in that file.
 - **Never modify `archive/`.** It holds the frozen artefacts of a manuscript
   version (the `v0.1` code is archived on Zenodo, DOI 10.5281/zenodo.23436888).
   Write new results to `results/` and logs to `logs/`. Do not change pinned runtime
