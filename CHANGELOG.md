@@ -33,6 +33,8 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Fixed
 
+- [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or
+  downloading) the source CSV files first; the CSVs are only needed to build the cache.
 - [engineering] Trial metadata no longer records the host name, IP address, working
   directory, or script, output and interpreter paths, and the platform string keeps only
   the OS, numeric kernel release and architecture. Trials now record the full git SHA, a

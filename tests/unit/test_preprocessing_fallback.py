@@ -29,6 +29,7 @@ import pandas as pd
 import pytest
 from pathlib import Path
 
+from utils import preprocessing
 from utils.preprocessing import load_ecg_data, ensure_kaggle_heartbeat_files
 
 
@@ -186,6 +187,20 @@ class TestNoNpzFallback:
         # The loaded raw data is identical; shapes must match.
         assert np.asarray(X_train1).shape == np.asarray(X_train2).shape
         assert np.asarray(X_test1).shape == np.asarray(X_test2).shape
+
+    def test_cache_does_not_need_the_csvs(self, tmp_path, monkeypatch):
+        """With the NPZ cache present, the CSVs are neither looked up nor downloaded."""
+        data_dir = _setup_csv_data_dir(tmp_path)
+        _call_load_ecg(data_dir=str(data_dir))
+        (data_dir / "mitbih_train.csv").unlink()
+        (data_dir / "mitbih_test.csv").unlink()
+
+        def _no_lookup(*args, **kwargs):
+            raise AssertionError("looked up the CSV files although the cache exists")
+
+        monkeypatch.setattr(preprocessing, "ensure_kaggle_heartbeat_files", _no_lookup)
+        X_train, _, X_test, _ = _call_load_ecg(data_dir=str(data_dir))
+        assert np.asarray(X_train).shape[0] > 0 and np.asarray(X_test).shape[0] > 0
 
     def test_full_dataset_size_reflects_both_csvs(self, tmp_path):
         """The merged dataset should contain samples from both train and test CSVs."""

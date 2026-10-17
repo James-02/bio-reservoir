@@ -160,12 +160,16 @@ def load_ecg_data(
         Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: Tuple containing X_train, Y_train, X_test, Y_test.
     """
     ecg_dir = Path(data_dir) if data_dir else config.data_dir() / "ecg"
-    train_file_path, test_file_path = ensure_kaggle_heartbeat_files(
-        [train_file, test_file],
-        data_dir=str(ecg_dir),
-    )
     save_file_path = str(ecg_dir / save_file)
     save_file_path_binary = str(ecg_dir / binary_save_file)
+    cache_path = save_file_path_binary if binary else save_file_path
+    if preserve_split or not os.path.exists(cache_path):
+        train_file_path, test_file_path = ensure_kaggle_heartbeat_files(
+            [train_file, test_file],
+            data_dir=str(ecg_dir),
+        )
+    else:
+        train_file_path = test_file_path = None
 
     logger.info("Loading ECG dataset")
 
@@ -607,6 +611,10 @@ def _load_raw_ecg_dataset(binary: bool, train_file_path: str, test_file_path: st
         else:
             return data["X"], data["Y"]
 
+    if train_file_path is None or test_file_path is None:
+        raise FileNotFoundError(
+            f"Could not read the cache {file_path}; delete it to rebuild it from the CSV files."
+        )
     logger.debug(f"Preprocessing datasets from: {train_file_path} and {test_file_path}")
     train_df = pd.read_csv(train_file_path, header=None)
     test_df = pd.read_csv(test_file_path, header=None)
