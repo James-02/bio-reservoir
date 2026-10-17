@@ -7,6 +7,7 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 import logging
 
+from utils import config
 from utils.analysis import count_labels
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,10 @@ def ensure_kaggle_heartbeat_files(
             f"Could not find {missing} under '{data_dir}' and kagglehub is not installed."
         ) from exc
 
+    for key in ("KAGGLE_USERNAME", "KAGGLE_KEY"):
+        value = config.get(key)
+        if value:
+            os.environ.setdefault(key, value)
     cache_root = Path(kagglehub.dataset_download(dataset_handle))
     resolved = [cache_root / name for name in wanted]
     if not all(path.exists() for path in resolved):
