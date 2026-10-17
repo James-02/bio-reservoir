@@ -38,7 +38,6 @@ from __future__ import annotations
 import argparse
 import datetime
 import logging
-import os
 import time as _time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -470,7 +469,6 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
 def cmd_research(args: argparse.Namespace) -> None:
     """Run the no-reservoir baseline Optuna study."""
     study_name = args.study_name or getattr(args, "study", None)
-    os.makedirs("logs", exist_ok=True)
     storage = args.storage or get_default_storage(study_name)
     study = build_study(study_name=study_name, storage=storage, seed=int(args.seed))
 

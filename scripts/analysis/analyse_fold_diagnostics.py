@@ -12,10 +12,10 @@ It expects fold artifacts saved as NPZ files containing at least:
 Optionally, if present, it will also use:
 - `test_states`: reservoir state representation per sample
 
-Outputs are saved under `results/diagnostics/`.
+Outputs are saved under `results/figures/diagnostics/`.
 
 Usage:
-    python3 analyse_fold_diagnostics.py --glob 'results/runs/final-test-classification-fold-*.npz' --plots
+    python3 analyse_fold_diagnostics.py --glob 'results/runs/<run>/fold-*.npz' --plots
     python3 analyse_fold_diagnostics.py --trial_name my-study-0 --plots
 
 Notes:
@@ -36,12 +36,13 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 
+from utils import config
 from utils.analysis import evaluate_performance
 from utils.results import FoldArtifact
 from utils.visualisation import classes as categorical_classes, binary_classes
 
 
-RESULTS_DIR = os.path.join("results", "diagnostics")
+RESULTS_DIR = str(config.figures_dir("diagnostics"))
 
 
 def _class_names(n_classes: int) -> List[str]:
@@ -275,7 +276,7 @@ def main() -> int:
         default=None,
         help="Trial name to load via FoldArtifact.load_trial() (alternative to --glob).",
     )
-    parser.add_argument("--plots", action="store_true", help="Generate plots under results/diagnostics/")
+    parser.add_argument("--plots", action="store_true", help="Generate plots under results/figures/diagnostics/")
     parser.add_argument("--max-points", type=int, default=3000, help="Max points for scatter plots")
 
     args = parser.parse_args()

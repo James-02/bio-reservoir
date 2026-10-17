@@ -22,11 +22,11 @@ Select specific plot types::
 Via glob pattern::
 
     python scripts/analysis/analyse_fold_results.py \\
-        --glob 'results/runs/final-test-classification-fold-*.npz' --plots all
+        --glob 'results/runs/<run>/fold-*.npz' --plots all
 
 Notes
 -----
-- All figures are saved under ``results/metrics/<trial_name>/``.
+- All figures are saved under ``results/figures/metrics/<trial_name>/``.
 - ``--plots`` alone saves all plot types (equivalent to ``--plots all``).
 - ``--show`` displays each figure interactively in addition to saving.
 - t-SNE on reservoir states is skipped if the fold files were saved without
@@ -187,7 +187,7 @@ def _fig_out(trial_name: str, suffix: str) -> str:
 
     All plot_* functions in utils.visualisation already prepend ``metrics/``
     themselves before calling ``_save_figure``, which in turn prepends
-    ``results/``.  So we only need to provide ``<trial_name>/<suffix>``.
+    ``results/figures/``.  So we only need to provide ``<trial_name>/<suffix>``.
     """
     return os.path.join(trial_name, suffix)
 
@@ -320,7 +320,7 @@ plot types:
 
     if wanted:
         _run_plots(artifacts, trial_name, wanted, args.show)
-        print(f"Figures saved to results/metrics/{trial_name}/")
+        print(f"Figures saved to results/figures/metrics/{trial_name}/")
 
     return 0
 

@@ -162,7 +162,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument(
         "--out-prefix",
         default="cv_",
-        help="Prefix applied to saved figure filenames (saved under results/metrics/)",
+        help="Prefix applied to saved figure filenames (saved under results/figures/metrics/)",
     )
     parser.add_argument("--show", action="store_true", help="Show plots interactively")
     parser.add_argument("--tsne", action="store_true", help="Also plot t-SNE using readout vectors")
@@ -229,7 +229,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
 
     print(f"Loaded {len(folds)} fold file(s).")
-    print("Saved figures under results/metrics/.")
+    print("Saved figures under results/figures/metrics/.")
     return 0
 
 

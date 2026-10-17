@@ -35,6 +35,7 @@ from sklearn.ensemble import RandomForestClassifier
 
 from bioreservoir import BioReservoir, distance_matrix
 from training import cross_validate
+from utils import config
 from utils.logger import setup_logging
 from utils.preprocessing import load_ecg_data
 
@@ -221,7 +222,7 @@ def main() -> None:
                         help="Skip grid points with existing results.")
     args = parser.parse_args()
 
-    setup_logging(level=logging.INFO)
+    setup_logging(level=logging.INFO, log_file=str(config.log_file("heterogeneity")))
     log = logging.getLogger(__name__)
     rpy.set_seed(args.seed)
     rpy.verbosity(0)
@@ -233,7 +234,7 @@ def main() -> None:
 
         for i, (cv_val, het_seed) in enumerate(grid, 1):
             trial_name = f"heterogeneity-cv{cv_val:.3f}-seed{het_seed}"
-            results_dir = f"results/runs/{trial_name}"
+            results_dir = str(config.runs_dir() / trial_name)
 
             if args.resume and os.path.isdir(results_dir):
                 npz_files = [f for f in os.listdir(results_dir) if f.endswith(".npz")]

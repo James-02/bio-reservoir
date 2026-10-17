@@ -14,7 +14,7 @@ This gives us a solid base to later add:
 - multiple instances/classes overlays
 - drive decomposition diagnostics from `_compute_input`
 
-Outputs are saved under `results/states/`.
+Outputs are saved under `results/figures/states/`.
 """
 
 from __future__ import annotations
