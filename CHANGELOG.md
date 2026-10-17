@@ -20,6 +20,10 @@ Each entry is marked **[science]** if it changes a reported number, or
 ### Added
 
 - [engineering] `--archive VERSION` reads frozen studies from `archive/<version>/`.
+- [engineering] `optimization/deploy.py` and `optimization/collect.py` are now part of the
+  repository. Host addresses, user, remote workspace, pip proxy and service come from
+  `config.env`; hosts are referred to by label, and `--inventory` records each host's
+  CPU, memory, OS and Python in `results/metrics/hosts.json`.
 
 ### Fixed
 

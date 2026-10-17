@@ -171,6 +171,17 @@ Some studies are intentionally script-driven rather than Optuna-driven. These re
 
 Run these locally in the same Python environment as the optimisation CLI.
 
+### Remote Deployment
+
+[optimization/deploy.py](optimization/deploy.py) runs studies or commands on remote hosts in a detached session, and [optimization/collect.py](optimization/collect.py) copies the databases, run folders and logs back. Each host needs RHEL 9 (or a compatible distribution) with Python 3.9–3.12, `ssh` and `rsync`, and key-based SSH login. Host addresses, the SSH user and the remote workspace are set in `config.env` (see [config.env.example](config.env.example)); hosts are otherwise referred to by label (`host1`, ...), and every remote run records its label, CPU model, core counts and RAM with its results.
+
+```bash
+python -m optimization.deploy --inventory          # hardware per host -> results/metrics/hosts.json
+python -m optimization.deploy --host host1 --study P2-distance
+python -m optimization.deploy --status
+python -m optimization.collect --host host1 --study P2-distance
+```
+
 > [!TIP]
 > Use `--help` to see what else is available
 

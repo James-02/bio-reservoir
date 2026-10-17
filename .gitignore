@@ -32,5 +32,3 @@ config.env
 
 # local-only infrastructure wrappers (not for publication)
 scripts/deploy*.sh
-optimization/deploy.py
-optimization/collect.py

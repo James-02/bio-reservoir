@@ -127,10 +127,12 @@ def _collect_environment() -> Dict[str, Any]:
         except ImportError:
             env[pkg + "_version"] = "not_installed"
 
+    dirty_setting = config.get("BIORESERVOIR_GIT_DIRTY", "N/A")
+    dirty_fallback = {"true": True, "false": False}.get(dirty_setting.lower(), dirty_setting)
     env["git_commit"] = _safe(lambda: _git("rev-parse", "HEAD"),
                               config.get("BIORESERVOIR_GIT_COMMIT", "N/A"))
     env["git_dirty"] = _safe(lambda: bool(_git("status", "--porcelain", "--untracked-files=no")),
-                             config.get("BIORESERVOIR_GIT_DIRTY", "N/A"))
+                             dirty_fallback)
     env["git_branch"] = _safe(lambda: _git("rev-parse", "--abbrev-ref", "HEAD"))
     return env
 
