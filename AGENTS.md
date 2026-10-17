@@ -40,8 +40,8 @@ conventions and integrate with them rather than reinventing.
   provenance, held-out draws, logging, visualisation.
 - `scripts/` — independent argparse CLIs for experiments, analysis, figures and
   housekeeping.
-- `tests/unit/` and `tests/integration/` — pytest suite; `tests/golden_master.py`
-  builds the `v0.1` reference outputs.
+- `tests/unit/` and `tests/integration/` — pytest suite; `tests/regression_reference.py`
+  builds the `v0.1` reference outputs for the regression tests.
 - `experiments/heldout/draws.json` — sealed held-out beat IDs (tracked).
 
 ## Workspace data layout (all gitignored)
@@ -91,11 +91,13 @@ All paths and settings come from `utils/config.py` (environment variable, then
 
 - Unit-test as much as possible: fast, no dataset, no network. Integration tests use
   the real dataset (`data/`) and are skipped without it.
-- Golden master (`tests/unit/test_golden_master.py`): the `v0.1` model must
-  reproduce its stored outputs. Regenerate the references only for an intended change,
-  with a `[science]` CHANGELOG entry.
-- Sentinel (`tests/integration/test_sentinel.py`): a small real-data CV run stays
-  within 0.02 macro-F1 of `v0.1`.
+- Model regression test (`tests/unit/test_model_regression.py`): with fixed synthetic
+  beats, the reservoir (solver, node, topology, noise, state aggregation) reproduces the
+  `v0.1` outputs. It does not cover data, cross-validation, readouts or metrics.
+- Pipeline regression test (`tests/integration/test_pipeline_regression.py`): a small
+  real-data cross-validation run stays within 0.02 macro-F1 of `v0.1`.
+- Regenerate the regression references (`tests/regression_reference.py`) only for an
+  intended change, with a `[science]` CHANGELOG entry.
 - Every bug fix comes with a test that fails before the fix.
 
 ## Build, test, and lint commands
@@ -106,7 +108,7 @@ uv sync --extra dev                  # exact environment from uv.lock (editable 
 uv lock                              # after changing dependencies in pyproject.toml
 
 pytest tests/unit/                   # fast unit tests (CI on every PR)
-pytest tests/integration/            # needs data/: archive, sentinel, held-out draws
+pytest tests/integration/            # needs data/: archive, pipeline regression, held-out
 pytest --cov --cov-report=term-missing
 
 ruff check .                         # lint
