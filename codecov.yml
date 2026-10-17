@@ -18,12 +18,12 @@ coverage:
         # research code is still largely untested. Set to `false` (or remove)
         # to make the project check blocking once coverage is built up.
         informational: true
-    # Patch coverage check: coverage of the lines changed in the PR.
+    # Patch coverage check: coverage of the lines changed in the PR. Blocking, so every
+    # change comes with unit tests even though the legacy code is still largely untested.
     patch:
       default:
-        target: auto
-        threshold: 1%
-        informational: true
+        target: 80%
+        informational: false
 
 # Show project + patch coverage changes on the pull-request comment.
 comment:
