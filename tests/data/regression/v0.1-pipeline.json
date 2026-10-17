@@ -1,0 +1,24 @@
+{
+ "meta": {
+  "created_utc": "2026-10-17T15:53:28Z",
+  "code_ref": "v0.1",
+  "seed": 6337,
+  "python_version": "3.9.21",
+  "numpy_version": "1.26.4",
+  "reservoirpy_version": "0.3.11",
+  "sklearn_version": "1.5.0",
+  "numba_version": "0.60.0",
+  "cpu_model": "Intel(R) Xeon(R) CPU E5-2680 v3 @ 2.50GHz"
+ },
+ "config": {
+  "units": 200,
+  "instances": 600,
+  "folds": 2
+ },
+ "tolerance": 0.02,
+ "P2-distance": {
+  "f1": 0.7679610369927147,
+  "f1_macro": 0.7679610369927147,
+  "accuracy": 0.77
+ }
+}
