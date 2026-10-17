@@ -38,7 +38,7 @@ from utils import config
 from utils.logger import setup_logging
 from utils.preprocessing import load_ecg_data
 
-SEED = 6337
+SEED = config.SEED
 
 # ---------------------------------------------------------------------------
 # P2-distance best trial (trial 416) — resolved parameters

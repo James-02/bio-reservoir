@@ -1,4 +1,5 @@
 from typing import Tuple, List, Optional, Sequence
+import hashlib
 import os
 from pathlib import Path
 import numpy as np
@@ -22,19 +23,21 @@ __all__ = [
     "augment_data",
     "save_npz",
     "load_npz",
+    "dataset_sha256",
 ]
 
 
 def ensure_kaggle_heartbeat_files(
     filenames: Sequence[str],
-    data_dir: str = "data/ecg",
+    data_dir: Optional[str] = None,
     dataset_handle: str = "shayanfazeli/heartbeat",
 ) -> List[str]:
     """Resolve heartbeat CSV files from the workspace or Kaggle cache."""
     wanted = [str(name) for name in filenames]
-    candidate_roots = [Path(data_dir)]
+    root = Path(data_dir) if data_dir else config.data_dir() / "ecg"
+    candidate_roots = [root]
 
-    env_root = os.getenv("KAGGLE_HEARTBEAT_DIR")
+    env_root = config.get("KAGGLE_HEARTBEAT_DIR")
     if env_root:
         candidate_roots.append(Path(env_root))
 
@@ -48,7 +51,7 @@ def ensure_kaggle_heartbeat_files(
     except ImportError as exc:
         missing = ", ".join(wanted)
         raise FileNotFoundError(
-            f"Could not find {missing} under '{data_dir}' and kagglehub is not installed."
+            f"Could not find {missing} under '{root}' and kagglehub is not installed."
         ) from exc
 
     for key in ("KAGGLE_USERNAME", "KAGGLE_KEY"):
@@ -114,6 +117,17 @@ def load_npz(filename: str, allow_pickle: bool = True) -> Optional[Tuple[np.ndar
         logger.error(f"Error loading data from: {filename}\n{e}")
         return None
 
+
+def dataset_sha256(path: str) -> str:
+    """SHA-256 of the X and Y arrays of a cache (unchanged when the cache is rebuilt)."""
+    digest = hashlib.sha256()
+    with np.load(path, allow_pickle=True) as data:
+        for key in ("X", "Y"):
+            array = np.ascontiguousarray(data[key])
+            digest.update(str((array.dtype.str, array.shape)).encode())
+            digest.update(array.tobytes())
+    return digest.hexdigest()
+
 def load_ecg_data(
     rows: Optional[int] = None,
     test_ratio: float = 0.2,
@@ -124,7 +138,7 @@ def load_ecg_data(
     binary: bool = False,
     noise_rate: float = 0,
     noise_ratio: float = 0,
-    data_dir: str = "data/ecg",
+    data_dir: Optional[str] = None,
     train_file: str = "mitbih_train.csv",
     test_file: str = "mitbih_test.csv",
     save_file: str = "ecg_data.npz",
@@ -132,7 +146,7 @@ def load_ecg_data(
     scaler_type: str = "sequence_zscore",
     balance_classes: bool = True,
     max_per_class: Optional[int] = None,
-    seed: Optional[int] = 6337,
+    seed: Optional[int] = config.SEED,
     preserve_split: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -148,7 +162,8 @@ def load_ecg_data(
         binary (bool, optional): Whether to load dataset as binary targets. Defaults to False.
         noise_rate (float, optional): Rate of noise augmentation. Defaults to 0.
         noise_ratio (float, optional): Ratio of noise augmentation. Defaults to 0.
-        data_dir (str, optional): Directory containing ECG data files. Defaults to "data/ecg".
+        data_dir (str, optional): Directory containing ECG data files. Defaults to ``ecg/``
+            in the configured data folder (``BIORESERVOIR_DATA_DIR``, default ``data``).
         train_file (str, optional): Filename of the training data file. Defaults to "ecg_train.csv".
         test_file (str, optional): Filename of the testing data file. Defaults to "ecg_test.csv".
         save_file (str, optional): Filename to save the preprocessed data. Defaults to "ecg_data.npz".
@@ -157,12 +172,17 @@ def load_ecg_data(
     Returns:
         Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: Tuple containing X_train, Y_train, X_test, Y_test.
     """
-    train_file_path, test_file_path = ensure_kaggle_heartbeat_files(
-        [train_file, test_file],
-        data_dir=data_dir,
-    )
-    save_file_path = os.path.join(data_dir, save_file)
-    save_file_path_binary = os.path.join(data_dir, binary_save_file)
+    ecg_dir = Path(data_dir) if data_dir else config.data_dir() / "ecg"
+    save_file_path = str(ecg_dir / save_file)
+    save_file_path_binary = str(ecg_dir / binary_save_file)
+    cache_path = save_file_path_binary if binary else save_file_path
+    if preserve_split or not os.path.exists(cache_path):
+        train_file_path, test_file_path = ensure_kaggle_heartbeat_files(
+            [train_file, test_file],
+            data_dir=str(ecg_dir),
+        )
+    else:
+        train_file_path = test_file_path = None
 
     logger.info("Loading ECG dataset")
 
@@ -604,6 +624,10 @@ def _load_raw_ecg_dataset(binary: bool, train_file_path: str, test_file_path: st
         else:
             return data["X"], data["Y"]
 
+    if train_file_path is None or test_file_path is None:
+        raise FileNotFoundError(
+            f"Could not read the cache {file_path}; delete it to rebuild it from the CSV files."
+        )
     logger.debug(f"Preprocessing datasets from: {train_file_path} and {test_file_path}")
     train_df = pd.read_csv(train_file_path, header=None)
     test_df = pd.read_csv(test_file_path, header=None)
@@ -777,3 +801,24 @@ def _limit_instances(
     rng.shuffle(indices)
     selected = indices[:rows]
     return X[selected], Y[selected]
+
+
+def main(argv: Optional[Sequence[str]] = None) -> None:
+    """Prepare the ECG dataset: find or download the source CSVs and build both caches."""
+    import argparse
+
+    from utils.logger import setup_logging
+
+    parser = argparse.ArgumentParser(prog="python -m utils.preprocessing", description=main.__doc__)
+    parser.add_argument("--data-dir", help="ECG folder (default: ecg/ in BIORESERVOIR_DATA_DIR).")
+    args = parser.parse_args(argv)
+    setup_logging(level=logging.INFO)
+    ecg_dir = Path(args.data_dir) if args.data_dir else config.data_dir() / "ecg"
+    for binary, name in ((False, "ecg_data.npz"), (True, "binary_ecg_data.npz")):
+        load_ecg_data(rows=10, binary=binary, data_dir=str(ecg_dir))
+        task = "binary" if binary else "five-class"
+        print(f"{task:10s} {ecg_dir / name}  content sha256 {dataset_sha256(ecg_dir / name)}")
+
+
+if __name__ == "__main__":
+    main()

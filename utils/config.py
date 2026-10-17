@@ -10,6 +10,7 @@ repository root, so commands behave the same from any working directory::
         metrics/              derived metric tables and statistics
         figures/<topic>/      figures
     logs/                     BIORESERVOIR_LOGS_DIR      log files only
+    data/                     BIORESERVOIR_DATA_DIR      datasets; ECG files in data/ecg/
     archive/<version>/        BIORESERVOIR_ARCHIVE_DIR   frozen, read-only results trees
 """
 
@@ -21,6 +22,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+# Seed of every reported run (data splits, topology, noise); CLIs take --seed to override.
+SEED = 6337
 
 
 def config_file() -> Path:
@@ -56,6 +60,10 @@ def _directory(name: str, default: str) -> Path:
 
 def archive_dir() -> Path:
     return _directory("BIORESERVOIR_ARCHIVE_DIR", "archive")
+
+
+def data_dir() -> Path:
+    return _directory("BIORESERVOIR_DATA_DIR", "data")
 
 
 def results_root(archive: str | None = None) -> Path:

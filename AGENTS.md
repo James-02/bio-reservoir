@@ -60,7 +60,8 @@ All paths and settings come from `utils/config.py` (environment variable, then
   (`--archive v0.1`, or an explicit path such as `--glob` / `--runs_dir`). Promote
   results from `results/` to a new `archive/<version>/` only when they are frozen
   for a manuscript version.
-- `data/` — input datasets.
+- `data/` — raw datasets and the preprocessed caches (`BIORESERVOIR_DATA_DIR`); build
+  them with `python -m utils.preprocessing`.
 - `config.env` — local settings: paths, Kaggle credentials, deployment hosts.
 - Planning notes and the original `v0.1` files live in the private repository.
 

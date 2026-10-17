@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from utils.preprocessing import ensure_kaggle_heartbeat_files, load_ecg_data
+from utils.preprocessing import dataset_sha256, ensure_kaggle_heartbeat_files, load_ecg_data
 
 
 def _flatten_onehot_labels(Y):
@@ -318,3 +318,13 @@ def test_ensure_kaggle_heartbeat_files_uses_env_root(tmp_path, monkeypatch):
     )
 
     assert resolved == [str(train.resolve()), str(test.resolve())]
+
+
+def test_dataset_sha256_depends_on_the_arrays_not_the_file(tmp_path):
+    X, Y = np.arange(12.0).reshape(3, 4), np.array([0, 1, 2])
+    np.savez(tmp_path / "plain.npz", X=X, Y=Y)
+    np.savez_compressed(tmp_path / "compressed.npz", X=X, Y=Y)
+    np.savez(tmp_path / "changed.npz", X=X + 1, Y=Y)
+    plain, compressed, changed = (dataset_sha256(tmp_path / f"{name}.npz")
+                                  for name in ("plain", "compressed", "changed"))
+    assert plain == compressed != changed

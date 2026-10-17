@@ -32,11 +32,17 @@ Each entry is marked **[science]** if it changes a reported number, or
 - [engineering] CI installs from the lock, runs the integration tests on the real dataset
   (Kaggle secrets), and requires 80% coverage of changed lines, measured on the unit and
   integration tests together.
+- [engineering] `python -m utils.preprocessing` prepares the dataset (Kaggle download if
+  needed, five-class and binary caches) and prints content checksums;
+  `tests/integration/test_dataset.py` checks the datasets and the `v0.1` CV pools against
+  the `v0.1` checksums.
 
 ### Fixed
 
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
+- [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or
+  downloading) the source CSV files first; the CSVs are only needed to build the cache.
 - [engineering] Trial metadata no longer records the host name, IP address, working
   directory, or script, output and interpreter paths, and the platform string keeps only
   the OS, numeric kernel release and architecture. Trials now record the full git SHA, a
