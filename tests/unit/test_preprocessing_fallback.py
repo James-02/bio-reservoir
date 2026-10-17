@@ -211,6 +211,11 @@ class TestNoNpzFallback:
 class TestKaggleFallback:
     """When no local CSVs exist, load_ecg_data must download them from Kaggle."""
 
+    @pytest.fixture(autouse=True)
+    def _ignore_config_file(self, tmp_path, monkeypatch):
+        # A developer's config.env may set KAGGLE_HEARTBEAT_DIR.
+        monkeypatch.setenv("BIORESERVOIR_CONFIG", str(tmp_path / "absent.env"))
+
     def test_kaggle_fallback_when_no_local_csvs(self, tmp_path, monkeypatch):
         """Monkeypatch kagglehub so no real network request is made."""
         import kagglehub
