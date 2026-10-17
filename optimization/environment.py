@@ -4,21 +4,61 @@ Collected once per worker process and cached for the lifetime of that
 process.  Used by both the training (classification.py) and readout
 (readout.py) objectives to stamp every Optuna trial with full
 provenance information.
+
+Privacy policy: record the code version (git SHA and dirty flag), OS name and
+version, CPU model, core counts, RAM and package versions.  Never record host
+names, IP addresses, user names, working directories or absolute paths.  An
+optional machine label (``BIORESERVOIR_MACHINE_LABEL``, e.g. ``Host 1``) comes
+from ``config.env``.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any, Dict, Optional
+
+from utils import config
 
 logger = logging.getLogger(__name__)
 
 _ENV_CACHE: Optional[Dict[str, Any]] = None
 
 
+def _platform_summary() -> str:
+    """Return OS, numeric kernel release and architecture, e.g. ``Linux-5.14.0-x86_64``."""
+    import platform
+
+    match = re.match(r"\d+(?:\.\d+){0,2}", platform.release())
+    release = match.group(0) if match else "unknown"
+    return f"{platform.system()}-{release}-{platform.machine()}"
+
+
+def _os_release() -> Dict[str, str]:
+    """Parse ``/etc/os-release`` (empty if unavailable)."""
+    values: Dict[str, str] = {}
+    try:
+        with open("/etc/os-release") as f:
+            for line in f:
+                key, sep, value = line.strip().partition("=")
+                if sep:
+                    values[key] = value.strip('"')
+    except OSError:
+        pass
+    return values
+
+
+def _git(*args: str) -> str:
+    import subprocess
+
+    return subprocess.check_output(
+        ["git", *args], cwd=config.PROJECT_ROOT, stderr=subprocess.DEVNULL
+    ).decode().strip()
+
+
 def _collect_environment() -> Dict[str, Any]:
-    import platform, sys as _sys, importlib, subprocess, socket, datetime
+    import platform, sys as _sys, importlib, datetime
 
     def _safe(fn, fallback="N/A"):
         try:
@@ -26,16 +66,14 @@ def _collect_environment() -> Dict[str, Any]:
         except Exception:
             return fallback
 
+    os_release = _os_release()
     env: Dict[str, Any] = {}
     env["timestamp_utc"]     = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
     env["python_version"]    = _sys.version.split()[0]
-    env["python_executable"] = _sys.executable
-    env["platform"]          = platform.platform()
-    env["hostname"]          = _safe(socket.gethostname)
-    env["ip_address"]        = _safe(lambda: socket.gethostbyname(socket.gethostname()))
-    env["cwd"]               = _safe(os.getcwd)
-    env["script_path"]       = _safe(lambda: os.path.abspath(__file__))
-    env["output_dir"]        = _safe(lambda: os.path.abspath("results"))
+    env["platform"]          = _safe(_platform_summary)
+    env["os_name"]           = os_release.get("NAME", platform.system())
+    env["os_version"]        = os_release.get("VERSION_ID", "N/A")
+    env["machine_label"]     = config.get("BIORESERVOIR_MACHINE_LABEL", "N/A")
     env["cpu_count_logical"] = _safe(os.cpu_count, "N/A")
     env["cpu_count_physical"] = "N/A"
     env["cpu_model"]          = "N/A"
@@ -89,10 +127,11 @@ def _collect_environment() -> Dict[str, Any]:
         except ImportError:
             env[pkg + "_version"] = "not_installed"
 
-    env["git_commit"] = _safe(lambda: subprocess.check_output(
-        ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL).decode().strip())
-    env["git_branch"] = _safe(lambda: subprocess.check_output(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"], stderr=subprocess.DEVNULL).decode().strip())
+    env["git_commit"] = _safe(lambda: _git("rev-parse", "HEAD"),
+                              config.get("BIORESERVOIR_GIT_COMMIT", "N/A"))
+    env["git_dirty"] = _safe(lambda: bool(_git("status", "--porcelain", "--untracked-files=no")),
+                             config.get("BIORESERVOIR_GIT_DIRTY", "N/A"))
+    env["git_branch"] = _safe(lambda: _git("rev-parse", "--abbrev-ref", "HEAD"))
     return env
 
 
