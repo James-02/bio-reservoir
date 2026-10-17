@@ -59,7 +59,10 @@ exclude = ["tests*", "scripts*"]
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts   = "-p no:typeguard -v"
+addopts   = "-p no:typeguard -v -m 'not benchmark'"
+markers = [
+    "benchmark: full-size headline reruns compared fold by fold with the v0.1 archive; needs a capable host (run with -m benchmark)",
+]
 filterwarnings = ["ignore::UserWarning"]
 
 # ---------------------------------------------------------------------------

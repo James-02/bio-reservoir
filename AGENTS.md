@@ -89,6 +89,9 @@ All paths and settings come from `utils/config.py` (environment variable, then
 
 ## Tests
 
+- Three tiers: `tests/unit/` (fast, every PR), `tests/integration/` (real dataset), and
+  benchmarks marked `@pytest.mark.benchmark` (full-size headline reruns on a capable
+  host; skipped unless run with `pytest -m benchmark`).
 - Unit-test as much as possible: fast, no dataset, no network. Integration tests use
   the real dataset (`data/`) and are skipped without it.
 - Model regression test (`tests/unit/test_model_regression.py`): with fixed synthetic
