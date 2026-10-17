@@ -44,6 +44,8 @@ Each entry is marked **[science]** if it changes a reported number, or
   of beats that no `v0.1` optimisation phase used and records their beat IDs and checksums
   in `experiments/heldout/draws.json`; `--check` rebuilds and verifies them. Draws 1-2
   were consulted in the revision pilots; draw 3 is sealed for the confirmatory evaluation.
+- [engineering] Run manifests (code version, data and lock-file checksums, environment)
+  and an append-only run registry (`registry.jsonl`, `python -m utils.provenance`).
 
 ### Fixed
 
