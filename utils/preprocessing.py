@@ -1,4 +1,5 @@
 from typing import Tuple, List, Optional, Sequence
+import hashlib
 import os
 from pathlib import Path
 import numpy as np
@@ -22,6 +23,7 @@ __all__ = [
     "augment_data",
     "save_npz",
     "load_npz",
+    "dataset_sha256",
 ]
 
 
@@ -114,6 +116,17 @@ def load_npz(filename: str, allow_pickle: bool = True) -> Optional[Tuple[np.ndar
     except Exception as e:
         logger.error(f"Error loading data from: {filename}\n{e}")
         return None
+
+
+def dataset_sha256(path: str) -> str:
+    """SHA-256 of the X and Y arrays of a cache (unchanged when the cache is rebuilt)."""
+    digest = hashlib.sha256()
+    with np.load(path, allow_pickle=True) as data:
+        for key in ("X", "Y"):
+            array = np.ascontiguousarray(data[key])
+            digest.update(str((array.dtype.str, array.shape)).encode())
+            digest.update(array.tobytes())
+    return digest.hexdigest()
 
 def load_ecg_data(
     rows: Optional[int] = None,
@@ -788,3 +801,24 @@ def _limit_instances(
     rng.shuffle(indices)
     selected = indices[:rows]
     return X[selected], Y[selected]
+
+
+def main(argv: Optional[Sequence[str]] = None) -> None:
+    """Prepare the ECG dataset: find or download the source CSVs and build both caches."""
+    import argparse
+
+    from utils.logger import setup_logging
+
+    parser = argparse.ArgumentParser(prog="python -m utils.preprocessing", description=main.__doc__)
+    parser.add_argument("--data-dir", help="ECG folder (default: ecg/ in BIORESERVOIR_DATA_DIR).")
+    args = parser.parse_args(argv)
+    setup_logging(level=logging.INFO)
+    ecg_dir = Path(args.data_dir) if args.data_dir else config.data_dir() / "ecg"
+    for binary, name in ((False, "ecg_data.npz"), (True, "binary_ecg_data.npz")):
+        load_ecg_data(rows=10, binary=binary, data_dir=str(ecg_dir))
+        task = "binary" if binary else "five-class"
+        print(f"{task:10s} {ecg_dir / name}  content sha256 {dataset_sha256(ecg_dir / name)}")
+
+
+if __name__ == "__main__":
+    main()

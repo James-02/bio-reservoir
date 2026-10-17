@@ -30,6 +30,10 @@ Each entry is marked **[science]** if it changes a reported number, or
   (N = 20, synthetic beats; reservoir states and features) and the pipeline regression
   test (N = 200, 600 real beats, 2 folds; macro-F1 within 0.02). Both references were
   generated with the `v0.1` code (`tests/regression_reference.py`).
+- [engineering] `python -m utils.preprocessing` prepares the dataset (Kaggle download if
+  needed, five-class and binary caches) and prints content checksums;
+  `tests/integration/test_dataset.py` checks the datasets and the `v0.1` CV pools against
+  the `v0.1` checksums.
 
 ### Fixed
 

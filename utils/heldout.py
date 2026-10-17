@@ -25,6 +25,7 @@ from pathlib import Path
 import numpy as np
 
 from utils import config
+from utils.preprocessing import dataset_sha256, load_ecg_data
 
 SEED = config.SEED
 POOL_INSTANCES = 4015
@@ -41,21 +42,8 @@ def dataset_path() -> Path:
     return config.data_dir() / "ecg" / "ecg_data.npz"
 
 
-def content_sha256(path: Path) -> str:
-    """SHA-256 of the X and Y arrays (unlike the file's, unchanged when the cache is rebuilt)."""
-    digest = hashlib.sha256()
-    with np.load(path, allow_pickle=True) as data:
-        for key in ("X", "Y"):
-            array = np.ascontiguousarray(data[key])
-            digest.update(str((array.dtype.str, array.shape)).encode())
-            digest.update(array.tobytes())
-    return digest.hexdigest()
-
-
 def load_pool(instances: int = POOL_INSTANCES, seed: int = SEED) -> np.ndarray:
     """Return the v0.1 balanced CV pool (as ``optimization.training`` builds it)."""
-    from utils.preprocessing import load_ecg_data
-
     X_tr, _, X_te, _ = load_ecg_data(
         rows=instances, balance_classes=True, max_per_class=None, binary=False,
         noise_rate=0.0, noise_ratio=0.0, scaler_type="sequence_zscore", seed=seed,
@@ -98,7 +86,7 @@ def describe(draws: dict[int, np.ndarray], y: np.ndarray, matched: int, dataset:
     record = {
         "description": "Held-out beats unused by every v0.1 optimisation phase "
                        "(utils/heldout.py)",
-        "dataset": {"path": "data/ecg/ecg_data.npz", "content_sha256": content_sha256(dataset),
+        "dataset": {"path": "data/ecg/ecg_data.npz", "content_sha256": dataset_sha256(dataset),
                     "beats": int(len(y))},
         "pool": {"instances": POOL_INSTANCES, "seed": SEED, "matched_beats": matched},
         "classes": {str(c): name for c, name in CLASSES.items()},
@@ -165,7 +153,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         if not recorded:
             raise SystemExit(f"{DRAWS_FILE} not found")
         problems = check(recorded, draws)
-        if content_sha256(dataset_path()) != recorded["dataset"]["content_sha256"]:
+        if dataset_sha256(dataset_path()) != recorded["dataset"]["content_sha256"]:
             problems.append(f"{dataset_path()} differs from the recorded dataset")
         if problems:
             raise SystemExit("\n".join(problems))
