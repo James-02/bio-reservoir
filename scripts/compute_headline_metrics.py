@@ -29,7 +29,7 @@ from joblib import Parallel, delayed
 from utils import config
 from utils.results import FoldArtifact
 
-SEED = 6337
+SEED = config.SEED
 RUNS_DIR = str(config.runs_dir(archive="v0.1"))
 
 # ── Task definitions ──────────────────────────────────────────────────────────────────────

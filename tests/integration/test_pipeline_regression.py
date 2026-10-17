@@ -9,7 +9,7 @@ import regression_reference as ref
 
 from utils import config
 
-DATA = config.PROJECT_ROOT / "data" / "ecg" / "ecg_data.npz"
+DATA = config.data_dir() / "ecg" / "ecg_data.npz"
 
 pytestmark = pytest.mark.skipif(not DATA.is_file() or not ref.PIPELINE_REFERENCE.is_file(),
                                 reason="needs data/ecg/ecg_data.npz and the pipeline reference")

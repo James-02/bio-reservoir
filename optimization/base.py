@@ -18,7 +18,7 @@ from utils.logger import setup_logging
 logger = logging.getLogger(__name__)
 
 #: Default seed used across all optimisation pipelines.
-DEFAULT_SEED: int = 6337
+DEFAULT_SEED: int = config.SEED
 
 def _optimize_study(study: Study, trials: int, objective_func: Callable, **kwargs) -> Study:
     """Optimizes the study with a given objective function.

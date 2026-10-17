@@ -27,12 +27,13 @@ __all__ = [
 
 def ensure_kaggle_heartbeat_files(
     filenames: Sequence[str],
-    data_dir: str = "data/ecg",
+    data_dir: Optional[str] = None,
     dataset_handle: str = "shayanfazeli/heartbeat",
 ) -> List[str]:
     """Resolve heartbeat CSV files from the workspace or Kaggle cache."""
     wanted = [str(name) for name in filenames]
-    candidate_roots = [Path(data_dir)]
+    root = Path(data_dir) if data_dir else config.data_dir() / "ecg"
+    candidate_roots = [root]
 
     env_root = config.get("KAGGLE_HEARTBEAT_DIR")
     if env_root:
@@ -48,7 +49,7 @@ def ensure_kaggle_heartbeat_files(
     except ImportError as exc:
         missing = ", ".join(wanted)
         raise FileNotFoundError(
-            f"Could not find {missing} under '{data_dir}' and kagglehub is not installed."
+            f"Could not find {missing} under '{root}' and kagglehub is not installed."
         ) from exc
 
     for key in ("KAGGLE_USERNAME", "KAGGLE_KEY"):
@@ -124,7 +125,7 @@ def load_ecg_data(
     binary: bool = False,
     noise_rate: float = 0,
     noise_ratio: float = 0,
-    data_dir: str = "data/ecg",
+    data_dir: Optional[str] = None,
     train_file: str = "mitbih_train.csv",
     test_file: str = "mitbih_test.csv",
     save_file: str = "ecg_data.npz",
@@ -132,7 +133,7 @@ def load_ecg_data(
     scaler_type: str = "sequence_zscore",
     balance_classes: bool = True,
     max_per_class: Optional[int] = None,
-    seed: Optional[int] = 6337,
+    seed: Optional[int] = config.SEED,
     preserve_split: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -148,7 +149,8 @@ def load_ecg_data(
         binary (bool, optional): Whether to load dataset as binary targets. Defaults to False.
         noise_rate (float, optional): Rate of noise augmentation. Defaults to 0.
         noise_ratio (float, optional): Ratio of noise augmentation. Defaults to 0.
-        data_dir (str, optional): Directory containing ECG data files. Defaults to "data/ecg".
+        data_dir (str, optional): Directory containing ECG data files. Defaults to ``ecg/``
+            in the configured data folder (``BIORESERVOIR_DATA_DIR``, default ``data``).
         train_file (str, optional): Filename of the training data file. Defaults to "ecg_train.csv".
         test_file (str, optional): Filename of the testing data file. Defaults to "ecg_test.csv".
         save_file (str, optional): Filename to save the preprocessed data. Defaults to "ecg_data.npz".
@@ -157,12 +159,13 @@ def load_ecg_data(
     Returns:
         Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: Tuple containing X_train, Y_train, X_test, Y_test.
     """
+    ecg_dir = Path(data_dir) if data_dir else config.data_dir() / "ecg"
     train_file_path, test_file_path = ensure_kaggle_heartbeat_files(
         [train_file, test_file],
-        data_dir=data_dir,
+        data_dir=str(ecg_dir),
     )
-    save_file_path = os.path.join(data_dir, save_file)
-    save_file_path_binary = os.path.join(data_dir, binary_save_file)
+    save_file_path = str(ecg_dir / save_file)
+    save_file_path_binary = str(ecg_dir / binary_save_file)
 
     logger.info("Loading ECG dataset")
 

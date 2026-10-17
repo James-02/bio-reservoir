@@ -22,6 +22,7 @@ from sklearn.metrics import (
     classification_report,
 )
 
+from utils import config
 from utils.preprocessing import load_ecg_data, standardize_data
 
 # ── Best trial 356 hyperparameters (from B3-binary) ─────────────
@@ -31,7 +32,7 @@ KNN_HYPERS = {
     "p": 1.1136890171790428,
 }
 
-SEED = 6337
+SEED = config.SEED
 N_FOLDS = 5
 
 

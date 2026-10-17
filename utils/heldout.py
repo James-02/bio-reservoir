@@ -26,7 +26,7 @@ import numpy as np
 
 from utils import config
 
-SEED = 6337
+SEED = config.SEED
 POOL_INSTANCES = 4015
 CLASSES = {0: "N", 1: "S", 2: "V", 4: "Q"}
 PER_CLASS = (803, 803, None)
