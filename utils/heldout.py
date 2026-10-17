@@ -31,11 +31,17 @@ SEED = config.SEED
 POOL_INSTANCES = 4015
 CLASSES = {0: "N", 1: "S", 2: "V", 4: "Q"}
 PER_CLASS = (803, 803, None)
-PILOT_SHA1 = {1: "14b37f4db9e4a2ae262f9b869ca696e7ad19c397",
-              2: "c2a6e3bb52c3e8916618c87cf83f83e875294e77"}
+PILOT_SHA1 = {1: "14b37f4db9e4a2ae262f9b869ca696e7ad19c397",  # guardrails-disable-line
+              2: "c2a6e3bb52c3e8916618c87cf83f83e875294e77"}  # guardrails-disable-line
 STATUS = {1: "consulted during the revision pilots", 2: "consulted during the revision pilots",
           3: "sealed: confirmatory, not evaluated"}
 DRAWS_FILE = config.PROJECT_ROOT / "experiments" / "heldout" / "draws.json"
+
+
+def _sha1(ids: np.ndarray) -> str:
+    """SHA-1 of the beat IDs: the fingerprint the pilots recorded, not a security use."""
+    data = np.asarray(ids, dtype=np.int64).tobytes()
+    return hashlib.sha1(data, usedforsecurity=False).hexdigest()  # guardrails-disable-line
 
 
 def dataset_path() -> Path:
@@ -98,7 +104,7 @@ def describe(draws: dict[int, np.ndarray], y: np.ndarray, matched: int, dataset:
             "seed": SEED + k,
             "status": STATUS.get(k, ""),
             "counts": {CLASSES[c]: int((y[ids] == c).sum()) for c in CLASSES},
-            "sha1": hashlib.sha1(ids.tobytes(), usedforsecurity=False).hexdigest(),
+            "sha1": _sha1(ids),
             "sha256": hashlib.sha256(ids.tobytes()).hexdigest(),
             "beat_ids": ids.tolist(),
         }
@@ -122,8 +128,7 @@ def check(record: dict, draws: dict[int, np.ndarray]) -> list[str]:
     """Return mismatches between rebuilt draws, the recorded draws and the pilot SHA-1s."""
     problems = []
     for k, ids in draws.items():
-        ids = np.asarray(ids, dtype=np.int64)
-        sha1 = hashlib.sha1(ids.tobytes(), usedforsecurity=False).hexdigest()
+        sha1 = _sha1(ids)
         if k in PILOT_SHA1 and sha1 != PILOT_SHA1[k]:
             problems.append(f"draw {k}: SHA-1 {sha1} differs from the pilot draw {PILOT_SHA1[k]}")
         if record and sha1 != record["draws"][str(k)]["sha1"]:
