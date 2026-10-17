@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deploy optimisation studies and experiment commands to remote Linux hosts.
 
-Host requirements: RHEL 9 (or a compatible distribution) with Python 3.9-3.12, plus
+Host requirements: RHEL 9 (or a compatible distribution) with Python 3.10-3.12, plus
 the standard ``ssh`` and ``rsync`` tools and key-based SSH login.
 
 Nothing host-specific is stored in the repository.  Host addresses, the SSH user, the
@@ -62,7 +62,7 @@ SYNC_SOURCES = ("bioreservoir/", "optimization/", "training/", "utils/", "script
                 "pyproject.toml")
 SSH_OPTIONS = ("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15")
 RSYNC = ("rsync", "-az", "--exclude=__pycache__", "--exclude=*.pyc", "--exclude=*.egg-info")
-PYTHON_RANGE = ((3, 9), (3, 12))
+PYTHON_RANGE = ((3, 10), (3, 12))
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
@@ -205,7 +205,7 @@ class Deployer:
         proxy = f" --proxy {q(s.pip_proxy)}" if s.pip_proxy else ""
         (low, high) = PYTHON_RANGE
         check = (f"import sys; v = sys.version_info[:2]; sys.exit(0 if {low} <= v <= {high} "
-                 f"else 'Python 3.9-3.12 required, found %d.%d' % v)")
+                 f"else 'Python 3.10-3.12 required, found %d.%d' % v)")
         self.ssh(host, f"""
 set -e
 {q(s.python)} -c {q(check)}
@@ -426,7 +426,7 @@ def _python_heredoc(python: str, script: str, *args: str) -> str:
 
 
 def check_requirements(info: dict) -> list[str]:
-    """Return the ways a host inventory falls short of RHEL 9 + Python 3.9-3.12."""
+    """Return the ways a host inventory falls short of RHEL 9 + Python 3.10-3.12."""
     problems = []
     if "rhel" not in info.get("os_family", "").split() or not str(
             info.get("os_version", "")).startswith("9"):
@@ -434,7 +434,7 @@ def check_requirements(info: dict) -> list[str]:
                         f"{info.get('os_version')}")
     version = tuple(int(x) for x in info.get("configured_python", "0.0").split(".")[:2])
     if not PYTHON_RANGE[0] <= version <= PYTHON_RANGE[1]:
-        problems.append(f"Python {info.get('configured_python')} is outside 3.9-3.12")
+        problems.append(f"Python {info.get('configured_python')} is outside 3.10-3.12")
     return problems
 
 

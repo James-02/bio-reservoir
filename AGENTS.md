@@ -82,24 +82,26 @@ All paths and settings come from `utils/config.py` (environment variable, then
 ## Build, test, and lint commands
 
 ```bash
-python -m venv venv && source venv/bin/activate
-pip install -e ".[dev]"        # editable install with dev tools
+export UV_PROJECT_ENVIRONMENT=venv   # the project venv is venv/, not .venv/
+uv sync --extra dev                  # exact environment from uv.lock (editable install)
+uv lock                              # after changing dependencies in pyproject.toml
 
-pytest tests/unit/ -v          # fast unit tests
-pytest tests/integration/ -v   # slower integration tests
-pytest --cov --cov-report=term-missing   # coverage
+pytest tests/unit/                   # fast unit tests (CI on every PR)
+pytest tests/integration/            # slower; need data/ (and the archive for its tests)
+pytest --cov --cov-report=term-missing
 
-ruff check .                   # lint
-ruff format .                  # format
+ruff check .                         # lint
+ruff format .                        # format
 ```
 
 ## Conventions
 
 - **Docstrings:** NumPy style (matches numpy/reservoirpy). Napoleon-compatible.
-- **Formatting/linting:** `ruff` (line length 100, target py39).
+- **Formatting/linting:** `ruff` (line length 100, target py310).
 - **Commits:** Conventional Commits with a component scope, e.g.
   `feat(provenance): ...`. Versioning follows SemVer.
-- **Python support:** 3.9–3.12 (runtime deps are pinned; see `pyproject.toml`).
+- **Python support:** 3.10–3.12. Runtime dependencies are pinned in `pyproject.toml`;
+  every dependency is locked in `uv.lock`.
 - **Settings:** paths, secrets and host details only through `utils.config`
   (environment, then `config.env`, then default).
 - Library code must not call `logging.basicConfig`; use
@@ -109,8 +111,10 @@ ruff format .                  # format
 
 - **Never modify `archive/`.** It holds the frozen artefacts of a manuscript
   version (the `v0.1` code is archived on Zenodo, DOI 10.5281/zenodo.23436888).
-  Write new results to `results/` and logs to `logs/`. Do not change pinned runtime
-  dependency versions before `v1.0`.
+  Write new results to `results/` and logs to `logs/`. Keep the scientific
+  dependencies (numpy, numba, scipy, scikit-learn, reservoirpy, optuna, pandas,
+  matplotlib) at their pinned versions before `v1.0`; other dependencies may be
+  upgraded for security fixes, with a CHANGELOG entry.
 - **No infrastructure details in committed files.** No hostnames, IPs, user names,
   paths on remote hosts, proxies, systemd units or credentials. The deployment helpers
   (`optimization/deploy.py`, `optimization/collect.py`) read all of these from the

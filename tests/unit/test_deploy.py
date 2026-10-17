@@ -26,6 +26,13 @@ def _no_execution(*args, **kwargs):
     raise AssertionError("a dry run executed a command")
 
 
+@pytest.mark.parametrize("python, supported", [("3.9.21", False), ("3.10.14", True),
+                                               ("3.12.14", True), ("3.13.1", False)])
+def test_host_python_must_be_3_10_to_3_12(python, supported):
+    info = {"os_family": "rhel centos fedora", "os_version": "9.6", "configured_python": python}
+    assert (deploy.check_requirements(info) == []) is supported
+
+
 def test_settings_come_from_config(settings):
     assert settings.hosts == {"host1": "node1.example.org", "host2": "192.0.2.10"}
     assert settings.workspace == "/srv/bioreservoir"
