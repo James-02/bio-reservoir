@@ -8,15 +8,15 @@ Usage
 -----
 Minimal (metrics only, no plots)::
 
-    python scripts/analysis/analyse_fold_results.py --trial_name r1a-refined-best
+    python scripts/analysis/analyse_fold_results.py --trial_name P4-readout-balanced-best
 
 All plots saved::
 
-    python scripts/analysis/analyse_fold_results.py --trial_name r1a-refined-best --plots
+    python scripts/analysis/analyse_fold_results.py --trial_name P4-readout-balanced-best --plots
 
 Select specific plot types::
 
-    python scripts/analysis/analyse_fold_results.py --trial_name r1a-refined-best \\
+    python scripts/analysis/analyse_fold_results.py --trial_name P4-readout-balanced-best \\
         --plots confusion,tsne,class
 
 Via glob pattern::

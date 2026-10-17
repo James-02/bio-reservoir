@@ -1296,12 +1296,12 @@ def plot_spatial_topology(
 
 
 # ---------------------------------------------------------------------------
-# Heterogeneity robustness figure  (h1-heterogeneity study)
+# Heterogeneity robustness figure  (P3-heterogeneity study)
 # ---------------------------------------------------------------------------
 
 def plot_heterogeneity_robustness(
-    db_path: str = "results/optimization/h1-heterogeneity.db",
-    study_name: str = "h1-heterogeneity",
+    db_path: str = "results/optimization/P3-heterogeneity.db",
+    study_name: str = "P3-heterogeneity",
     output_dir: str = "results/diagnostics/",
     filename: str = "heterogeneity_robustness",
     show: bool = False,
