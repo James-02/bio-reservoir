@@ -17,11 +17,16 @@ High-level overview of the biological reservoir computing pipeline: ECG sequence
 
 ## Environment Setup
 
+Dependencies are declared in `pyproject.toml` and locked in `uv.lock` (Python 3.9–3.12), so [uv](https://docs.astral.sh/uv/) recreates the exact environment:
+
 ```bash
-python -m venv venv
+export UV_PROJECT_ENVIRONMENT=venv
+uv sync --extra dev
 source venv/bin/activate
-pip install -e .[dev]
+cp config.env.example config.env   # Kaggle credentials and local paths
 ```
+
+Without uv, `pip install -e .[dev]` installs the pinned runtime dependencies.
 
 ## Example Usage
 
