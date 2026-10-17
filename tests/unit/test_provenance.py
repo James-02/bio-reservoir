@@ -1,5 +1,6 @@
 """Unit tests for run manifests and the run registry (revision plan, section 7)."""
 
+import functools
 import getpass
 import json
 import re
@@ -10,7 +11,7 @@ import numpy as np
 import pytest
 
 import optimization.environment as env_mod
-from utils import provenance
+from utils import config, provenance
 
 CLEAN = {"commit": "a" * 40, "describe": "v0.1-10-gaaaaaaa", "dirty": False}
 START = datetime(2026, 10, 21, 9, 0, 0, tzinfo=timezone.utc)
@@ -87,3 +88,92 @@ def test_unknown_status_is_rejected(clean_tree, tmp_path):
     with pytest.raises(ValueError):
         provenance.register(_manifest(tmp_path), tmp_path, status="done",
                             registry=tmp_path / "r.jsonl")
+
+
+def test_git_info_reads_the_checkout():
+    if not (config.PROJECT_ROOT / ".git").exists():
+        pytest.skip("not a git checkout")
+    info = provenance.git_info()
+    assert re.fullmatch(r"[0-9a-f]{40}", info["commit"])
+    assert isinstance(info["dirty"], bool)
+
+
+def test_git_info_falls_back_to_the_deployment_settings(tmp_path, monkeypatch):
+    def no_git(*args, **kwargs):
+        raise OSError("git is not installed")
+
+    monkeypatch.setattr(provenance.subprocess, "check_output", no_git)
+    monkeypatch.setenv("BIORESERVOIR_CONFIG", str(tmp_path / "absent.env"))
+    monkeypatch.setenv("BIORESERVOIR_GIT_COMMIT", "b" * 40)
+    monkeypatch.setenv("BIORESERVOIR_GIT_DIRTY", "false")
+    assert provenance.git_info() == {"commit": "b" * 40, "describe": "N/A", "dirty": False}
+    monkeypatch.delenv("BIORESERVOIR_GIT_DIRTY")
+    assert provenance.git_info()["dirty"] is True
+
+
+def test_write_manifest_round_trips(clean_tree, tmp_path):
+    manifest = _manifest(tmp_path)
+    path = provenance.write_manifest(tmp_path / "run", manifest)
+    assert path == tmp_path / "run" / "manifest.json"
+    assert json.loads(path.read_text()) == json.loads(json.dumps(manifest, default=str))
+
+
+def test_missing_registry_is_empty_and_unknown_runs_are_refused(tmp_path):
+    registry = tmp_path / "registry.jsonl"
+    assert provenance.load_registry(registry) == {}
+    with pytest.raises(SystemExit, match="unknown run"):
+        provenance.mark("run-x", "superseded", registry=registry)
+    with pytest.raises(ValueError):
+        provenance.mark("run-x", "done", registry=registry)
+
+
+def test_diff_lists_changed_manifest_fields(clean_tree, tmp_path):
+    a = json.loads(json.dumps(_manifest(tmp_path, run_id="run-a"), default=str))
+    b = json.loads(json.dumps(a))
+    b["run_id"], b["spec"]["units"], b["timing"]["wall_s"] = "run-b", 40, 1.0
+    diff = provenance.diff_runs({"metrics": {"f1": 0.8}}, {"metrics": {"f1": 0.9}}, (a, b))
+    assert diff["metrics"]["f1"] == pytest.approx(0.1)
+    assert diff["manifest"] == {"spec.units": [20, 40]}
+
+
+@pytest.fixture
+def registry(clean_tree, tmp_path, monkeypatch):
+    """Two registered runs (the second not citable) with manifests in a temporary project."""
+    path = tmp_path / "registry.jsonl"
+    load = provenance.load_registry
+    monkeypatch.setattr(provenance.config, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(provenance, "load_registry", lambda registry=path: load(registry))
+    monkeypatch.setattr(provenance, "mark", functools.partial(provenance.mark, registry=path))
+    for run_id, f1, citable in (("run-a", 0.80, True), ("run-b", 0.85, False)):
+        manifest = dict(_manifest(tmp_path, run_id=run_id), citable=citable)
+        run_dir = tmp_path / "runs" / run_id
+        provenance.write_manifest(run_dir, manifest)
+        provenance.register(manifest, run_dir, metrics={"f1": f1}, registry=path)
+    return path
+
+
+def test_cli_lists_runs(registry, capsys):
+    provenance.main(["list"])
+    assert capsys.readouterr().out.splitlines() == [
+        'run-a  ok  {"f1": 0.8}', 'run-b  ok  {"f1": 0.85}  (not citable)']
+    provenance.main(["list", "--exp", "X3-other"])
+    provenance.main(["list", "--status", "superseded"])
+    assert capsys.readouterr().out == ""
+
+
+def test_cli_marks_shows_and_diffs_runs(registry, capsys):
+    provenance.main(["mark", "run-a", "superseded", "--by", "run-b", "--note", "rerun"])
+    provenance.main(["show", "run-a"])
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["registry"]["status"] == "superseded"
+    assert shown["registry"]["superseded_by"] == "run-b"
+    assert shown["manifest"]["run_id"] == "run-a"
+    provenance.main(["diff", "run-a", "run-b"])
+    diff = json.loads(capsys.readouterr().out)
+    assert diff["metrics"]["f1"] == pytest.approx(0.05)
+    assert diff["manifest"] == {"citable": [True, False]}
+
+
+def test_cli_rejects_unknown_runs(registry):
+    with pytest.raises(SystemExit, match="unknown run"):
+        provenance.main(["diff", "run-a", "run-x"])
