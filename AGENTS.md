@@ -56,12 +56,14 @@ All paths and settings come from `utils/config.py` (environment variable, then
   Analysis CLIs log to stdout unless given a log file.
 - `archive/<version>/` — **frozen** results behind a manuscript version, read-only:
   `optuna/`, `runs/`, `metrics/`, `MANIFEST.csv` (what each file is and which
-  manuscript item it supports) and `SHA256SUMS`
-  (`cd archive/v0.1 && sha256sum -c SHA256SUMS`). Tools only read it
+  manuscript item it supports) and `SHA256SUMS` (`sha256sum -c SHA256SUMS` inside the
+  version folder). Its location is `BIORESERVOIR_ARCHIVE_DIR` (default `archive/`); the
+  maintainers keep it in the private repository. Tools only read it
   (`--archive v0.1`, or an explicit path such as `--glob` / `--runs_dir`). Promote
   results from `results/` to a new `archive/<version>/` only when they are frozen
   for a manuscript version.
-- `data/` — raw datasets and the preprocessed caches written by `utils/preprocessing.py`.
+- `data/` — raw datasets and the preprocessed caches (`BIORESERVOIR_DATA_DIR`); build
+  them with `python -m utils.preprocessing`.
 - `config.env` — local settings: paths, Kaggle credentials, deployment hosts.
 - Snapshots of earlier workspaces live outside the repository (`../backups/`);
   planning notes live in the private repository.
