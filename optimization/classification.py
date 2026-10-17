@@ -23,7 +23,6 @@ fixed.  Parameters not listed in the study are taken from BASELINE in studies.py
 from __future__ import annotations
 
 import argparse
-import os
 import logging
 from typing import Any, Dict, Optional, Tuple, List
 
@@ -471,7 +470,6 @@ def cmd_research(args: argparse.Namespace) -> None:
     study_config = get_study(args.study)
     study_name   = args.study_name or args.study
 
-    os.makedirs("logs", exist_ok=True)
     storage = args.storage or get_default_storage(study_name)
 
     n_trials  = args.trials    or study_config["n_trials"]
@@ -729,7 +727,7 @@ def _plot_confusion_matrix(
     directly to :func:`utils.visualisation.plot_confusion_matrix`, which
     normalises by row sums and renders a seaborn heat-map.
 
-    The figure is saved to ``results/metrics/{filename}``.
+    The figure is saved to ``results/figures/metrics/{filename}``.
     """
     from utils.visualisation import plot_confusion_matrix as _plot_cm
 
@@ -811,7 +809,7 @@ def _plot_confusion_matrix(
 
     fname = filename or f"{study_name}-confusion.png"
     _plot_cm(cm, filename=fname, show=False)
-    logger.info("[%s] Confusion matrix saved → results/metrics/%s", study_name, fname)
+    logger.info("[%s] Confusion matrix saved → results/figures/metrics/%s", study_name, fname)
 
 
 # ---------------------------------------------------------------------------

@@ -20,6 +20,9 @@ Usage
     python -m optimization.optimize evaluate --type training --study P1-scaling \
         --show params,metrics,hypers --plots slice,importance
 
+# Evaluate a frozen study from archive/v0.1/ (read-only):
+    python -m optimization.optimize evaluate --type training --study P2-distance --archive v0.1
+
 # Re-run best trial with saved states (training only):
     python -m optimization.optimize rerun-best --study P2-distance --folds 5
 
@@ -28,7 +31,7 @@ Usage
         --trial_name P2-distance-best --processes 4
 
 Study names follow SI Table S5 (``P1-scaling``, ``P2-distance``, ``P4-readout-balanced``,
-``ESN-balanced``, ``B1-balanced``, ...); each study is stored in ``logs/optuna-<study>.db``.
+``ESN-balanced``, ``B1-balanced``, ...); each study is stored in ``results/optuna/optuna-<study>.db``.
 """
 
 from __future__ import annotations
@@ -42,7 +45,9 @@ from optimization.base import (
     DEFAULT_SEED,
     SHOW_DEFAULT,
     add_common_args,
+    get_default_storage,
 )
+from utils import config
 from utils.logger import setup_logging
 
 
@@ -187,11 +192,22 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
+    cmd = args.command
+    if getattr(args, "archive", None) and cmd == "research":
+        raise SystemExit("--archive is read-only; new studies are written to results/optuna/.")
 
-    setup_logging(level=getattr(logging, getattr(args, "log_level", "INFO")))
+    log_file = None
+    if cmd in ("research", "rerun-best", "apply-best"):
+        name = getattr(args, "study_name", None) or getattr(args, "study", None) or "study"
+        log_file = str(config.log_file(f"{cmd}-{name}"))
+    args.log_file = log_file
+    setup_logging(level=getattr(logging, getattr(args, "log_level", "INFO")), log_file=log_file)
     rpy.verbosity(getattr(args, "verbosity", 0))
 
-    cmd = args.command
+    if getattr(args, "archive", None):
+        study_name = getattr(args, "study_name", None) or getattr(args, "study", None)
+        if study_name and not args.storage:
+            args.storage = get_default_storage(study_name, archive=args.archive)
 
     if cmd == "list-studies":
         from optimization.studies import list_studies

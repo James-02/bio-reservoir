@@ -25,8 +25,35 @@ conventions and integrate with them rather than reinventing.
   (`reservoirs.py`), objectives, and the CLI (`optimize.py`).
 - `scripts/` — standalone experiment/analysis scripts.
 - `tests/unit/` and `tests/integration/` — pytest suite.
-- `results/`, `data/` — experiment artefacts and datasets (see rules below).
-- `future/` — **gitignored** local planning notes (not published).
+
+## Workspace data layout (all gitignored)
+
+All paths and settings come from `utils/config.py` (environment variable, then
+`config.env`, then default); do not hard-code `results/` or `logs/` paths.
+
+- `results/` — working outputs (`BIORESERVOIR_RESULTS_DIR`): `optuna/optuna-<study>.db`,
+  `runs/<run>/fold-<k>.npz`, `metrics/`, `figures/<topic>/`.
+- `logs/` — log files only (`BIORESERVOIR_LOGS_DIR`), named
+  `<command>-<study>-<UTC time>.log`.
+- `archive/<version>/` — **frozen** results behind a manuscript version, read-only:
+  `optuna/`, `runs/`, `metrics/`, `MANIFEST.csv` (what each file is and which
+  manuscript item it supports) and `SHA256SUMS`
+  (`cd archive/v0.1 && sha256sum -c SHA256SUMS`). Tools only read it
+  (`--archive v0.1`, or an explicit path such as `--glob` / `--runs_dir`). Promote
+  results from `results/` to a new `archive/<version>/` only when they are frozen
+  for a manuscript version.
+- `data/` — input datasets.
+- Snapshots of earlier workspaces live outside the repository (`../backups/`);
+  planning notes live in the private repository.
+
+## Naming conventions
+
+- **Studies** (SI Table S5): phase prefix `P1`–`P4`, `ESN` or `B1`–`B3`, then a
+  lowercase descriptor, e.g. `P1-scaling`, `P2-distance`, `P4-readout-balanced`,
+  `B1-balanced`. Database file: `optuna-<study>.db`, with the same study name inside.
+- **Runs**: `<study>-best[-<variant>]` for re-runs of a study's best trial (the
+  `rerun-best` default), e.g. `P4-readout-binary-best-full`; script-driven runs use a
+  descriptive prefix (`ablation-<condition>`, `heterogeneity-cv<cv>-seed<seed>`).
 
 ## Build, test, and lint commands
 
@@ -54,17 +81,14 @@ ruff format .                  # format
 
 ## Hard rules (do not violate)
 
-- **Do not edit committed results.** Everything under `results/` (and the ECG
-  data manifests) are frozen paper artefacts. The manuscript is under review;
-  code, experiment setup, and results must stay immutable until the Zenodo DOI
-  is minted. Add new files/tooling; never alter research outputs or pinned
-  runtime dependency versions.
+- **Never modify `archive/`.** It holds the frozen artefacts of a manuscript
+  version (the `v0.1` code is archived on Zenodo, DOI 10.5281/zenodo.23436888).
+  Write new results to `results/` and logs to `logs/`. Do not change pinned runtime
+  dependency versions before `v1.0`.
 - **No infrastructure secrets in committed files.** No hostnames, IPs,
   credentials, cluster names, or host-specific ops. Deployment wrappers
   (`scripts/deploy*.sh`, `optimization/deploy.py`, `optimization/collect.py`)
   are gitignored on purpose.
-- **`future/` is gitignored planning** — put rough/strategic notes there, not
-  in tracked files.
 - Secrets come from the environment (see `config.env.example`); the only one
   currently required is a Kaggle API token for dataset download.
 

@@ -58,7 +58,8 @@ results = cross_validate(reservoir, readout, X, Y, folds=5)
 - **utils/** — Preprocessing (ECG loading, augmentation, scaling), analysis metrics, visualisation, and result management.
 - **scripts/** — Standalone experiment scripts and analysis helpers.
 - **data/ecg/** — MIT-BIH arrhythmia dataset files.
-- **results/** — Stored outputs: fold runs, metrics, optimisation studies, reservoir states.
+- **results/** — Working outputs (gitignored): Optuna studies, fold runs, metrics and figures; see [Results Layout](#results-layout).
+- **logs/** — Log files from studies and experiment scripts (gitignored).
 
 ## How It Works
 
@@ -123,7 +124,7 @@ Optuna slice plot generated from the balanced readout optimisation study (P4-rea
 
 Use the unified optimisation CLI to run studies, inspect the best trials, and regenerate diagnostic plots. See `python -m optimization.optimize --help` for the full option set.
 
-Study names follow Supplementary Table S5 (`P1-scaling`, `P2-distance`, `P4-readout-balanced`, `ESN-balanced`, `B1-balanced`, ...), and each study is stored in `logs/optuna-<study>.db`.
+Study names follow Supplementary Table S5 (`P1-scaling`, `P2-distance`, `P4-readout-balanced`, `ESN-balanced`, `B1-balanced`, ...), and each study is stored in `results/optuna/optuna-<study>.db`.
 
 ### Run Studies
 
@@ -139,7 +140,27 @@ python -m optimization.optimize evaluate --type readout --study_name P4-readout-
 python -m optimization.optimize evaluate --type training --study P2-distance --plots slice --show metrics
 ```
 
-Both commands generate plots into `results/optimization/`.
+Both commands generate plots into `results/figures/optimization/`.
+
+### Results Layout
+
+Paths and settings come from [utils/config.py](utils/config.py). Each setting is read from the environment first, then from an optional `config.env` file (copy [config.env.example](config.env.example)), then the default. Relative paths resolve against the repository root.
+
+| Default path | Setting | Contents |
+|---|---|---|
+| `results/optuna/` | `BIORESERVOIR_RESULTS_DIR` (root) | Optuna studies, `optuna-<study>.db` |
+| `results/runs/<run>/` | | Five-fold run files, `fold-<k>.npz` |
+| `results/metrics/` | | Derived metric tables and statistics |
+| `results/figures/<topic>/` | | Figures |
+| `logs/` | `BIORESERVOIR_LOGS_DIR` | Log files, `<command>-<study>-<UTC time>.log` |
+| `archive/<version>/` | `BIORESERVOIR_ARCHIVE_DIR` (root) | Frozen results of a manuscript version |
+
+An archive has the same `optuna/`, `runs/` and `metrics/` folders, plus `MANIFEST.csv` (what each file supports in the manuscript) and `SHA256SUMS`. Archives are read-only and are not part of the repository; new outputs always go to `results/` and `logs/`. To inspect an archived study or run:
+
+```bash
+python -m optimization.optimize evaluate --type training --study P2-distance --archive v0.1
+python scripts/analysis/analyse_fold_results.py --glob 'archive/v0.1/runs/P4-readout-balanced-best/fold-*.npz' --plots confusion
+```
 
 ### Host-Agnostic Reproducibility Scripts
 

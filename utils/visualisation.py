@@ -6,6 +6,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from sklearn.manifold import TSNE
+from utils import config
 from utils.analysis import count_labels, measure_class_deviation
 
 # Set global visualization config
@@ -14,7 +15,6 @@ sns.set_style("ticks")
 plt.rcParams.update({'font.size': 15})
 
 DPI = 800
-RESULTS_DIR = "results/"
 
 # Define class labels and palettes
 binary_classes = ['Normal', 'Arrhythmia']
@@ -72,12 +72,12 @@ def format_sci(x: float, *, max_decimals: int = 2) -> str:
 
 def _save_figure(filename: str) -> None:
     """
-    Save the current figure with a given filename.
+    Save the current figure under ``results/figures/``.
 
     Args:
-        filename (str): The name of the file to save.
+        filename (str): Path relative to the figures directory, e.g. ``states/x.png``.
     """
-    file_path = os.path.join(RESULTS_DIR, filename)
+    file_path = os.path.join(config.figures_dir(), filename)
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     plt.savefig(file_path, bbox_inches="tight", dpi=DPI)
 
@@ -1049,7 +1049,7 @@ def plot_tsne_states(
     show : bool
         Whether to display the figure interactively.
     filename : str
-        File name (relative to ``results/metrics/``) used for saving.
+        File name (relative to ``results/figures/metrics/``) used for saving.
     """
 
     # Flatten any trailing dimensions of states so we have (N, D)
@@ -1300,9 +1300,9 @@ def plot_spatial_topology(
 # ---------------------------------------------------------------------------
 
 def plot_heterogeneity_robustness(
-    db_path: str = "results/optimization/P3-heterogeneity.db",
+    db_path: Optional[str] = None,
     study_name: str = "P3-heterogeneity",
-    output_dir: str = "results/diagnostics/",
+    output_dir: Optional[str] = None,
     filename: str = "heterogeneity_robustness",
     show: bool = False,
 ) -> None:
@@ -1314,12 +1314,12 @@ def plot_heterogeneity_robustness(
 
     Parameters
     ----------
-    db_path : str
-        Path to the Optuna SQLite database.
+    db_path : str, optional
+        Path to the Optuna SQLite database.  Defaults to ``results/optuna/optuna-<study>.db``.
     study_name : str
         Optuna study name inside the database.
-    output_dir : str
-        Directory to write ``{filename}.pdf`` and ``{filename}.png``.
+    output_dir : str, optional
+        Directory for ``{filename}.png``.  Defaults to ``results/figures/diagnostics``.
     filename : str
         Base filename (without extension).
     show : bool
@@ -1329,6 +1329,8 @@ def plot_heterogeneity_robustness(
     import optuna
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
+    db_path = db_path or str(config.optuna_db(study_name))
+    output_dir = output_dir or str(config.figures_dir("diagnostics"))
     study = optuna.load_study(
         study_name=study_name,
         storage=f"sqlite:///{db_path}",

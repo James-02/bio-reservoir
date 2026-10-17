@@ -26,10 +26,11 @@ from sklearn.metrics import (
 from sklearn.ensemble import RandomForestClassifier
 from joblib import Parallel, delayed
 
+from utils import config
 from utils.results import FoldArtifact
 
 SEED = 6337
-RUNS_DIR = "archive/v0.1/runs"
+RUNS_DIR = str(config.runs_dir(archive="v0.1"))
 
 # ── Task definitions ──────────────────────────────────────────────────────────────────────
 TASKS = [

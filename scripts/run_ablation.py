@@ -34,6 +34,7 @@ from sklearn.ensemble import RandomForestClassifier
 
 from bioreservoir import BioReservoir, distance_matrix
 from training import cross_validate
+from utils import config
 from utils.logger import setup_logging
 from utils.preprocessing import load_ecg_data
 
@@ -152,7 +153,7 @@ def main() -> None:
                         help="Override NOISE_RATIO (default: module constant).")
     args = parser.parse_args()
 
-    setup_logging(level=logging.INFO)
+    setup_logging(level=logging.INFO, log_file=str(config.log_file(f"ablation-{args.condition}")))
     log = logging.getLogger(__name__)
     rpy.set_seed(args.seed)
     rpy.verbosity(0)

@@ -151,7 +151,6 @@ def _print_classifier_summary_table(df, top_n: int) -> None:
 
 def cmd_research(args: argparse.Namespace) -> None:
     study_name = args.study_name or getattr(args, "study", None)
-    os.makedirs("logs", exist_ok=True)
     storage = args.storage or get_default_storage(study_name)
     study = build_study(study_name=study_name, storage=storage, seed=int(args.seed))
 
