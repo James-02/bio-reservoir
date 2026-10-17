@@ -19,7 +19,7 @@ permissions:
 jobs:
   lint:
     name: Lint (ruff)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -41,7 +41,7 @@ jobs:
 
   unit-tests:
     name: Unit tests (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -70,7 +70,7 @@ jobs:
           --junitxml=junit.xml -o junit_family=legacy
 
       - name: Upload coverage data
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-data-unit-${{ matrix.python-version }}
           path: .coverage.unit-${{ matrix.python-version }}
@@ -81,7 +81,7 @@ jobs:
       # Runs even when tests fail so failures are reported to Codecov.
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           report_type: test_results
@@ -89,7 +89,7 @@ jobs:
 
   integration-tests:
     name: Integration tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     # The dataset is downloaded with the Kaggle API; add KAGGLE_USERNAME and KAGGLE_KEY as
     # repository secrets. Without them the data-dependent tests are skipped.
@@ -121,7 +121,7 @@ jobs:
           --junitxml=junit.xml -o junit_family=legacy
 
       - name: Upload coverage data
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-data-integration
           path: .coverage.integration
@@ -130,7 +130,7 @@ jobs:
 
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           report_type: test_results
@@ -141,7 +141,7 @@ jobs:
   coverage:
     name: Coverage (unit and integration tests)
     needs: [unit-tests, integration-tests]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v5
@@ -155,7 +155,7 @@ jobs:
         run: uv sync --frozen --extra dev
 
       - name: Download coverage data
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: coverage-data-*
           merge-multiple: true
@@ -168,14 +168,15 @@ jobs:
           uv run --frozen coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload coverage HTML report
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-html
           path: htmlcov/
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.xml
+          disable_search: true
           fail_ci_if_error: false
