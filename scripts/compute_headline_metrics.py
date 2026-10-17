@@ -7,10 +7,12 @@ classifier on each fold, computes per-class metrics per fold (for std),
 and aggregates MCC / Cohen's kappa from the confusion matrix.
 
 Usage:
-    python scripts/compute_headline_metrics.py
+    python scripts/compute_headline_metrics.py [--runs_dir archive/v0.1/runs]
 """
 
 from __future__ import annotations
+
+import argparse
 
 import numpy as np
 from sklearn.metrics import (
@@ -27,12 +29,13 @@ from joblib import Parallel, delayed
 from utils.results import FoldArtifact
 
 SEED = 6337
+RUNS_DIR = "archive/v0.1/runs"
 
-# ── Task definitions ──────────────────────────────────────────────────────
+# ── Task definitions ──────────────────────────────────────────────────────────────────────
 TASKS = [
     {
-        "name": "ro1-readout-fixed (balanced 5-class)",
-        "trial_name": "r1a-refined-fixed-best",
+        "name": "P4-readout-balanced (balanced 5-class)",
+        "trial_name": "P4-readout-balanced-best",
         "clf_cls": RandomForestClassifier,
         "hypers": {
             "n_estimators": 326, "criterion": "log_loss", "oob_score": True,
@@ -41,8 +44,8 @@ TASKS = [
         },
     },
     {
-        "name": "ro1-readout-binary-fixed",
-        "trial_name": "r1a-refined-binary-fixed-best-full",
+        "name": "P4-readout-binary",
+        "trial_name": "P4-readout-binary-best-full",
         "clf_cls": RandomForestClassifier,
         "hypers": {
             "n_estimators": 279, "criterion": "log_loss", "oob_score": True,
@@ -51,8 +54,8 @@ TASKS = [
         },
     },
     {
-        "name": "ro2-readout-unbalanced-fixed (5-class)",
-        "trial_name": "f2-unbalanced-fixed-best",
+        "name": "P4-readout-unbalanced (5-class)",
+        "trial_name": "P4-readout-unbalanced-best",
         "clf_cls": RandomForestClassifier,
         "hypers": {
             "n_estimators": 321, "criterion": "entropy", "oob_score": False,
@@ -87,16 +90,16 @@ def _fit_fold(clf_cls, hypers, artifact):
     }
 
 
-def run_task(task):
+def run_task(task, runs_dir=RUNS_DIR):
     """Run all folds for one task, print results."""
     print(f"\n{'=' * 72}")
     print(f"  {task['name']}")
     print(f"  trial_name={task['trial_name']}  clf={task['clf_cls'].__name__}")
     print(f"{'=' * 72}")
 
-    artifacts = FoldArtifact.load_trial(task["trial_name"])
+    artifacts = FoldArtifact.load_trial(task["trial_name"], results_dir=runs_dir)
     n_folds = len(artifacts)
-    print(f"  Loaded {n_folds} folds from results/runs/{task['trial_name']}/")
+    print(f"  Loaded {n_folds} folds from {runs_dir}/{task['trial_name']}/")
 
     # Fit all folds in parallel
     results = Parallel(n_jobs=n_folds, backend="loky")(
@@ -191,9 +194,12 @@ def run_task(task):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--runs_dir", default=RUNS_DIR, help="Directory containing the run folders.")
+    args = parser.parse_args()
     all_results = []
     for task in TASKS:
-        all_results.append(run_task(task))
+        all_results.append(run_task(task, args.runs_dir))
 
     print(f"\n\n{'=' * 72}")
     print("  SUMMARY")

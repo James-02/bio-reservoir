@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run heterogeneity robustness study with RF readout and 5-fold CV.
 
-Parameters are hardcoded from the r1a-refined best trial (trial 416)
-and ro1-readout-fixed best trial (trial 833, RandomForestClassifier).
+Parameters are hardcoded from the P2-distance best trial (trial 416)
+and P4-readout-balanced best trial (trial 833, RandomForestClassifier).
 
 Each (CV, seed) grid point runs 5-fold stratified cross-validation on
 the balanced five-class ECG task (4015 instances) with a 1000-node
@@ -41,7 +41,7 @@ from utils.preprocessing import load_ecg_data
 SEED = 6337
 
 # ---------------------------------------------------------------------------
-# r1a-refined best trial (trial 416) — resolved parameters
+# P2-distance best trial (trial 416) — resolved parameters
 # ---------------------------------------------------------------------------
 RESERVOIR_PARAMS = dict(
     units=1000,
@@ -66,7 +66,7 @@ RESERVOIR_PARAMS = dict(
 )
 
 # ---------------------------------------------------------------------------
-# ro1-readout-fixed best trial (trial 833) — RF classifier
+# P4-readout-balanced best trial (trial 833) — RF classifier
 # ---------------------------------------------------------------------------
 RF_HYPERS = dict(
     n_estimators=326,

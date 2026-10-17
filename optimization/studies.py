@@ -10,7 +10,7 @@ Structure
 BASELINE      : dict
     Default fixed values for every parameter.  Studies override a subset.
     These were established from preliminary iterative experiments and are
-    validated by the dedicated studies (g1–g7).
+    validated by the dedicated Phase 1 studies (P1-*).
 
 STUDY_REGISTRY : dict[str, dict]
     Maps a study name (used on the CLI via --study) to a config dict with:
@@ -37,22 +37,21 @@ When the condition is not met, the BASELINE value is used instead.
 
 Phase notes
 -----------
-Phase 1 (g1–g7)   Broad single-fold exploratory studies.  Run in parallel
+Phase 1 (P1-*)     Broad single-fold exploratory studies.  Run in parallel
                    across servers; each study is independent.
-Phase 2 (r1)       Joint refinement in narrow ranges from Phase 1 best values.
+Phase 2 (P2-*)     Joint refinement in narrow ranges from Phase 1 best values.
                    Update BASELINE below with Phase 1 results before running.
-Phase 3 (ro1, f2, f3)
-                   Final results:
-                   ro1-readout  — readout optimisation on frozen r1a-refined-best
-                                  states (handled by readout.py, not this file).
-                                  Run on same host as r1a-refined via:
-                                    python -m optimization.optimize rerun-best
-                                      --study r1a-refined --folds 5
-                                    python -m optimization.optimize research --type readout
-                                      --study_name ro1-readout
-                                      --trial_name r1a-refined-best
-                   f2-unbalanced — grid over class-size multiples; no re-opt needed.
-                   f3-binary     — single 5-fold CV with binary=True; no re-opt needed.
+Phase 3 (P3-*)     The P2-distance best trial under other settings:
+                   P3-augmentation — augmentation grid at N=1000.
+                   P3-imbalance    — grid over class-size multiples; no re-opt needed.
+                   P3-binary       — single 5-fold CV with binary=True; no re-opt needed.
+Phase 4 (P4-*)     Readout optimisation on frozen states (readout.py, not this file):
+                     python -m optimization.optimize rerun-best
+                       --study P2-distance --folds 5
+                     python -m optimization.optimize research --type readout
+                       --study_name P4-readout-balanced
+                       --trial_name P2-distance-best
+ESN-*, B*          Echo state network comparator and no-reservoir baselines.
 """
 
 from __future__ import annotations
@@ -66,36 +65,36 @@ BASELINE: Dict[str, Any] = {
     "reservoir_type":          "bioreservoir",
     # -------------------------------------------------------------------------
     # Updated from Phase 1 results (March 2026).
-    # Each value is the best-found from the corresponding g-study (1-fold, N=250).
+    # Each value is the best-found from the corresponding P1 study (1-fold, N=250).
     # These are held fixed in all Phase 1 studies except the one being explored.
     # -------------------------------------------------------------------------
     # --- Reservoir structure ---
-    # units: g6 pending (run after Phase 2); keep 250 until r1a/r1b confirms.
+    # units: P1-units pending (run after Phase 2); keep 250 until P2 confirms.
     "units":                    250,
-    "warmup":                   50,        # g2-dde Phase 1 best (was 40)
-    "rk4_substeps":             60,        # g2-dde Phase 1 best (was 44); at range ceiling — r1 will confirm
+    "warmup":                   50,        # P1-integration Phase 1 best (was 40)
+    "rk4_substeps":             60,        # P1-integration Phase 1 best (was 44); at range ceiling — P2 will confirm
     "rk4_substep_aggregation":  1,
-    # --- Scaling  (g1-scaling Phase 1 best) ---
-    # Note: g1 best is substantially different from preliminary values.
-    # g7 coupling study confirms cell_coupling=8.862 in its own search.
-    "input_scaling":            0.001031,  # g1 best (was 0.08011)
-    "rc_scaling":               0.0005707, # g1 best (was 0.01949)
-    "dde_scaling":              0.007459,  # g1 best (was 0.003703)
-    "cell_coupling":            8.862,     # g7 best (was 16.28)
+    # --- Scaling  (P1-scaling Phase 1 best) ---
+    # Note: P1-scaling best is substantially different from preliminary values.
+    # P1-coupling confirms cell_coupling=8.862 in its own search.
+    "input_scaling":            0.001031,  # P1-scaling best (was 0.08011)
+    "rc_scaling":               0.0005707, # P1-scaling best (was 0.01949)
+    "dde_scaling":              0.007459,  # P1-scaling best (was 0.003703)
+    "cell_coupling":            8.862,     # P1-coupling best (was 16.28)
     "bias_scaling":             0.1,
-    # --- Readout aggregation  (g5b-readout Phase 1 best) ---
-    # last_N with window=36 outperforms "final" across all g5b trials.
+    # --- Readout aggregation  (P1-readout Phase 1 best) ---
+    # last_N with window=36 outperforms "final" across all P1-readout trials.
     # readout_aggregation is active in all studies via params.get(..., "final") fallback.
-    "readout_aggregation":      "last_N",  # g5b best (was "final")
-    "readout_window":           36,        # g5b best (was 1); only active for "last_N"
-    # --- Noise  (g4-noise-reservoir Phase 1 best) ---
+    "readout_aggregation":      "last_N",  # P1-readout best (was "final")
+    "readout_window":           36,        # P1-readout best (was 1); only active for "last_N"
+    # --- Noise  (P1-noise-reservoir Phase 1 best) ---
     # Phase 1 noise studies showed modest F1 (~0.79–0.80), suggesting noise is a
     # weak lever; these are the best-found values but contribution is marginal.
-    "noise_in":                 0.01442,   # g4-reservoir best (was 0.07871)
-    "noise_rc":                 0.2397,    # g4-reservoir best (was 0.1211)
-    # --- Dataset augmentation  (g4-noise-data Phase 1 best) ---
-    "noise_rate":               0.2999,    # g4-data best (was 0.0825)
-    "noise_ratio":              0.2862,    # g4-data best (was 0.2348)
+    "noise_in":                 0.01442,   # P1-noise-reservoir best (was 0.07871)
+    "noise_rc":                 0.2397,    # P1-noise-reservoir best (was 0.1211)
+    # --- Dataset augmentation  (P1-noise-data Phase 1 best) ---
+    "noise_rate":               0.2999,    # P1-noise-data best (was 0.0825)
+    "noise_ratio":              0.2862,    # P1-noise-data best (was 0.2348)
     "preserve_split":           False,     # True = keep original Kachuee train/test split
     # --- Metric semantics ---
     # Primary optimization/reporting average used for f1/precision/recall.
@@ -106,22 +105,22 @@ BASELINE: Dict[str, Any] = {
     # --- Dataset class balance ---
     "balance_classes":          True,
     "max_per_class":            None,      # None = use minority class size (fully balanced)
-    # --- Input layer  (g5-input Phase 1 best) ---
-    "input_bias":               False,     # g5 confirmed (was False)
-    "fixed_bias_scaling":       0.1,       # g5 best
-    "input_connectivity":       0.3679,    # g5 best (was 0.19)
-    # --- Topology  (g3a-topology-distance Phase 1 best) ---
-    "topology_type":            "distance",  # g3a confirmed; r1a/r1b split will compare properly
-    "sparsity":                 0.134,     # g3a best (was 0.5)
-    "signed":                   True,      # g3a best (was False)
-    "p_excite":                 0.66,      # g3a best (was 0.5)
+    # --- Input layer  (P1-input Phase 1 best) ---
+    "input_bias":               False,     # P1-input confirmed (was False)
+    "fixed_bias_scaling":       0.1,       # P1-input best
+    "input_connectivity":       0.3679,    # P1-input best (was 0.19)
+    # --- Topology  (P1-topology-distance Phase 1 best) ---
+    "topology_type":            "distance",  # P1-topology-distance confirmed; P2-distance/P2-random compare properly
+    "sparsity":                 0.134,     # P1-topology-distance best (was 0.5)
+    "signed":                   True,      # P1-topology-distance best (was False)
+    "p_excite":                 0.66,      # P1-topology-distance best (was 0.5)
     # interaction_diameters is fixed at the biologically-derived value — never optimised.
     "interaction_diameters":    8.2,
-    "fade_alpha":               1.014e-06, # g3a best (was 1.813e-05)
-    # --- Output variables  (g5-input Phase 1 best) ---
-    "output_variables":         "He",      # g5 best (was "IHe"); single H state variable
-    # --- Dataset scaling  (g0-scaler Phase 1 confirmed) ---
-    "scaler_type":              "sequence_zscore",  # g0 confirmed (was default)
+    "fade_alpha":               1.014e-06, # P1-topology-distance best (was 1.813e-05)
+    # --- Output variables  (P1-input Phase 1 best) ---
+    "output_variables":         "He",      # P1-input best (was "IHe"); single H state variable
+    # --- Dataset scaling  (P1-scaler Phase 1 confirmed) ---
+    "scaler_type":              "sequence_zscore",  # P1-scaler confirmed (was default)
     # --- Biological heterogeneity ---
     "param_heterogeneity_cv":   0.0,     # CV of per-node kinetic parameter variation (0 = homogeneous)
     "param_heterogeneity_seed": None,    # separate seed for heterogeneity RNG (None = use reservoir seed)
@@ -141,7 +140,7 @@ _PHASE1_COMMON_FIXED = {
 STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
 
     # -----------------------------------------------------------------------
-    # g0-scaler
+    # P1-scaler
     # Purpose: ablation study justifying sequence_zscore as the dataset
     #   preprocessing choice (paper Methods section).
     #   - Six scalers are compared under identical reservoir conditions.
@@ -159,7 +158,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     #   GridSampler: one trial per scaler per pass.  n_trials=30 gives 5 passes
     #   so each of the 6 scalers is evaluated 5 times for variance estimates.
     # -----------------------------------------------------------------------
-    "g0-scaler": {
+    "P1-scaler": {
         "description": (
             "Dataset scaling ablation: 6 scalers compared under identical reservoir. "
             "Justifies sequence_zscore choice in Methods. Uses GridSampler "
@@ -197,13 +196,13 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # g1-scaling
+    # P1-scaling
     # Purpose: characterise the scaling parameter landscape.
     #   - Determines optimal input_scaling / rc_scaling ratio (Fig S4).
     #   - Confirms whether dde_scaling has independent effect or is absorbed.
     #   - ~100 trials is sufficient for 3 log-scale continuous params.
     # -----------------------------------------------------------------------
-    "g1-scaling": {
+    "P1-scaling": {
         "description": (
             "Scaling parameter landscape: input_scaling, rc_scaling, dde_scaling. "
             "Confirms ratio alpha_u/alpha_r governs performance and whether "
@@ -228,7 +227,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # g2-dde
+    # P1-integration
     # Purpose: validate integration convergence and warmup adequacy.
     #   - Finds optimal warmup and rk4_substeps (Fig S2, Methods validation).
     #   - Phase 1 identified warmup=40 AT THE FLOOR of [40,160] — extended down
@@ -236,14 +235,14 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     #   - readout_window is REMOVED: Phase 1 showed only +0.007 F1 benefit
     #     (window=110 over window=1) and r1-refined confirms "final" timestep
     #     aggregation dominates (17/20 top trials). readout_window is now its
-    #     own study (g5b-readout).
+    #     own study (P1-readout).
     # -----------------------------------------------------------------------
-    "g2-dde": {
+    "P1-integration": {
         "description": (
             "DDE integration parameters: warmup and rk4_substeps. "
             "Validates solver accuracy claims in Methods. "
             "Phase 1 best (0.8667): warmup=40 (was at floor — now extended down), "
-            "rk4_substeps=44. readout_window moved to g5b-readout."
+            "rk4_substeps=44. readout_window moved to P1-readout."
         ),
         "sampler":   "tpe",
         "n_trials":  120,
@@ -259,18 +258,18 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # g3-topology  ***DEPRECATED — reference only***
+    # P1-topology-legacy  ***DEPRECATED — reference only***
     # The joint study is invalid: random topology had 100% crash rate in Phase 1 
     # due to a code bug (fixed), and the shared BASELINE params were tuned for 
     # distance topology, making the comparison unfair.
-    # See g3a-topology-distance and g3b-topology-random for the redesigned studies.
+    # See P1-topology-distance and P1-topology-random for the redesigned studies.
     # -----------------------------------------------------------------------
-    "g3-topology": {
+    "P1-topology-legacy": {
         "description": (
             "DEPRECATED — Joint topology comparison. Invalid: random topology crashed "
             "(100%) due to output_dim override bug (fixed). BASELINE params tuned for "
             "distance, making the comparison structurally unfair. "
-            "Replaced by g3a-topology-distance + g3b-topology-random."
+            "Replaced by P1-topology-distance + P1-topology-random."
         ),
         "sampler":   "tpe",
         "n_trials":  0,   # Do not run; kept for historical reference only.
@@ -290,7 +289,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # g3a-topology-distance  ***MOST IMPORTANT STUDY — PRIMARY CLAIM***
+    # P1-topology-distance  ***MOST IMPORTANT STUDY — PRIMARY CLAIM***
     # Purpose: optimise the biological distance-based topology independently.
     #   - topology_type fixed to "distance" — never competes with random.
     #   - sparsity: fraction of distance-decay connections retained.
@@ -301,7 +300,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     #   - 200 trials: enough to characterise this 4-parameter space with TPE.
     # This study directly supports the biological novelty claim (Fig S5/S6).
     # -----------------------------------------------------------------------
-    "g3a-topology-distance": {
+    "P1-topology-distance": {
         "description": (
             "Distance-based topology optimisation (standalone). "
             "Optimises sparsity, fade_alpha, signed, p_excite independently of random. "
@@ -332,21 +331,21 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # g3b-topology-random  ***BASELINE COMPARISON FOR g3a***
+    # P1-topology-random  ***BASELINE COMPARISON FOR P1-topology-distance***
     # Purpose: establish a fair random-ESN baseline, optimised independently.
     #   - topology_type fixed to "random" — full, unbiased TPE search.
     #   - rc_connectivity: direct fraction of non-zero edges (NOT 1-sparsity).
-    #     This avoids the sign-flip confusion in the joint g3 study.
-    #   - signed / p_excite: same E/I options as g3a for a fair structural comparison.
+    #     This avoids the sign-flip confusion in the joint P1-topology-legacy study.
+    #   - signed / p_excite: same E/I options as P1-topology-distance for a fair structural comparison.
     #   - fade_alpha NOT included (irrelevant for random topology).
     #   - 150 trials: random has fewer parameters, so fewer trials needed.
     # -----------------------------------------------------------------------
-    "g3b-topology-random": {
+    "P1-topology-random": {
         "description": (
             "Random topology optimisation (standalone ESN baseline). "
             "Uses rc_connectivity (direct edge density, 0–1) not inverted sparsity. "
-            "Provides a fair baseline comparison for g3a biological topology. "
-            "signed and p_excite included for structural symmetry with g3a."
+            "Provides a fair baseline comparison for P1-topology-distance biological topology. "
+            "signed and p_excite included for structural symmetry with P1-topology-distance."
         ),
         "sampler":   "tpe",
         "n_trials":  150,
@@ -355,7 +354,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
         "binary":    False,
         "optimize": {
             # Direct edge density: 0=no connections, 1=fully connected.
-            # Distinct from g3a's 'sparsity' to avoid semantic sign-flip confusion.
+            # Distinct from P1-topology-distance's 'sparsity' to avoid semantic sign-flip confusion.
             "rc_connectivity": {"type": "float", "low": 0.05, "high": 1.0},
             "signed": {"type": "categorical", "choices": [True, False]},
             # E/I balance: only meaningful when signed=True.
@@ -370,12 +369,12 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # g4-noise-reservoir
+    # P1-noise-reservoir
     # Purpose: characterise sensitivity to reservoir noise (Fig S7).
     #   - Not to "find optimal noise" but to show stability within a range.
     #   - Robustness demonstration supports biological plausibility argument.
     # -----------------------------------------------------------------------
-    "g4-noise-reservoir": {
+    "P1-noise-reservoir": {
         "description": (
             "Reservoir noise sensitivity: noise_in and noise_rc. "
             "Characterises the stable operating range for Fig S7 (noise robustness)."
@@ -393,11 +392,11 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # g4-noise-data
+    # P1-noise-data
     # Purpose: characterise sensitivity to training data augmentation.
     #   - Finds whether noise augmentation helps or hurts and by how much.
     # -----------------------------------------------------------------------
-    "g4-noise-data": {
+    "P1-noise-data": {
         "description": (
             "Data augmentation sensitivity: noise_rate and noise_ratio. "
             "Quantifies contribution of Gaussian noise augmentation to generalisation."
@@ -415,19 +414,19 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # g4a-augmentation-grid
+    # P3-augmentation
     # Purpose: re-validate data augmentation parameters with the optimized
-    #   reservoir from Phase 2 (r1a-refined trial 416, N=1000).
-    #   Phase 1 g4-noise-data found noise_rate=0.2999/noise_ratio=0.2862
+    #   reservoir from Phase 2 (P2-distance trial 416, N=1000).
+    #   Phase 1 P1-noise-data found noise_rate=0.2999/noise_ratio=0.2862
     #   at N=250 with unoptimized reservoir; these values may be suboptimal
     #   at the final operating point.
     #   Grid includes 0.0 to confirm that augmentation is beneficial.
     #   5-fold CV for reliable variance estimates at each grid point.
     # -----------------------------------------------------------------------
-    "g4a-augmentation-grid": {
+    "P3-augmentation": {
         "description": (
             "Data augmentation re-validation grid: noise_rate × noise_ratio "
-            "(7×7 = 49 points, 5-fold CV). Uses r1a-refined best (trial 416, "
+            "(7×7 = 49 points, 5-fold CV). Uses P2-distance best (trial 416, "
             "N=1000) with default KNN readout. Includes 0.0 to test whether "
             "augmentation is beneficial at the final reservoir operating point."
         ),
@@ -441,7 +440,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
             "noise_ratio": {"type": "categorical", "choices": [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]},
         },
         "fixed": {
-            # r1a-refined best trial (trial 416, F1=0.9047)
+            # P2-distance best trial (trial 416, F1=0.9047)
             "topology_type":       "distance",
             "signed":              True,
             "input_bias":          False,
@@ -471,13 +470,13 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # g5-input
+    # P1-input
     # Purpose: justify hardcoded input layer design choices.
     #   - input_connectivity = 1.0 (full connectivity, every node receives input)
     #   - input_bias = False (no bias term)
     #   - If bias is added, characterise optimal bias_scaling.
     # -----------------------------------------------------------------------
-    "g5-input": {
+    "P1-input": {
         "description": (
             "Input/output layer sensitivity: input_connectivity, input_bias, "
             "bias_scaling, and output_variables (subset of DDE state vars). "
@@ -514,19 +513,19 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # g5b-readout
+    # P1-readout
     # Purpose: standalone characterisation of readout aggregation strategy.
     #   - readout_aggregation determines HOW the reservoir state time-series is
     #     collapsed to a feature vector for the KNN readout.
     #   - readout_window only applies for "last_N" aggregation; conditional.
     #   - Phase 1 RESULT: "last_N" with window=36 wins (F1=0.7831).
     #     "final" did not appear in top-10. BASELINE updated to last_N/36.
-    #     r1a/r1b will optimise window jointly with all other parameters.
+    #     P2-distance/P2-random will optimise window jointly with all other parameters.
     # -----------------------------------------------------------------------
-    "g5b-readout": {
+    "P1-readout": {
         "description": (
             "Readout aggregation strategy: final timestep vs signal_mean vs last_N window. "
-            "Standalone Phase 1 study (moved from g2-dde). "
+            "Standalone Phase 1 study (moved from P1-integration). "
             "readout_window is conditional on readout_aggregation == 'last_N'. "
             "Phase 1 result: last_N/window=36 best (F1=0.7831); BASELINE updated accordingly."
         ),
@@ -545,7 +544,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
                 "choices": ["final", "signal_mean", "last_N"],
             },
             # Only sampled when readout_aggregation == "last_N".
-            # Phase 1 g2 best was 110; range covers [1, 200] to explore fully.
+            # Phase 1 P1-integration best was 110; range covers [1, 200] to explore fully.
             "readout_window": {
                 "type": "int", "low": 1, "high": 200,
                 "conditional_on": "readout_aggregation", "condition_value": "last_N",
@@ -555,7 +554,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # g6-units
+    # P1-units
     # Purpose: reservoir size scaling curve (Fig S3).
     #   - Grid sampler: exactly 1 trial per unit count (no repeats).
     #   - Run multiple times (via multiple processes hitting same DB) to get
@@ -565,16 +564,16 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     # NOTE: with GridSampler and n_trials == len(choices), each grid point
     #       is trialled exactly once.  Use --processes 1 to avoid race
     #       conditions where concurrent workers duplicate the same point.
-    # PHASE NOTE: Uses Phase 2 r1a-refined best-trial values as fixed baseline
+    # PHASE NOTE: Uses Phase 2 P2-distance best-trial values as fixed baseline
     #   so that the scaling curve reflects performance at optimized parameters.
     #   Running with Phase 1 baseline produces a flat curve because Phase 1
     #   params were calibrated at N=250 and underperform at larger sizes.
     # -----------------------------------------------------------------------
-    "g6-units": {
+    "P1-units": {
         "description": (
             "Reservoir size scaling: units from 50 to 1000. "
             "Generates Fig S3 (performance vs size). "
-            "Fixed baseline from r1a-refined best trial (Phase 2). "
+            "Fixed baseline from P2-distance best trial (Phase 2). "
             "Uses GridSampler — one trial per grid point."
         ),
         "sampler":   "grid",
@@ -586,7 +585,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
             "units": {"type": "categorical", "choices": [50, 100, 150, 200, 250, 300, 400, 500, 750, 1000]},
         },
         "fixed": {
-            # r1a-refined best trial (trial 416, F1=0.9047)
+            # P2-distance best trial (trial 416, F1=0.9047)
             "topology_type":       "distance",
             "signed":              True,
             "input_bias":          False,
@@ -613,13 +612,13 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # g7-coupling
+    # P1-coupling
     # Purpose: determine whether cell_coupling is a free parameter or
     #   redundant with input_scaling / rc_scaling.
     #   - If the importance plot shows cell_coupling ≈ 0 relative to scaling,
     #     it can be fixed to 1.0 with a quantitative justification.
     # -----------------------------------------------------------------------
-    "g7-coupling": {
+    "P1-coupling": {
         "description": (
             "cell_coupling redundancy: optimize cell_coupling alongside scaling. "
             "If importance near zero, fixes cell_coupling=1.0 permanently."
@@ -644,17 +643,17 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     # running this study.  Narrow ranges (±0.5–1 order of magnitude around
     # Phase 1 best) allow TPE to find cross-parameter optima.
     # -----------------------------------------------------------------------
-    # r1a-refined  (distance topology)
+    # P2-distance  (distance topology)
     # Joint refinement over all key parameters with topology_type fixed to
     # "distance" (biologically motivated). This is the primary paper result.
     # BASELINE updated from Phase 1 before this run.
-    # r1a and r1b run simultaneously on separate hosts for fair comparison.
-    "r1a-refined": {
+    # P2-distance and P2-random run simultaneously on separate hosts for fair comparison.
+    "P2-distance": {
         "description": (
             "Joint optimisation — distance topology. "
             "All key parameters searched together via TPE. Topology fixed=distance. "
-            "BASELINE updated from Phase 1 (g1–g7) best values. "
-            "Readout aggregation freed (last_N won Phase 1 g5b, window optimised jointly). "
+            "BASELINE updated from Phase 1 (P1-*) best values. "
+            "Readout aggregation freed (last_N won Phase 1 P1-readout, window optimised jointly). "
             "units×output_variables interaction explored (He=1×units, IHe=2×, all=4×). "
             "Defines primary performance ceiling for biologically motivated topology."
         ),
@@ -664,18 +663,18 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
         "instances": 4015,
         "binary":    False,
         "optimize": {
-            # ---- Scaling (g1 Phase 1 best: input=0.001, rc=0.0006, dde=0.0075) ----
+            # ---- Scaling (P1-scaling Phase 1 best: input=0.001, rc=0.0006, dde=0.0075) ----
             # Ranges centred on Phase 1 best; extended 2 log-decades each side.
             "input_scaling":  {"type": "float", "low": 1e-4,  "high": 0.1,  "log": True},
             "rc_scaling":     {"type": "float", "low": 5e-5,  "high": 0.05, "log": True},
             "dde_scaling":    {"type": "float", "low": 5e-4,  "high": 0.05, "log": True},
-            # g7 Phase 1 best=8.862; range [3, 50] to catch interactions with scaling.
+            # P1-coupling Phase 1 best=8.862; range [3, 50] to catch interactions with scaling.
             "cell_coupling":  {"type": "float", "low": 3.0,  "high": 50.0, "log": True},
-            # ---- DDE integration (g2 Phase 1 best: warmup=50, substeps=60) ----
+            # ---- DDE integration (P1-integration Phase 1 best: warmup=50, substeps=60) ----
             # substeps=60 was at the Phase 1 ceiling — extend up to 88 to confirm.
             "warmup":         {"type": "int", "low": 10, "high": 80,  "step": 10},
             "rk4_substeps":   {"type": "int", "low": 28, "high": 88,  "step": 4},
-            # ---- Topology (g3a Phase 1 best: sparsity=0.134, fade_alpha=1e-6) ----
+            # ---- Topology (P1-topology-distance Phase 1 best: sparsity=0.134, fade_alpha=1e-6) ----
             # interaction_diameters is biologically fixed — not optimised.
             "sparsity":       {"type": "float", "low": 0.05, "high": 0.8},
             "fade_alpha":     {"type": "float", "low": 1e-7,  "high": 1e-3, "log": True},
@@ -684,14 +683,14 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
             # units×output_vars determines KNN feature dimensionality.
             # units=1000 + all(4 vars) = 4000d → curse of dimensionality for KNN(k=4).
             "units": {"type": "categorical", "choices": [250, 500, 750, 1000]},
-            # ---- Input layer (g5 Phase 1 best: connectivity=0.368) ----
+            # ---- Input layer (P1-input Phase 1 best: connectivity=0.368) ----
             "input_connectivity": {"type": "float", "low": 0.05, "high": 1.0},
-            # ---- Output variables (g5 Phase 1 best: "He") ----
+            # ---- Output variables (P1-input Phase 1 best: "He") ----
             "output_variables": {
                 "type": "categorical",
                 "choices": ["all", "AI", "IHi", "IHe", "AHe", "He"],
             },
-            # ---- Readout aggregation (g5b Phase 1 best: last_N/window=36) ----
+            # ---- Readout aggregation (P1-readout Phase 1 best: last_N/window=36) ----
             # Freed here so window interacts properly with warmup/substeps.
             "readout_aggregation": {
                 "type": "categorical",
@@ -703,33 +702,33 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
             },
         },
         "fixed": {
-            # Topology type fixed — unbiased comparison with r1b handled by separate run.
-            "topology_type":  "distance",  # g3a confirmed; biologically motivated
-            "signed":         True,         # g3a best
-            "input_bias":     False,        # g5 confirmed
-            # Noise params: Phase 1 best values (weak lever — modest F1 in g4 studies).
-            "noise_in":       0.01442,      # g4-reservoir best
-            "noise_rc":       0.2397,       # g4-reservoir best
-            "noise_rate":     0.2999,       # g4-data best
-            "noise_ratio":    0.2862,       # g4-data best
+            # Topology type fixed — unbiased comparison with P2-random handled by separate run.
+            "topology_type":  "distance",  # P1-topology-distance confirmed; biologically motivated
+            "signed":         True,         # P1-topology-distance best
+            "input_bias":     False,        # P1-input confirmed
+            # Noise params: Phase 1 best values (weak lever — modest F1 in P1-noise studies).
+            "noise_in":       0.01442,      # P1-noise-reservoir best
+            "noise_rc":       0.2397,       # P1-noise-reservoir best
+            "noise_rate":     0.2999,       # P1-noise-data best
+            "noise_ratio":    0.2862,       # P1-noise-data best
         },
         # Cap parallel workers: units up to 1000, ~3 GB RAM/trial.
         # 64 workers corresponds to ~192 GB peak at units=1000.
         "max_processes":  64,
     },
 
-    # r1b-refined  (random/Gaussian topology)
-    # Identical parameter budget and ranges as r1a, but topology fixed to
+    # P2-random  (random/Gaussian topology)
+    # Identical parameter budget and ranges as P2-distance, but topology fixed to
     # "random" (Gaussian weights). Deployed simultaneously on a separate host
     # so comparison is unbiased — each topology gets its own full joint optimisation.
-    # The Phase 1 g3b comparison was confounded by a BASELINE tuned for distance;
-    # r1b corrects this by freely optimising all parameters for random topology.
-    "r1b-refined": {
+    # The Phase 1 P1-topology-random comparison was confounded by a BASELINE tuned for distance;
+    # P2-random corrects this by freely optimising all parameters for random topology.
+    "P2-random": {
         "description": (
             "Joint optimisation — random (Gaussian) topology. "
-            "Mirror of r1a but topology_type fixed=random and sparsity→rc_connectivity. "
-            "Run simultaneously with r1a on a separate host for unbiased topology comparison. "
-            "Phase 1 g3b was confounded by a distance-tuned BASELINE; r1b corrects this. "
+            "Mirror of P2-distance but topology_type fixed=random and sparsity→rc_connectivity. "
+            "Run simultaneously with P2-distance on a separate host for unbiased topology comparison. "
+            "Phase 1 P1-topology-random was confounded by a distance-tuned BASELINE; P2-random corrects this. "
             "Provides the fair performance ceiling for Gaussian random ESN topology."
         ),
         "sampler":   "tpe",
@@ -738,12 +737,12 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
         "instances": 4015,
         "binary":    False,
         "optimize": {
-            # ---- Scaling (same ranges as r1a) ----
+            # ---- Scaling (same ranges as P2-distance) ----
             "input_scaling":  {"type": "float", "low": 1e-4,  "high": 0.1,  "log": True},
             "rc_scaling":     {"type": "float", "low": 5e-5,  "high": 0.05, "log": True},
             "dde_scaling":    {"type": "float", "low": 5e-4,  "high": 0.05, "log": True},
             "cell_coupling":  {"type": "float", "low": 3.0,   "high": 50.0, "log": True},
-            # ---- DDE integration (same ranges as r1a) ----
+            # ---- DDE integration (same ranges as P2-distance) ----
             "warmup":         {"type": "int", "low": 10, "high": 80, "step": 10},
             "rk4_substeps":   {"type": "int", "low": 28, "high": 88, "step": 4},
             # ---- Topology — random uses rc_connectivity, not sparsity/fade_alpha ----
@@ -753,14 +752,14 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
             "p_excite":        {"type": "float", "low": 0.3,  "high": 0.9},
             # ---- Units ----
             "units": {"type": "categorical", "choices": [250, 500, 750, 1000]},
-            # ---- Input layer (same ranges as r1a) ----
+            # ---- Input layer (same ranges as P2-distance) ----
             "input_connectivity": {"type": "float", "low": 0.05, "high": 1.0},
-            # ---- Output variables (same choices as r1a) ----
+            # ---- Output variables (same choices as P2-distance) ----
             "output_variables": {
                 "type": "categorical",
                 "choices": ["all", "AI", "IHi", "IHe", "AHe", "He"],
             },
-            # ---- Readout aggregation (same as r1a) ----
+            # ---- Readout aggregation (same as P2-distance) ----
             "readout_aggregation": {
                 "type": "categorical",
                 "choices": ["final", "signal_mean", "last_N"],
@@ -771,9 +770,9 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
             },
         },
         "fixed": {
-            "topology_type":  "random",   # Gaussian random ESN — comparable to r1a
-            "signed":         True,        # g3b best; allows inhibitory connections
-            "input_bias":     False,       # g5 confirmed
+            "topology_type":  "random",   # Gaussian random ESN — comparable to P2-distance
+            "signed":         True,        # P1-topology-random best; allows inhibitory connections
+            "input_bias":     False,       # P1-input confirmed
             # Noise params: Phase 1 best values.
             "noise_in":       0.01442,
             "noise_rc":       0.2397,
@@ -787,23 +786,23 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     # -----------------------------------------------------------------------
     # Phase 3 — Final results
     # -----------------------------------------------------------------------
-    # ro1-readout is handled entirely by readout.py, not this registry.
+    # P4-readout-* studies are handled entirely by readout.py, not this registry.
     # See module docstring Phase notes for the exact command sequence.
-    # Prerequisite: run `classification rerun-best --study r1a-refined --folds 5`
+    # Prerequisite: run `classification rerun-best --study P2-distance --folds 5`
     # first to produce state-saved fold artefacts.
     #
-    # f1-final-5class and f4-large removed: r1a-refined best trial with the
-    # ro1-optimised readout IS the headline 5-class result.  There is nothing
+    # f1-final-5class and f4-large removed: P2-distance best trial with the
+    # P4-readout-balanced readout IS the headline 5-class result.  There is nothing
     # further to optimise at the reservoir level.
     # -----------------------------------------------------------------------
 
-    "f2-unbalanced": {
+    "P3-imbalance-weighted": {
         "description": (
             "Class imbalance sensitivity: grid over max_per_class as a "
             "multiple of the minority-class count (803 samples for MIT-BIH). "
             "1x = fully balanced; 5x = close to full unbalanced dataset. "
-            "Fixed reservoir params from r1a-refined best trial. "
-            "UPDATE 'fixed' section with r1a-refined best-trial values before running."
+            "Fixed reservoir params from P2-distance best trial. "
+            "UPDATE 'fixed' section with P2-distance best-trial values before running."
         ),
         "sampler":   "grid",
         "n_trials":  5,   # 5 grid points: 1x–5x minority size
@@ -825,7 +824,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
             # each class is capped at max_per_class samples, so larger classes
             # grow relative to the fixed minority class.
             "balance_classes": True,
-            # r1a-refined best trial (trial 416, F1=0.9047)
+            # P2-distance best trial (trial 416, F1=0.9047)
             "topology_type":       "distance",
             "signed":              True,
             "input_bias":          False,
@@ -860,13 +859,13 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # f2-unbalanced-v4
+    # P3-imbalance
     # Re-run of the class-imbalance grid search WITHOUT noise augmentation.
-    # After the g4a-augmentation-grid study showed augmentation is negligible
+    # After the P3-augmentation study showed augmentation is negligible
     # at N=1000 (+0.08%), we drop it from all headline evaluations.
     # Uses 5-fold CV with macro F1 objective.
     # -----------------------------------------------------------------------
-    "f2-unbalanced-v4": {
+    "P3-imbalance": {
         "description": (
             "Class imbalance sensitivity (no augmentation): grid over "
             "max_per_class as a multiple of the minority-class count (803). "
@@ -886,7 +885,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
         "fixed": {
             "balance_classes":     True,
             "objective_average":   "macro",
-            # r1a-refined best trial (trial 416, F1=0.9047)
+            # P2-distance best trial (trial 416, F1=0.9047)
             "topology_type":       "distance",
             "signed":              True,
             "input_bias":          False,
@@ -915,33 +914,32 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
         "fold_workers":  1,
     },
 
-    # ro2-readout-unbalanced
-    # Readout optimisation on the best f2-unbalanced grid point (highest F1
-    # across the 5 max_per_class levels), using the same pipeline as ro1-readout
-    # but with unbalanced training data.
-    # Run after f2-unbalanced completes:
+    # P4-readout-unbalanced
+    # Readout optimisation on the best P3-imbalance grid point (highest F1
+    # across the 5 max_per_class levels), using the same pipeline as
+    # P4-readout-balanced but with unbalanced training data:
     #   python -m optimization.optimize rerun-best \
-    #       --study f2-unbalanced --folds 5
+    #       --study P3-imbalance --folds 5
     #   python -m optimization.optimize research --type readout \
-    #       --study_name ro2-readout-unbalanced \
-    #       --trial_name f2-unbalanced-best
+    #       --study_name P4-readout-unbalanced \
+    #       --trial_name P3-imbalance-best
     # This gives the headline "unbalanced" F1 cited in the paper.
 
     # -----------------------------------------------------------------------
-    # f2-unbalanced-macro
+    # P3-imbalance-1fold
     # Clean re-run of the class-imbalance grid search with macro F1 objective.
     # Single-fold: this study exists only to show the trend of F1 increasing
     # with max_per_class, not to produce headline metrics.
-    # The existing f2-unbalanced study used weighted F1 due to a code bug
+    # The existing P3-imbalance-weighted study used weighted F1 due to a code bug
     # (readout.py defaulted to weighted; classification.py used weighted
     # before BASELINE["objective_average"] was added).
     # -----------------------------------------------------------------------
-    "f2-unbalanced-macro": {
+    "P3-imbalance-1fold": {
         "description": (
             "Class imbalance sensitivity (macro F1 objective): grid over "
             "max_per_class as a multiple of the minority-class count (803). "
             "Single-fold evaluation for trend analysis. "
-            "Fixed reservoir params from r1a-refined best trial."
+            "Fixed reservoir params from P2-distance best trial."
         ),
         "sampler":   "grid",
         "n_trials":  5,
@@ -957,7 +955,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
         "fixed": {
             "balance_classes": True,
             "objective_average": "macro",
-            # r1a-refined best trial (trial 416, F1=0.9047)
+            # P2-distance best trial (trial 416, F1=0.9047)
             "topology_type":       "distance",
             "signed":              True,
             "input_bias":          False,
@@ -986,23 +984,23 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
         "fold_workers":  1,
     },
 
-    "f3-binary": {
+    "P3-binary": {
         "description": (
             "Binary (Normal vs Arrhythmia) classification. "
-            "Uses r1a-refined best reservoir params with binary=True. "
+            "Uses P2-distance best reservoir params with binary=True. "
             "n_trials=1: nothing to optimise — report 5-fold CV metrics directly. "
             "Run via: python -m optimization.optimize rerun-best "
-            "--study r1a-refined --folds 5 --binary "
-            "--trial_name r1a-refined-best-binary"
+            "--study P2-distance --folds 5 --binary "
+            "--trial_name P3-binary-best"
         ),
         "sampler":   "tpe",
         "n_trials":  1,
         "folds":     5,
         "instances": 4015,
         "binary":    True,
-        "optimize": {},  # nothing to optimise; all fixed from r1a-refined best
+        "optimize": {},  # nothing to optimise; all fixed from P2-distance best
         "fixed": {
-            # r1a-refined best trial (trial 416, F1=0.9047)
+            # P2-distance best trial (trial 416, F1=0.9047)
             "topology_type":       "distance",
             "signed":              True,
             "input_bias":          False,
@@ -1026,7 +1024,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
         },
     },
     # -----------------------------------------------------------------------
-    # h1-heterogeneity
+    # P3-heterogeneity
     # Purpose: Biological realism robustness study.  Measures classification
     #   performance under per-node kinetic parameter heterogeneity, simulating
     #   cell-to-cell variability in gene expression (Elowitz et al. 2002,
@@ -1035,16 +1033,16 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     #   Grid: 8 CV levels × 5 seeds = 40 trials.  CV=0.0 is the homogeneous
     #   baseline; seeds vary the random parameter realization while keeping
     #   topology, initial conditions, and data splits identical.
-    #   Uses r1a-refined best reservoir params with single-fold evaluation
+    #   Uses P2-distance best reservoir params with single-fold evaluation
     #   (fold-0).  This is a robustness check, not model selection, so full
     #   cross-validation is unnecessary.
     # -----------------------------------------------------------------------
-    "h1-heterogeneity": {
+    "P3-heterogeneity": {
         "description": (
             "Biological realism: per-node kinetic heterogeneity sweep. "
             "Grid over CV (0.0–0.5) × 5 seeds.  Tests robustness to "
             "cell-to-cell gene expression noise (log-normal kinetic rates). "
-            "Fixed reservoir params from r1a-refined best trial."
+            "Fixed reservoir params from P2-distance best trial."
         ),
         "sampler":   "grid",
         "n_trials":  40,   # 8 CV levels × 5 seeds
@@ -1062,7 +1060,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
             },
         },
         "fixed": {
-            # r1a-refined best trial (trial 416, F1=0.9047)
+            # P2-distance best trial (trial 416, F1=0.9047)
             "topology_type":       "distance",
             "signed":              True,
             "input_bias":          False,
@@ -1095,13 +1093,13 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # esn-balanced
+    # ESN-balanced
     # Standard ReservoirPy leaky ESN baseline on the balanced five-class task.
     # Kept materially cheaper than the BioReservoir search while using the same
     # data pipeline, CV protocol, frozen-state readout optimisation, and metric
     # semantics.
     # -----------------------------------------------------------------------
-    "esn-balanced": {
+    "ESN-balanced": {
         "description": (
             "ReservoirPy leaky ESN baseline on the balanced five-class task. "
             "Uses the same preprocessing, CV protocol, and macro-F1 objective "
@@ -1143,19 +1141,19 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # b1-baseline
+    # B1-balanced
     # No-reservoir baseline: classifiers trained directly on the raw z-scored
     # 187-dimensional ECG feature vectors, bypassing the reservoir entirely.
     # Uses the same classifier families, hyperparameter ranges, 5-fold
     # stratified CV protocol, per-fold augmentation/standardisation, and
-    # macro-F1 objective as the reservoir readout studies (ro1-readout).
+    # macro-F1 objective as the reservoir readout studies (P4-readout-*).
     # Handled by optimization/baseline.py, not classification.py.
     #
     # Run via:
     #   python -m optimization.optimize research --type baseline \
-    #       --study_name b1-baseline --trials 500 --processes 32
+    #       --study_name B1-balanced --trials 500 --processes 32
     # -----------------------------------------------------------------------
-    "b1-baseline": {
+    "B1-balanced": {
         "description": (
             "No-reservoir baseline: classifiers on raw z-scored 187-d ECG vectors. "
             "Same classifier families, hyperparameter ranges, 5-fold CV protocol, "
@@ -1180,16 +1178,16 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # b2-baseline-unbalanced
+    # B2-unbalanced
     # No-reservoir baseline on the unbalanced 5x dataset (max_per_class=4015),
-    # matching the f2-unbalanced 5x configuration.  Uses the same large pool
+    # matching the P3-imbalance 5x configuration.  Uses the same large pool
     # size so that each class contributes up to 4015 or its natural count.
     # Compares directly with the reservoir's headline unbalanced F1 = 0.920.
     # -----------------------------------------------------------------------
-    "b2-baseline-unbalanced": {
+    "B2-unbalanced": {
         "description": (
             "No-reservoir baseline on 5x unbalanced dataset (max_per_class=4015). "
-            "Matches f2-unbalanced 5x setting.  Compares with reservoir F1=0.920."
+            "Matches the P3-imbalance 5x setting.  Compares with reservoir F1=0.920."
         ),
         "type":      "baseline",
         "sampler":   "tpe",
@@ -1209,7 +1207,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # -----------------------------------------------------------------------
-    # b3-baseline-binary
+    # B3-binary
     # No-reservoir baseline on the binary (Normal vs Arrhythmia) task.
     # Uses the same balanced binary dataset as the reservoir binary study.
     # instances=4015 matches the readout-selection pool; the reservoir's
@@ -1218,7 +1216,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     # Compares directly with the reservoir's binary readout F1 = 0.933
     # (on 4015 instances) and the headline F1 = 0.961 (full dataset).
     # -----------------------------------------------------------------------
-    "b3-baseline-binary": {
+    "B3-binary": {
         "description": (
             "No-reservoir baseline on balanced binary (Normal vs Arrhythmia). "
             "instances=4015 for parity with reservoir readout selection."

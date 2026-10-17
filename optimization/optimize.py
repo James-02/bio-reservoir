@@ -6,26 +6,29 @@ Usage
     python -m optimization.optimize list-studies
 
 # Run a reservoir/training optimisation study:
-    python -m optimization.optimize research --type training --study g1-scaling --processes 64
+    python -m optimization.optimize research --type training --study P1-scaling --processes 64
 
 # Run a readout optimisation study:
-    python -m optimization.optimize research --type readout --study_name ro1-readout \\
-        --trial_name r1a-refined-best --classifiers KNN RF Ridge --processes 32
+    python -m optimization.optimize research --type readout --study_name P4-readout-balanced \\
+        --trial_name P2-distance-best --classifiers KNN RF Ridge --processes 32
 
 # Run a no-reservoir baseline study (classifiers on raw ECG features):
     python -m optimization.optimize research --type baseline \\
-        --study_name b1-baseline --trials 500 --processes 32
+        --study_name B1-balanced --trials 500 --processes 32
 
 # Evaluate an existing study:
-    python -m optimization.optimize evaluate --type training --study g1-scaling \
+    python -m optimization.optimize evaluate --type training --study P1-scaling \
         --show params,metrics,hypers --plots slice,importance
 
 # Re-run best trial with saved states (training only):
-    python -m optimization.optimize rerun-best --study r1a-refined --folds 5
+    python -m optimization.optimize rerun-best --study P2-distance --folds 5
 
 # Apply best readout classifier to fold NPZ files (readout only):
-    python -m optimization.optimize apply-best --study_name ro1-readout \\
-        --trial_name r1a-refined-best --processes 4
+    python -m optimization.optimize apply-best --study_name P4-readout-balanced \\
+        --trial_name P2-distance-best --processes 4
+
+Study names follow SI Table S5 (``P1-scaling``, ``P2-distance``, ``P4-readout-balanced``,
+``ESN-balanced``, ``B1-balanced``, ...); each study is stored in ``logs/optuna-<study>.db``.
 """
 
 from __future__ import annotations

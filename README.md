@@ -110,31 +110,33 @@ Aggregated confusion matrix across five folds for the balanced five-class arrhyt
 Aggregated confusion matrix across five folds for the binary Normal vs Arrhythmia task (N=1000, Random Forest).
 
 ### Hyperparameter Optimisation
-![Optimisation Slice Plot](.github/static/r1a-refined-slice.png)
+![Optimisation Slice Plot](.github/static/P2-distance-slice.png)
 
-Updated Optuna slice plot generated from the training study evaluation command for the Phase 2 joint optimisation (r1a-refined, distance-based topology). Each panel shows per-trial macro F1-score as a function of one hyperparameter.
+Updated Optuna slice plot generated from the training study evaluation command for the Phase 2 joint optimisation (P2-distance, distance-based topology). Each panel shows per-trial macro F1-score as a function of one hyperparameter.
 
 ### Readout Optimisation
-![Readout Slice Plot](.github/static/ro1-readout-slice.png)
+![Readout Slice Plot](.github/static/P4-readout-balanced-slice.png)
 
-Optuna slice plot generated from the balanced readout optimisation study (ro1-readout), showing how classifier-specific hyperparameters affect macro F1 across the frozen-state readout search.
+Optuna slice plot generated from the balanced readout optimisation study (P4-readout-balanced), showing how classifier-specific hyperparameters affect macro F1 across the frozen-state readout search.
 
 ## Optimisation CLI
 
 Use the unified optimisation CLI to run studies, inspect the best trials, and regenerate diagnostic plots. See `python -m optimization.optimize --help` for the full option set.
 
+Study names follow Supplementary Table S5 (`P1-scaling`, `P2-distance`, `P4-readout-balanced`, `ESN-balanced`, `B1-balanced`, ...), and each study is stored in `logs/optuna-<study>.db`.
+
 ### Run Studies
 
 ```bash
-python -m optimization.optimize research --type training --study r1a-refined --processes 32
-python -m optimization.optimize research --type readout --study ro1-readout --trial_name r1a-refined-best --processes 32
+python -m optimization.optimize research --type training --study P2-distance --processes 32
+python -m optimization.optimize research --type readout --study_name P4-readout-balanced --trial_name P2-distance-best --processes 32
 ```
 
 ### Evaluate Studies
 
 ```bash
-python -m optimization.optimize evaluate --type readout --study ro1-readout --plots slice --show metrics
-python -m optimization.optimize evaluate --type training --study r1a-refined --plots slice --show metrics
+python -m optimization.optimize evaluate --type readout --study_name P4-readout-balanced --plots slice --show metrics
+python -m optimization.optimize evaluate --type training --study P2-distance --plots slice --show metrics
 ```
 
 Both commands generate plots into `results/optimization/`.
@@ -155,20 +157,20 @@ Example output from the readout evaluation:
 
 ```text
 ========================================================================
-	ALL classifiers — ro1-readout
+  ALL classifiers — P4-readout-balanced
 ========================================================================
-		f1  trial classifier  knn_n_neighbors  knn_p knn_weights  accuracy     f1   f1_std  n_folds  precision  recall  runtime
-0.8907    542        KNN                4  1.037    distance    0.8899 0.8907 0.006768        5     0.8941  0.8899    792.6
+    f1  trial classifier rf_criterion  rf_max_depth rf_max_features  rf_min_samples_leaf  rf_min_samples_split  rf_n_estimators rf_oob_score  accuracy     f1  f1_macro   f1_std  f1_weighted  kappa    mcc  n_folds  precision  precision_macro  precision_weighted primary_average  recall  recall_macro  recall_weighted  runtime
+0.8953    833         RF     log_loss            23            sqrt                    1                     2              326         True    0.8949 0.8953    0.8953  0.00737       0.8953 0.8686 0.8691        5     0.8973           0.8973              0.8973           macro  0.8949        0.8949           0.8949    243.7
 
-	Summary — top   10: mean=0.8907  std=0.0001  min=0.8904  max=0.8907
-	Summary — all   914: mean=0.7982  std=0.2079  min=0.0662  max=0.8907
+  Summary — top   10: mean=0.8950  std=0.0002  min=0.8948  max=0.8953
+  Summary — all   946: mean=0.8108  std=0.2076  min=0.0665  max=0.8953
 ```
 
 Example output from the training evaluation:
 
 ```text
 ========================================================================
-	study — r1a-refined
+	study — P2-distance
 ========================================================================
 		f1  trial  cell_coupling  dde_scaling  fade_alpha  input_connectivity  input_scaling  p_excite  rc_scaling  sparsity  units  warmup  accuracy     f1  precision  recall  runtime
 0.9047    416          12.75    0.0006439   2.803e-05              0.5282         0.0277    0.8354    0.007036     0.576   1000      50    0.9041 0.9047     0.9096  0.9041     2401
