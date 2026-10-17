@@ -30,7 +30,7 @@ import numpy as np
 from utils import config
 
 REGISTRY_FILE = config.PROJECT_ROOT / "registry.jsonl"
-LOCK_FILE = config.PROJECT_ROOT / "requirements-lock.txt"
+LOCK_FILE = config.PROJECT_ROOT / "uv.lock"
 STATUSES = ("ok", "failed", "superseded", "exploratory")
 ENVIRONMENT_KEYS = (
     "python_version", "platform", "os_name", "os_version", "machine_label", "cpu_model",

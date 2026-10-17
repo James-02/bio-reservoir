@@ -24,6 +24,8 @@ Each entry is marked **[science]** if it changes a reported number, or
   repository. Host addresses, user, remote workspace, pip proxy and service come from
   `config.env`; hosts are referred to by label, and `--inventory` records each host's
   CPU, memory, OS and Python in `results/metrics/hosts.json`.
+- [engineering] `uv.lock` locks every dependency for Python 3.9-3.12 (`uv sync`);
+  `requires-python` is now `>=3.9,<3.13`, matching the supported versions.
 
 ### Fixed
 

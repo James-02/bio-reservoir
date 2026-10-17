@@ -10,7 +10,7 @@ name = "bioreservoir"
 version = "0.1.0"
 description = "Genetic oscillator reservoir computer for ECG arrhythmia classification"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.9,<3.13"
 
 # Research-paper environment pins.
 #
