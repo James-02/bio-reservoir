@@ -74,7 +74,8 @@ class TestPrivacy:
         monkeypatch.setattr(subprocess, "check_output", no_git)
         monkeypatch.setenv("BIORESERVOIR_MACHINE_LABEL", "Host 1")
         monkeypatch.setenv("BIORESERVOIR_GIT_COMMIT", "0" * 40)
+        monkeypatch.setenv("BIORESERVOIR_GIT_DIRTY", "false")
         env = get_environment()
         assert env["machine_label"] == "Host 1"
         assert env["git_commit"] == "0" * 40
-        assert env["git_dirty"] == "N/A"
+        assert env["git_dirty"] is False
