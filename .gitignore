@@ -6,10 +6,11 @@ venv/
 results/
 reservoirpy/
 logs/
+archive/
+backups/
 data/*
 report/
 .vscode/
-rest_raw.json
 
 # coverage / test-result artefacts (generated in CI)
 .coverage
@@ -24,7 +25,6 @@ junit.xml
 **.log
 **acs-supplementary.bib
 refs/
-future/
 
 # local environment configuration (copied from config.env.example)
 config.env
@@ -32,5 +32,3 @@ config.env
 
 # local-only infrastructure wrappers (not for publication)
 scripts/deploy*.sh
-optimization/deploy.py
-optimization/collect.py

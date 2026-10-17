@@ -58,22 +58,17 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
+from utils import config
 from utils.analysis import Metrics
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-DEFAULT_RESULTS_DIR = "results/runs"
-"""Default root directory for trial artefacts.
-
-Can be overridden project-wide by setting the ``BIORESERVOIR_RESULTS_DIR``
-environment variable, or per-call via the ``results_dir`` parameter.
-"""
-
 
 def _default_results_dir() -> str:
-    return os.environ.get("BIORESERVOIR_RESULTS_DIR", DEFAULT_RESULTS_DIR)
+    """Return ``results/runs`` (see :mod:`utils.config`)."""
+    return str(config.runs_dir())
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +151,7 @@ class FoldArtifact:
         ----------
         results_dir : str, optional
             Root directory for trial artefacts.  Defaults to
-            :data:`DEFAULT_RESULTS_DIR` (or ``BIORESERVOIR_RESULTS_DIR`` env var).
+            ``results/runs`` (see :mod:`utils.config`).
         save_states : bool, default False
             Whether to include ``train_states`` and ``test_states`` in the
             saved file.  Set to ``True`` when you intend to:
@@ -276,7 +271,7 @@ class FoldArtifact:
         trial_name : str
             The trial name string used when saving (e.g. ``"classification-42"``).
         results_dir : str, optional
-            Root directory.  Defaults to :data:`DEFAULT_RESULTS_DIR`.
+            Root directory.  Defaults to ``results/runs`` (see :mod:`utils.config`).
 
         Returns
         -------
@@ -322,7 +317,7 @@ class FoldArtifact:
         Parameters
         ----------
         results_dir : str, optional
-            Root directory.  Defaults to :data:`DEFAULT_RESULTS_DIR`.
+            Root directory.  Defaults to ``results/runs`` (see :mod:`utils.config`).
 
         Returns
         -------

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run heterogeneity robustness study with RF readout and 5-fold CV.
 
-Parameters are hardcoded from the r1a-refined best trial (trial 416)
-and ro1-readout-fixed best trial (trial 833, RandomForestClassifier).
+Parameters are hardcoded from the P2-distance best trial (trial 416)
+and P4-readout-balanced best trial (trial 833, RandomForestClassifier).
 
 Each (CV, seed) grid point runs 5-fold stratified cross-validation on
 the balanced five-class ECG task (4015 instances) with a 1000-node
@@ -35,13 +35,14 @@ from sklearn.ensemble import RandomForestClassifier
 
 from bioreservoir import BioReservoir, distance_matrix
 from training import cross_validate
+from utils import config
 from utils.logger import setup_logging
 from utils.preprocessing import load_ecg_data
 
 SEED = 6337
 
 # ---------------------------------------------------------------------------
-# r1a-refined best trial (trial 416) — resolved parameters
+# P2-distance best trial (trial 416) — resolved parameters
 # ---------------------------------------------------------------------------
 RESERVOIR_PARAMS = dict(
     units=1000,
@@ -66,7 +67,7 @@ RESERVOIR_PARAMS = dict(
 )
 
 # ---------------------------------------------------------------------------
-# ro1-readout-fixed best trial (trial 833) — RF classifier
+# P4-readout-balanced best trial (trial 833) — RF classifier
 # ---------------------------------------------------------------------------
 RF_HYPERS = dict(
     n_estimators=326,
@@ -221,7 +222,7 @@ def main() -> None:
                         help="Skip grid points with existing results.")
     args = parser.parse_args()
 
-    setup_logging(level=logging.INFO)
+    setup_logging(level=logging.INFO, log_file=str(config.log_file("heterogeneity")))
     log = logging.getLogger(__name__)
     rpy.set_seed(args.seed)
     rpy.verbosity(0)
@@ -233,7 +234,7 @@ def main() -> None:
 
         for i, (cv_val, het_seed) in enumerate(grid, 1):
             trial_name = f"heterogeneity-cv{cv_val:.3f}-seed{het_seed}"
-            results_dir = f"results/runs/{trial_name}"
+            results_dir = str(config.runs_dir() / trial_name)
 
             if args.resume and os.path.isdir(results_dir):
                 npz_files = [f for f in os.listdir(results_dir) if f.endswith(".npz")]

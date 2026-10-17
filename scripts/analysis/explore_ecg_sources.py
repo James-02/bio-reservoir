@@ -6,6 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
+from utils import config
 from utils.mitbih_raw import (
     BeatWindowConfig,
     DEFAULT_KAGGLE_DIR,
@@ -25,7 +26,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mitdb-dir", default=str(DEFAULT_MITDB_DIR))
     parser.add_argument("--kaggle-dir", default=str(DEFAULT_KAGGLE_DIR))
-    parser.add_argument("--output-dir", default="results/raw_ecg_exploration")
+    parser.add_argument("--output-dir", default=str(config.metrics_dir() / "data-exploration"))
+    parser.add_argument("--figures-dir", default=str(config.figures_dir("data-exploration")))
     parser.add_argument("--download-mitdb", action="store_true")
     parser.add_argument("--all-records", action="store_true")
     parser.add_argument("--records", nargs="+", default=["100", "106", "114"])
@@ -49,6 +51,8 @@ def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    figures_dir = Path(args.figures_dir)
+    figures_dir.mkdir(parents=True, exist_ok=True)
 
     if args.download_mitdb:
         target_records = None if args.all_records else [str(record) for record in args.records]
@@ -71,7 +75,7 @@ def main() -> None:
         plot_record_segment(
             args.plot_record,
             data_dir=args.mitdb_dir,
-            output_path=output_dir / f"record-{args.plot_record}-segment.png",
+            output_path=figures_dir / f"record-{args.plot_record}-segment.png",
             start_sec=args.start_sec,
             duration_sec=args.duration_sec,
         )
@@ -89,7 +93,7 @@ def main() -> None:
         plot_class_templates(
             windows,
             metadata,
-            output_path=output_dir / f"record-{args.plot_beats}-beat-templates.png",
+            output_path=figures_dir / f"record-{args.plot_beats}-beat-templates.png",
         )
 
     print(f"Wrote exploration outputs to {output_dir}")

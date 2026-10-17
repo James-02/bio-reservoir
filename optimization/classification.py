@@ -6,13 +6,13 @@ Usage
 python -m optimization.optimize list-studies
 
 # Run a named study (recommended):
-python -m optimization.optimize research --type training --study g1-scaling --processes 64
+python -m optimization.optimize research --type training --study P1-scaling --processes 64
 
 # Evaluate an existing study database:
-python -m optimization.optimize evaluate --type training --study g1-scaling
+python -m optimization.optimize evaluate --type training --study P1-scaling
 
 # Override study defaults from the CLI:
-python -m optimization.optimize research --type training --study g1-scaling \\
+python -m optimization.optimize research --type training --study P1-scaling \\
     --instances 4015 --folds 1 --trials 150 --processes 64
 
 Named studies are defined in optimization/studies.py.  Each study specifies
@@ -23,7 +23,6 @@ fixed.  Parameters not listed in the study are taken from BASELINE in studies.py
 from __future__ import annotations
 
 import argparse
-import os
 import logging
 from typing import Any, Dict, Optional, Tuple, List
 
@@ -66,14 +65,13 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # KNN readout hyperparameters (fixed for all reservoir optimisation studies).
-# ro1-readout best (trial 658-664, F1=0.8900): n_neighbors=1, weights=uniform, p≈1.02
-# ro1-readout-binary best:                     (see readout.py evaluate output)
+# Best KNN of the first balanced readout study, run before the readout-pipeline
+# fix (trials 658-664, F1=0.8900): n_neighbors=1, weights=uniform, p≈1.02.
 #
-# NOTE: _KNN_HYPERS below are updated to ro1-readout best values.
-# r1b-refined was run with the old values (n_neighbors=4, weights=distance, p=1.42)
+# NOTE: P2-random was run with the old values (n_neighbors=4, weights=distance, p=1.42)
 # for its 480 completed trials — those results are internally consistent for
-# the r1a vs r1b topology comparison since both studies used the same hypers.
-# f2-unbalanced must use these updated values for headline reporting.
+# the P2-distance vs P2-random comparison since both studies used the same hypers.
+# P3-imbalance uses these updated values for headline reporting.
 # ---------------------------------------------------------------------------
 _KNN_HYPERS: Dict[str, Any] = {
     "n_neighbors": 1,
@@ -232,7 +230,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     binary:    bool = bool(kwargs.get("binary")     or params.get("binary",    False))
     folds:     int  = int(kwargs.get("folds")       or study_config.get("folds", 1))
 
-    # scaler_type may be an optimisable param (g0-scaler) or fixed at BASELINE.
+    # scaler_type may be an optimisable param (P1-scaler) or fixed at BASELINE.
     scaler_type  = str(params.get("scaler_type", "sequence_zscore"))
     objective_average = str(kwargs.get("primary_average") or params.get("objective_average", "macro"))
     preserve_split = bool(kwargs.get("preserve_split") or params.get("preserve_split", False))
@@ -263,7 +261,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     reservoir, reservoir_attrs = build_reservoir(params, seed=seed)
 
     # =========================================================================
-    # 4. Readout  (KNN, fixed — validated in ro1-readout study)
+    # 4. Readout  (KNN, fixed — validated in the first balanced readout study)
     # =========================================================================
     readout = ScikitLearnNode(KNeighborsClassifier, model_hypers=_KNN_HYPERS)
 
@@ -291,7 +289,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     trial.set_user_attr("readout_type",         "KNN")
     trial.set_user_attr("readout_knn_hypers",   str(_KNN_HYPERS))
     # Resolve readout mode: aggregation comes from fixed/optimize/BASELINE;
-    # window is only meaningful for "last_N" (g5b-readout study).
+    # window is only meaningful for "last_N" (P1-readout study).
     _ra = str(params.get("readout_aggregation", "final"))
     _rw = int(params["readout_window"]) if _ra == "last_N" else 1
     # Guard: last_N with window=1 is identical to "final" but will crash the
@@ -472,7 +470,6 @@ def cmd_research(args: argparse.Namespace) -> None:
     study_config = get_study(args.study)
     study_name   = args.study_name or args.study
 
-    os.makedirs("logs", exist_ok=True)
     storage = args.storage or get_default_storage(study_name)
 
     n_trials  = args.trials    or study_config["n_trials"]
@@ -516,7 +513,7 @@ def cmd_rerun_best(args: argparse.Namespace) -> None:
     """Re-run the best Optuna trial of a completed study with save_states=True.
 
     This is the Phase 2 → Phase 3 bridge.  It loads the best trial from a
-    completed Phase 2 study (e.g. ``r1a-refined``), resolves the full parameter
+    completed Phase 2 study (e.g. ``P2-distance``), resolves the full parameter
     set (BASELINE + study fixed + Optuna-suggested values), and re-executes
     cross-validation with ``save_states=True`` so that
     :mod:`optimization.readout` can optimise the readout classifier on the
@@ -527,14 +524,14 @@ def cmd_rerun_best(args: argparse.Namespace) -> None:
 
     Typical usage (run on the same host as the Phase 2 study)::
 
-        # 1. Save reservoir states for best r1a-refined trial
+        # 1. Save reservoir states for best P2-distance trial
         python -m optimization.optimize rerun-best \\
-            --study r1a-refined --folds 5
+            --study P2-distance --folds 5
 
         # 2. Optimise the readout on those frozen states
         python -m optimization.optimize research --type readout \\
-            --study_name ro1-readout \\
-            --trial_name r1a-refined-best \\
+            --study_name P4-readout-balanced \\
+            --trial_name P2-distance-best \\
             --classifiers KNN RF Ridge LR \\
             --trials 500 --processes 32
     """
@@ -659,7 +656,7 @@ def cmd_rerun_best(args: argparse.Namespace) -> None:
             logger.info("  %s: %s", section, stats)
     logger.info(
         "Next: python -m optimization.optimize research --type readout "
-        "--study_name ro1-readout --trial_name %s "
+        "--study_name <P4-readout-study> --trial_name %s "
         "--classifiers KNN RF Ridge LR --trials 500 --processes <N>",
         trial_name,
     )
@@ -730,7 +727,7 @@ def _plot_confusion_matrix(
     directly to :func:`utils.visualisation.plot_confusion_matrix`, which
     normalises by row sums and renders a seaborn heat-map.
 
-    The figure is saved to ``results/metrics/{filename}``.
+    The figure is saved to ``results/figures/metrics/{filename}``.
     """
     from utils.visualisation import plot_confusion_matrix as _plot_cm
 
@@ -812,7 +809,7 @@ def _plot_confusion_matrix(
 
     fname = filename or f"{study_name}-confusion.png"
     _plot_cm(cm, filename=fname, show=False)
-    logger.info("[%s] Confusion matrix saved → results/metrics/%s", study_name, fname)
+    logger.info("[%s] Confusion matrix saved → results/figures/metrics/%s", study_name, fname)
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 from typing import Any, Callable, Dict, List, Optional, Set
-import os
 from pathlib import Path
 import pandas as pd
 import joblib
@@ -13,6 +12,7 @@ import optuna
 import reservoirpy as rpy
 from optuna.study import Study
 
+from utils import config
 from utils.logger import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -871,9 +871,8 @@ def _postprocess_optuna_figure(fig: plt.Figure) -> None:
 
 
 def _save_and_close(fig: plt.Figure, filename: str, *, also_pdf: bool = False) -> None:
-    """Save a figure to results/optimization/ and close it."""
-    _project_root = Path(__file__).resolve().parent.parent
-    results_dir = _project_root / "results" / "optimization"
+    """Save a figure to results/figures/optimization/ and close it."""
+    results_dir = config.figures_dir("optimization")
     results_dir.mkdir(parents=True, exist_ok=True)
 
     png_path = results_dir / filename
@@ -951,7 +950,9 @@ def plot_results(
 # Shared Optuna helpers (used by both classification and readout modules)
 # ---------------------------------------------------------------------------
 
-def get_default_storage(study_name: str, *, must_exist: bool = False) -> str:
+def get_default_storage(
+    study_name: str, *, must_exist: bool = False, archive: Optional[str] = None
+) -> str:
     """Return the default SQLite Optuna storage URL for *study_name*.
 
     Parameters
@@ -961,14 +962,21 @@ def get_default_storage(study_name: str, *, must_exist: bool = False) -> str:
     must_exist : bool
         If *True*, raise :class:`SystemExit` when the DB file is missing
         instead of letting SQLAlchemy silently create an empty one.
+    archive : str, optional
+        Archive version (e.g. ``"v0.1"``).  Reads the frozen, read-only study in
+        ``archive/<version>/optuna/`` instead of the working study in ``results/optuna/``.
     """
-    db_path = f"logs/optuna-{study_name}.db"
-    if must_exist and not os.path.exists(db_path):
+    db_path = config.optuna_db(study_name, archive=archive)
+    if archive is not None:
+        if not db_path.exists():
+            raise SystemExit(f"Archived study database not found: {db_path}")
+        return f"sqlite:///{db_path}"
+    if must_exist and not db_path.exists():
         raise SystemExit(
             f"Study database not found: {db_path}\n"
             f"Run a 'research' command first to create it."
         )
-    os.makedirs("logs", exist_ok=True)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     return f"sqlite:///{db_path}?timeout=60"
 
 
@@ -1029,7 +1037,11 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--storage", type=str, default=None,
-        help="Optuna storage URL.  Defaults to sqlite:///logs/optuna-<study>.db?timeout=60",
+        help="Optuna storage URL.  Defaults to sqlite:///results/optuna/optuna-<study>.db",
+    )
+    parser.add_argument(
+        "--archive", type=str, default=None, metavar="VERSION",
+        help="Read the study from archive/<VERSION>/optuna/ (read-only), e.g. v0.1.",
     )
     parser.add_argument(
         "--log-level", type=str, default="INFO",

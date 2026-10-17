@@ -562,11 +562,15 @@ if __name__ == "__main__":
             print("  Run from the project root directory.")
 
     # Plotting --------------------------------------------------------------
+    save_path = None
+    if args.save:
+        from utils import config
+
+        save_path = str(config.figures_dir("states") / "convergence_analysis.png")
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
     if validation is not None:
         # Combined 3-panel figure (primary output).
-        combined_save = "results/convergence_analysis.png" if args.save else None
-        plot_combined(convergence, validation, n_external, save_path=combined_save)
+        plot_combined(convergence, validation, n_external, save_path=save_path)
     else:
         # Convergence-only (2-panel) when validation was skipped.
-        conv_save = "results/convergence_analysis.png" if args.save else None
-        plot_convergence(convergence, save_path=conv_save)
+        plot_convergence(convergence, save_path=save_path)

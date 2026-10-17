@@ -229,7 +229,7 @@ def visualise_dataset(args: argparse.Namespace) -> None:
             folder = name.replace(" ", "_")
             for i in picked:
                 x = np.asarray(X_train[i]).reshape(-1)
-                # Save to results/dataset/samples/<class>/<index>.png
+                # Save to results/figures/dataset/samples/<class>/<index>.png
                 out = os.path.join("dataset", "samples", folder, f"{int(i)}.png")
                 _save_ecg_sample_plot(
                     x=x,
@@ -386,11 +386,11 @@ def main() -> None:
         ),
     )
 
-    # Save per-instance ECG trace plots under results/dataset/samples/<class>/<index>.png
+    # Save per-instance ECG trace plots under results/figures/dataset/samples/<class>/<index>.png
     parser.add_argument(
         "--save-samples",
         action="store_true",
-        help="Save ECG instance plots under results/dataset/samples/<class>/<index>.png (defaults to 1 per class)",
+        help="Save ECG instance plots under results/figures/dataset/samples/<class>/<index>.png (defaults to 1 per class)",
     )
     parser.add_argument(
         "--samples-per-class",

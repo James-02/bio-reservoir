@@ -13,7 +13,7 @@ What it does
 	- subsequent rows: ECG-driven at each input scale
 	- bottom row: the ECG input trace (shown once)
 
-Outputs are saved under ``results/states/``.
+Outputs are saved under ``results/figures/states/``.
 """
 
 from __future__ import annotations

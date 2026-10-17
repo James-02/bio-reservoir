@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run ablation studies with RF readout matching the headline results.
 
-Parameters are hardcoded from the r1a-refined best trial (trial 416)
-and ro1-readout-fixed best trial (trial 833, RandomForestClassifier).
+Parameters are hardcoded from the P2-distance best trial (trial 416)
+and P4-readout-balanced best trial (trial 833, RandomForestClassifier).
 
 Each condition runs 5-fold stratified cross-validation on the balanced
 five-class ECG task (4015 instances) with a 1000-node distance-topology
@@ -10,13 +10,13 @@ reservoir and macro-F1 as the primary metric.
 
 Usage
 -----
-    python scripts/run_ablation.py --condition baseline
+    python scripts/run_ablation.py --condition full
     python scripts/run_ablation.py --condition no-coupling
     python scripts/run_ablation.py --condition no-delay
     python scripts/run_ablation.py --condition scramble
 
 All four on one host (sequential):
-    for c in baseline no-coupling no-delay scramble; do
+    for c in full no-coupling no-delay scramble; do
         python scripts/run_ablation.py --condition $c --processes 32
     done
 """
@@ -34,13 +34,14 @@ from sklearn.ensemble import RandomForestClassifier
 
 from bioreservoir import BioReservoir, distance_matrix
 from training import cross_validate
+from utils import config
 from utils.logger import setup_logging
 from utils.preprocessing import load_ecg_data
 
 SEED = 6337
 
 # ---------------------------------------------------------------------------
-# r1a-refined best trial (trial 416) — resolved parameters
+# P2-distance best trial (trial 416) — resolved parameters
 # ---------------------------------------------------------------------------
 RESERVOIR_PARAMS = dict(
     units=1000,
@@ -65,7 +66,7 @@ RESERVOIR_PARAMS = dict(
 )
 
 # ---------------------------------------------------------------------------
-# ro1-readout-fixed best trial (trial 833) — RF classifier
+# P4-readout-balanced best trial (trial 833) — RF classifier
 # ---------------------------------------------------------------------------
 RF_HYPERS = dict(
     n_estimators=326,
@@ -80,7 +81,7 @@ RF_HYPERS = dict(
 )
 
 # ---------------------------------------------------------------------------
-# Data / CV settings (matching rerun-best r1a-refined)
+# Data / CV settings (matching rerun-best P2-distance)
 # ---------------------------------------------------------------------------
 INSTANCES = 4015
 FOLDS = 5
@@ -140,7 +141,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--condition", required=True,
-        choices=["baseline", "no-coupling", "no-delay", "scramble"],
+        choices=["full", "no-coupling", "no-delay", "scramble"],
         help="Ablation condition to run.",
     )
     parser.add_argument("--processes", type=int, default=5,
@@ -152,7 +153,7 @@ def main() -> None:
                         help="Override NOISE_RATIO (default: module constant).")
     args = parser.parse_args()
 
-    setup_logging(level=logging.INFO)
+    setup_logging(level=logging.INFO, log_file=str(config.log_file(f"ablation-{args.condition}")))
     log = logging.getLogger(__name__)
     rpy.set_seed(args.seed)
     rpy.verbosity(0)
@@ -163,7 +164,7 @@ def main() -> None:
     noise_ratio = args.noise_ratio if args.noise_ratio is not None else NOISE_RATIO
 
     condition = args.condition
-    trial_name = f"ablation-{condition}-fixed"
+    trial_name = f"ablation-{condition}"
 
     log.info("Ablation condition : %s", condition)
     log.info("Trial name         : %s", trial_name)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-"""Re-run the b3-baseline-binary-v4 best trial (KNN) on the full binary dataset.
+"""Re-run the B3-binary best trial (KNN) on the full binary dataset.
 
-Evaluates the KNN hyperparameters from trial 356 of b3-baseline-binary-v4
+Evaluates the KNN hyperparameters from trial 356 of B3-binary
 with 5-fold stratified CV on the full balanced binary dataset (~37,714
 instances), matching the headline binary task size.
 
@@ -24,7 +24,7 @@ from sklearn.metrics import (
 
 from utils.preprocessing import load_ecg_data, standardize_data
 
-# ── Best trial 356 hyperparameters (from b3-baseline-binary-v4) ─────────────
+# ── Best trial 356 hyperparameters (from B3-binary) ─────────────
 KNN_HYPERS = {
     "n_neighbors": 1,
     "weights": "uniform",

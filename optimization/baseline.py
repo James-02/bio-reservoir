@@ -1,7 +1,7 @@
 """No-reservoir baseline: classifiers on raw preprocessed ECG features.
 
-Provides a direct comparison to the reservoir readout studies (ro1-readout
-etc.) by running the same classifier families and hyperparameter search
+Provides a direct comparison to the reservoir readout studies (P4-readout-*)
+by running the same classifier families and hyperparameter search
 on the raw z-scored 187-dimensional ECG feature vectors — bypassing the
 reservoir transformation entirely.
 
@@ -27,10 +27,10 @@ instead of ``(N, D_reservoir)`` reservoir state vectors.
 CLI
 ---
     python -m optimization.optimize research --type baseline \\
-        --study_name b1-baseline --processes 32 --trials 500
+        --study_name B1-balanced --processes 32 --trials 500
 
     python -m optimization.optimize evaluate --type baseline \\
-        --study_name b1-baseline --top_n 10
+        --study_name B1-balanced --top_n 10
 """
 
 from __future__ import annotations
@@ -38,7 +38,6 @@ from __future__ import annotations
 import argparse
 import datetime
 import logging
-import os
 import time as _time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -470,7 +469,6 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
 def cmd_research(args: argparse.Namespace) -> None:
     """Run the no-reservoir baseline Optuna study."""
     study_name = args.study_name or getattr(args, "study", None)
-    os.makedirs("logs", exist_ok=True)
     storage = args.storage or get_default_storage(study_name)
     study = build_study(study_name=study_name, storage=storage, seed=int(args.seed))
 
