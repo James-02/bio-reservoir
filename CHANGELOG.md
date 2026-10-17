@@ -36,6 +36,10 @@ Each entry is marked **[science]** if it changes a reported number, or
   needed, five-class and binary caches) and prints content checksums;
   `tests/integration/test_dataset.py` checks the datasets and the `v0.1` CV pools against
   the `v0.1` checksums.
+- [engineering] Held-out beat draws: `python -m utils.heldout --write` draws balanced sets
+  of beats that no `v0.1` optimisation phase used and records their beat IDs and checksums
+  in `experiments/heldout/draws.json`; `--check` rebuilds and verifies them. Draws 1-2
+  were consulted in the revision pilots; draw 3 is sealed for the confirmatory evaluation.
 
 ### Fixed
 
