@@ -45,6 +45,8 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Fixed
 
+- [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
+  (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or
   downloading) the source CSV files first; the CSVs are only needed to build the cache.
 - [engineering] Trial metadata no longer records the host name, IP address, working

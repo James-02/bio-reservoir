@@ -67,8 +67,9 @@ def _collect_environment() -> Dict[str, Any]:
             return fallback
 
     os_release = _os_release()
+    now = datetime.datetime.now(datetime.timezone.utc)
     env: Dict[str, Any] = {}
-    env["timestamp_utc"]     = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    env["timestamp_utc"]     = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     env["python_version"]    = _sys.version.split()[0]
     env["platform"]          = _safe(_platform_summary)
     env["os_name"]           = os_release.get("NAME", platform.system())
