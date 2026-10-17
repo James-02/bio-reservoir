@@ -85,12 +85,13 @@ ruff format .                  # format
   version (the `v0.1` code is archived on Zenodo, DOI 10.5281/zenodo.23436888).
   Write new results to `results/` and logs to `logs/`. Do not change pinned runtime
   dependency versions before `v1.0`.
-- **No infrastructure secrets in committed files.** No hostnames, IPs,
-  credentials, cluster names, or host-specific ops. Deployment wrappers
-  (`scripts/deploy*.sh`, `optimization/deploy.py`, `optimization/collect.py`)
-  are gitignored on purpose.
-- Secrets come from the environment (see `config.env.example`); the only one
-  currently required is a Kaggle API token for dataset download.
+- **No infrastructure details in committed files.** No hostnames, IPs, user names,
+  paths on remote hosts, proxies, systemd units or credentials. The deployment helpers
+  (`optimization/deploy.py`, `optimization/collect.py`) read all of these from the
+  gitignored `config.env` and refer to hosts by label (`host1`, ...) only;
+  `scripts/deploy*.sh` stay gitignored.
+- Secrets and host details come from the environment or `config.env` (see
+  `config.env.example`), read through `utils.config`.
 
 ## Domain quick-reference (science → code)
 
