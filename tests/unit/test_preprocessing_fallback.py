@@ -202,6 +202,13 @@ class TestNoNpzFallback:
         X_train, _, X_test, _ = _call_load_ecg(data_dir=str(data_dir))
         assert np.asarray(X_train).shape[0] > 0 and np.asarray(X_test).shape[0] > 0
 
+    def test_unreadable_cache_without_csvs_is_an_error(self, tmp_path):
+        data_dir = tmp_path / "ecg"
+        data_dir.mkdir()
+        (data_dir / "ecg_data.npz").write_bytes(b"not an npz file")
+        with pytest.raises(FileNotFoundError, match="delete it to rebuild"):
+            _call_load_ecg(data_dir=str(data_dir))
+
     def test_full_dataset_size_reflects_both_csvs(self, tmp_path):
         """The merged dataset should contain samples from both train and test CSVs."""
         data_dir = _setup_csv_data_dir(tmp_path)
@@ -306,3 +313,15 @@ class TestKaggleFallback:
                 ["mitbih_train.csv", "mitbih_test.csv"],
                 data_dir=str(empty_dir),
             )
+
+
+def test_prepare_command_builds_both_caches_and_prints_checksums(tmp_path, monkeypatch, capsys):
+    import utils.logger
+
+    monkeypatch.setattr(utils.logger, "setup_logging", lambda **kwargs: None)
+    data_dir = _setup_csv_data_dir(tmp_path)
+    preprocessing.main(["--data-dir", str(data_dir)])
+    out = capsys.readouterr().out
+    for name in ("ecg_data.npz", "binary_ecg_data.npz"):
+        digest = preprocessing.dataset_sha256(data_dir / name)
+        assert f"{data_dir / name}  content sha256 {digest}" in out
