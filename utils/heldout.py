@@ -98,7 +98,7 @@ def describe(draws: dict[int, np.ndarray], y: np.ndarray, matched: int, dataset:
             "seed": SEED + k,
             "status": STATUS.get(k, ""),
             "counts": {CLASSES[c]: int((y[ids] == c).sum()) for c in CLASSES},
-            "sha1": hashlib.sha1(ids.tobytes()).hexdigest(),
+            "sha1": hashlib.sha1(ids.tobytes(), usedforsecurity=False).hexdigest(),
             "sha256": hashlib.sha256(ids.tobytes()).hexdigest(),
             "beat_ids": ids.tolist(),
         }
@@ -122,7 +122,8 @@ def check(record: dict, draws: dict[int, np.ndarray]) -> list[str]:
     """Return mismatches between rebuilt draws, the recorded draws and the pilot SHA-1s."""
     problems = []
     for k, ids in draws.items():
-        sha1 = hashlib.sha1(np.asarray(ids, dtype=np.int64).tobytes()).hexdigest()
+        ids = np.asarray(ids, dtype=np.int64)
+        sha1 = hashlib.sha1(ids.tobytes(), usedforsecurity=False).hexdigest()
         if k in PILOT_SHA1 and sha1 != PILOT_SHA1[k]:
             problems.append(f"draw {k}: SHA-1 {sha1} differs from the pilot draw {PILOT_SHA1[k]}")
         if record and sha1 != record["draws"][str(k)]["sha1"]:
