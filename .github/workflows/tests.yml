@@ -62,26 +62,20 @@ jobs:
       # pytest-github-actions-annotate-failures will annotate failing assertions inline
       - name: Run unit tests with coverage
         # TODO: set NUMBA_DISABLE_JIT=1 locally for fuller coverage of the numba-compiled DDE core (omitted for faster CI).
+        env:
+          COVERAGE_FILE: .coverage.unit-${{ matrix.python-version }}
         run: >
-          uv run --frozen pytest tests/unit/ -v --tb=short
-          --cov --cov-report=xml --cov-report=html --cov-report=term-missing
+          uv run --frozen pytest tests/unit/ -v --tb=short -rs
+          --cov --cov-report=term-missing
           --junitxml=junit.xml -o junit_family=legacy
 
-      - name: Upload coverage HTML report
-        if: matrix.python-version == '3.11'  # chose a version from matrix
+      - name: Upload coverage data
         uses: actions/upload-artifact@v5
         with:
-          name: coverage-html
-          path: htmlcov/
-          if-no-files-found: warn
-
-      - name: Upload coverage to Codecov
-        if: matrix.python-version == '3.11'
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage.xml
-          fail_ci_if_error: false
+          name: coverage-data-unit-${{ matrix.python-version }}
+          path: .coverage.unit-${{ matrix.python-version }}
+          include-hidden-files: true
+          if-no-files-found: error
 
       # Test Analytics: upload JUnit results (failure/flaky-test reporting).
       # Runs even when tests fail so failures are reported to Codecov.
@@ -118,8 +112,21 @@ jobs:
         if: ${{ env.KAGGLE_KEY != '' }}
         run: uv run --frozen python -m utils.preprocessing
 
-      - name: Run integration tests
-        run: uv run --frozen pytest tests/integration/ -v --tb=short --junitxml=junit.xml -o junit_family=legacy
+      - name: Run integration tests with coverage
+        env:
+          COVERAGE_FILE: .coverage.integration
+        run: >
+          uv run --frozen pytest tests/integration/ -v --tb=short -rs
+          --cov --cov-report=term-missing
+          --junitxml=junit.xml -o junit_family=legacy
+
+      - name: Upload coverage data
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-data-integration
+          path: .coverage.integration
+          include-hidden-files: true
+          if-no-files-found: error
 
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
@@ -128,3 +135,47 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           report_type: test_results
           files: junit.xml
+
+  # One coverage report from both test jobs, so the Codecov patch check counts lines that
+  # only the integration tests exercise.
+  coverage:
+    name: Coverage (unit and integration tests)
+    needs: [unit-tests, integration-tests]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up uv and Python 3.11
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: "3.11"
+
+      - name: Install the locked environment (uv.lock)
+        run: uv sync --frozen --extra dev
+
+      - name: Download coverage data
+        uses: actions/download-artifact@v5
+        with:
+          pattern: coverage-data-*
+          merge-multiple: true
+
+      - name: Combine coverage data
+        run: |
+          uv run --frozen coverage combine
+          uv run --frozen coverage xml
+          uv run --frozen coverage html
+          uv run --frozen coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage HTML report
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-html
+          path: htmlcov/
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.xml
+          fail_ci_if_error: false
