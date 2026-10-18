@@ -82,6 +82,29 @@ _KNN_HYPERS: Dict[str, Any] = {
     "p":           1.02,
 }
 
+# Trial attributes recording the value a trial ran with -> its study parameter.
+RECORDED: Dict[str, str] = {
+    "res_units": "units", "res_warmup": "warmup", "res_rk4_substeps": "rk4_substeps",
+    "res_input_scaling": "input_scaling", "res_rc_scaling": "rc_scaling",
+    "res_dde_scaling": "dde_scaling", "res_cell_coupling": "cell_coupling",
+    "res_noise_in": "noise_in", "res_noise_rc": "noise_rc", "res_input_bias": "input_bias",
+    "res_bias_scaling": "bias_scaling", "res_input_connectivity": "input_connectivity",
+    "res_output_variables": "output_variables",
+    "res_heterogeneity_cv": "param_heterogeneity_cv",
+    "res_heterogeneity_seed": "param_heterogeneity_seed",
+    "res_heterogeneity_mean_preserving": "heterogeneity_mean_preserving",
+    "res_geometry": "geometry", "res_delay_scheme": "delay_scheme",
+    "topo_type": "topology_type", "topo_sparsity": "sparsity", "topo_signed": "signed",
+    "topo_p_excite": "p_excite", "topo_interaction_diameters": "interaction_diameters",
+    "topo_fade_alpha": "fade_alpha", "topo_rc_connectivity": "rc_connectivity",
+    "topo_normalize_after_masks": "normalize_after_masks",
+    "esn_spectral_radius": "esn_spectral_radius", "esn_leak_rate": "esn_leak_rate",
+    "esn_activation": "esn_activation",
+    "dataset_noise_rate": "noise_rate", "dataset_noise_ratio": "noise_ratio",
+    "dataset_scaler": "scaler_type", "dataset_balance_classes": "balance_classes",
+    "readout_aggregation": "readout_aggregation", "readout_window": "readout_window",
+}
+
 
 # ---------------------------------------------------------------------------
 # Dataset cache  (keyed on all dataset parameters to avoid stale hits)
@@ -667,10 +690,13 @@ def _resolve_params_from_trial(
     trial: optuna.Trial,
     study_config: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Merge BASELINE + study fixed overrides + trial params.
+    """The parameters a trial ran with.
 
-    Handles ``fixed_*`` prefix keys produced by :func:`_suggest` for
-    conditional parameters whose condition was not met.
+    BASELINE, then the study's fixed values, then the trial's params, then the values
+    the trial recorded (``RECORDED``): BASELINE changes between phases, so only the
+    recorded values rebuild the trials of earlier phases. Handles ``fixed_*`` prefix
+    keys produced by :func:`_suggest` for conditional parameters whose condition was
+    not met.
     """
     params: Dict[str, Any] = dict(BASELINE)
     params.update(study_config.get("fixed", {}))
@@ -682,6 +708,12 @@ def _resolve_params_from_trial(
                 params[real_k] = v
         else:
             params[k] = v
+    attrs = trial.user_attrs
+    params.update({key: attrs[attr] for attr, key in RECORDED.items()
+                   if attrs.get(attr) is not None})
+    if attrs.get("dataset_max_per_class") is not None:
+        recorded = str(attrs["dataset_max_per_class"])
+        params["max_per_class"] = None if recorded == "None" else int(recorded)
     return params
 
 

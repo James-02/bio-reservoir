@@ -139,16 +139,19 @@ def _load_trial(study: str, trial: Any, archive: str | None, storage: str | None
 
 def study_params(study: str, trial: Any = "best", archive: str | None = None,
                  storage: str | None = None) -> dict[str, Any]:
-    """BASELINE, then the study's fixed values, then the trial's values (as rerun-best)."""
+    """The parameters a study trial ran with (as rerun-best), with its pool size and
+    labels."""
     from optimization.studies import get_study
     from optimization.training import _resolve_params_from_trial
 
     study_config = get_study(study)
     frozen = _load_trial(study, trial, archive, storage)
     params = _resolve_params_from_trial(frozen, study_config)
+    attrs = frozen.user_attrs
     params["_trial"] = frozen.number
-    params["_instances"] = study_config.get("instances", DEFAULTS["task"]["rows"])
-    params["_binary"] = bool(study_config.get("binary", False))
+    params["_instances"] = attrs.get("dataset_instances",
+                                     study_config.get("instances", DEFAULTS["task"]["rows"]))
+    params["_binary"] = bool(attrs.get("dataset_binary", study_config.get("binary", False)))
     return params
 
 

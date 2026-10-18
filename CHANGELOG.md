@@ -175,6 +175,14 @@ coupling the hyperparameters were tuned for, so the studies need re-tuning.
   headline benchmark reads the `v0.1` file and is compared fold by fold like the other
   benchmarks, and `tests/integration/test_dataset.py` checks the `v0.1` binary pool
   against that file.
+- [engineering] A study trial resolves to the values it recorded (reservoir, topology,
+  augmentation, readout aggregation, pool size and labels) rather than to today's
+  BASELINE, in run configs (`reservoir.study`), `optimize rerun-best` and the
+  confusion-matrix plot. BASELINE changed after Phase 1, so the Phase 1 trials (all but
+  P1-units, which ran later) resolved to other reservoirs (the P1-scaling best trial
+  with warm-up 50 instead of 40, coupling 8.862 instead of 16.28 and augmentation
+  0.2999/0.2862 instead of 0.0825/0.2348, for example); the Phase 2-4 and ESN studies
+  resolved correctly.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or

@@ -10,6 +10,7 @@ import numpy as np
 import optuna
 import pytest
 
+from optimization.studies import STUDY_REGISTRY
 from utils import config
 
 ARCHIVE = config.results_root(archive="v0.1")
@@ -117,3 +118,28 @@ def test_run_names_match_fold_files():
         assert folds, run
         with np.load(folds[0], allow_pickle=True) as z:
             assert z["trial_name"].item().decode() == run.name
+
+
+@pytest.mark.parametrize("study_name", sorted(
+    name for name in STUDIES if STUDY_REGISTRY.get(name, {}).get("type") != "baseline"
+    and name in STUDY_REGISTRY))
+def test_best_trials_resolve_to_the_values_they_ran_with(study_name):
+    """The run framework rebuilds every archived reservoir study's best trial."""
+    from optimization.training import RECORDED
+    from training import run
+
+    resolved = run.resolve({"name": "x", "reservoir": {"study": study_name, "archive": "v0.1"},
+                            "readout": {"classifier": "KNN"}})
+    path = ARCHIVE / "optuna" / f"optuna-{study_name}.db"
+    attrs = optuna.load_study(study_name=study_name,
+                              storage=f"sqlite:///{path}").best_trial.user_attrs
+    params = resolved["reservoir"]["params"]
+    checked = [key for attr, key in RECORDED.items()
+               if attrs.get(attr) is not None and key in params]
+    assert checked
+    for attr, key in RECORDED.items():
+        if attrs.get(attr) is not None and key in params:
+            assert params[key] == attrs[attr], key
+    assert resolved["features"]["aggregation"] == attrs.get("readout_aggregation", "final")
+    assert resolved["cv"]["noise_rate"] == attrs["dataset_noise_rate"]
+    assert resolved["cv"]["noise_ratio"] == attrs["dataset_noise_ratio"]

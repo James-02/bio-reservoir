@@ -147,6 +147,37 @@ class TestResolve:
             run_module.resolve({"name": "x", "reservoir": {"study": "P2-distance"},
                                 "readout": {"classifier": "KNN"}})
 
+    def test_recorded_trial_values_win_over_the_current_baseline(self, isolated):
+        """Phase 1 trials ran with the BASELINE of their time, which later phases
+        changed; resolving them from BASELINE gave other reservoirs."""
+        storage = f"sqlite:///{isolated / 'optuna-P1-scaling.db'}"
+        study = optuna.create_study(study_name="P1-scaling", storage=storage)
+        float_range = optuna.distributions.FloatDistribution(1e-5, 1.0, log=True)
+        study.add_trial(optuna.trial.create_trial(
+            params={"input_scaling": 0.08, "rc_scaling": 0.019, "dde_scaling": 0.0037},
+            distributions={"input_scaling": float_range, "rc_scaling": float_range,
+                           "dde_scaling": float_range},
+            user_attrs={"res_warmup": 40, "res_rk4_substeps": 44, "res_cell_coupling": 16.28,
+                        "res_output_variables": "all", "topo_signed": False,
+                        "res_heterogeneity_seed": None, "dataset_noise_rate": 0.0825,
+                        "dataset_noise_ratio": 0.2348, "dataset_max_per_class": "None",
+                        "dataset_instances": 600, "dataset_binary": True,
+                        "readout_aggregation": "final", "readout_window": 1},
+            value=0.88))
+
+        resolved = run_module.resolve({
+            "name": "phase-1", "reservoir": {"study": "P1-scaling", "storage": storage},
+            "readout": {"classifier": "KNN"}})
+        params = resolved["reservoir"]["params"]
+        assert (params["warmup"], params["rk4_substeps"], params["cell_coupling"]) == (
+            40, 44, 16.28)
+        assert params["output_variables"] == "all" and params["signed"] is False
+        assert params["input_scaling"] == 0.08
+        assert resolved["features"] == {"aggregation": "final", "window": 1}
+        assert (resolved["cv"]["noise_rate"], resolved["cv"]["noise_ratio"]) == (0.0825, 0.2348)
+        assert resolved["task"]["labels"] == "binary" and resolved["task"]["rows"] == 600
+        assert resolved["task"]["max_per_class"] is None
+
 
 @pytest.mark.parametrize("path", sorted(BENCHMARKS.rglob("*.yaml")), ids=lambda p: p.stem)
 def test_benchmark_configs_are_explicit(path):
