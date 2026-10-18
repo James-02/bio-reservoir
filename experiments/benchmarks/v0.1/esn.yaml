@@ -45,6 +45,7 @@ readout:
     study: ESN-readout
     trial: 364
     archive: v0.1
+  scale: false
 cv:
   folds: 5
   primary_average: macro
@@ -54,4 +55,5 @@ cv:
   seed: 6337
 outputs:
   save_states: false
+preset: v0.1
 reference: archive:v0.1/ESN-readout-best

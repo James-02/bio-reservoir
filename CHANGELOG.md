@@ -73,6 +73,13 @@ Each entry is marked **[science]** if it changes a reported number, or
   everywhere: Optuna trial attributes (`metric_f1_std`, fold timings), per-class SDs,
   run metrics, the headline-metrics and fold-analysis scripts and the heterogeneity
   figure. SDs over five folds were population SDs and are now 1.118 times larger.
+- [science] Readouts standardise the state features inside each training fold
+  (`readout.scale`, on by default: a StandardScaler fitted on the training fold only).
+  The `v0.1` readouts were fitted on unscaled features; the `v0.1` run preset
+  keeps that for reproduction.
+- [engineering] Readout hyperparameters can be chosen by nested cross-validation inside
+  each training fold (`readout.search`, `readout.inner_folds`); the choice per fold is
+  recorded in `metrics.json`. The Phase 4 studies chose the readout on the reported folds.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or

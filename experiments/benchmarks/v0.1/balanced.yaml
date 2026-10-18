@@ -61,6 +61,7 @@ readout:
     study: P4-readout-balanced
     trial: 833
     archive: v0.1
+  scale: false
 cv:
   folds: 5
   primary_average: macro
@@ -70,4 +71,5 @@ cv:
   seed: 6337
 outputs:
   save_states: false
+preset: v0.1
 reference: archive:v0.1/P4-readout-balanced-best

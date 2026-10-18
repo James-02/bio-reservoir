@@ -301,6 +301,82 @@ class TestCompare:
         assert compare_module.bootstrap_delta(y, pred_a, pred_a, n_boot=50) == (0.0, 0.0, 0.0)
 
 
+def _two_scales(n=60, seed=0):
+    """Two classes separated on both features; feature 0 is 10^4 times larger than feature 1."""
+    rng = np.random.default_rng(seed)
+    labels = np.repeat([0, 1], n // 2)
+    centres = np.array([[0.0, 0.0], [1.0, 1.0]])
+    X = centres[labels] + 0.6 * rng.normal(size=(n, 2))
+    X[:, 0] *= 1e4
+    return [x.reshape(1, 2) for x in X], np.eye(2)[labels][:, None, :]
+
+
+class TestReadoutScaling:
+    """The v0.1 readouts were fitted on unscaled features."""
+
+    def test_readouts_are_scaled_by_default_but_not_in_the_v0_1_preset(self):
+        assert run_module.resolve(_config())["readout"]["scale"] is True
+        v0_1 = run_module.resolve(_config(preset="v0.1"))
+        assert v0_1["readout"]["scale"] is False and v0_1["preset"] == "v0.1"
+
+    def test_the_scaler_is_fitted_on_the_training_fold_only(self):
+        from training.pipeline import fit_readout
+
+        states, Y = _two_scales()
+        readout = run_module.make_readout({"classifier": "KNN", "params": {"n_neighbors": 3},
+                                           "scale": True})
+        fit_readout(readout, states[:40], Y[:40])
+        scaler = readout._fitted_sklearn.named_steps["scale"]
+        np.testing.assert_allclose(scaler.mean_, np.vstack(states[:40]).mean(axis=0))
+
+    def test_scaled_predictions_do_not_depend_on_feature_units(self):
+        from training.pipeline import fit_readout, predict
+
+        states, Y = _two_scales()
+        rescaled = [s * np.array([[1e-4, 1.0]]) for s in states]
+        outputs = []
+        for data, scale in ((states, True), (rescaled, True), (states, False),
+                            (rescaled, False)):
+            readout = run_module.make_readout({"classifier": "KNN",
+                                               "params": {"n_neighbors": 3}, "scale": scale})
+            fit_readout(readout, data[:40], Y[:40])
+            outputs.append(np.vstack(predict(readout, data[40:])))
+        np.testing.assert_array_equal(outputs[0], outputs[1])
+        assert not np.array_equal(outputs[2], outputs[3])
+
+
+class TestReadoutSelection:
+    """The v0.1 readout hyperparameters were chosen on the reported folds."""
+
+    def test_hyperparameters_are_chosen_inside_the_training_fold(self):
+        from sklearn.model_selection import GridSearchCV, StratifiedKFold
+        from sklearn.neighbors import KNeighborsClassifier
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import StandardScaler
+
+        from training.pipeline import fit_readout
+
+        states, Y = _two_scales()
+        cfg = run_module.resolve(_config(readout={
+            "classifier": "KNN", "params": {}, "search": {"n_neighbors": [1, 5, 15]}}))
+        assert cfg["readout"]["inner_folds"] == 3 and cfg["readout"]["seed"] == 3
+        readout = run_module.make_readout(cfg["readout"])
+        fit_readout(readout, states[:40], Y[:40])
+        reference = GridSearchCV(
+            Pipeline([("scale", StandardScaler()), ("classifier", KNeighborsClassifier())]),
+            {"classifier__n_neighbors": [1, 5, 15]}, scoring="f1_macro",
+            cv=StratifiedKFold(3, shuffle=True, random_state=3),
+        ).fit(np.vstack(states[:40]), np.argmax(Y[:40, 0], axis=1))
+        assert readout._fitted_sklearn.best_params_ == reference.best_params_
+
+    def test_runs_record_the_hyperparameters_chosen_in_each_fold(self, tmp_path):
+        cfg = _config(readout={"classifier": "Ridge", "params": {},
+                               "search": {"alpha": [0.01, 1.0, 100.0]}})
+        metrics = json.loads((_execute(cfg, tmp_path / "run") / "metrics.json").read_text())
+        for fold in metrics["folds"]:
+            assert set(fold["selected"]) == {"classifier__alpha"}
+
+
 class TestOptimizeCommands:
     """optimize rerun-best and apply-best build a run config and call the runner."""
 

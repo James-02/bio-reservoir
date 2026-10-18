@@ -305,6 +305,7 @@ def run_fold(
     fold_metrics: Metrics = evaluate_performance(
         Y_val, Y_pred, runtime, primary_average=primary_average
     )
+    selected = getattr(getattr(readout, "_fitted_sklearn", None), "best_params_", None)
 
     return FoldArtifact(
         trial_name   = trial_name,
@@ -315,7 +316,8 @@ def run_fold(
         metrics      = fold_metrics,
         train_states = train_states if save_states else None,
         test_states  = test_states  if save_states else None,
-        model_hypers = {**reservoir.hypers, **readout.hypers},
+        model_hypers = {**reservoir.hypers, **readout.hypers,
+                        **({"selected_readout_params": selected} if selected else {})},
         profiling    = profiler.summary() if profiler.enabled else None,
     )
 

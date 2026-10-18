@@ -68,6 +68,13 @@ RESERVOIR_KEYS = {
 SCALAR_METRICS = ("f1", "f1_macro", "f1_weighted", "accuracy", "precision", "recall",
                   "mcc", "kappa")
 
+# Settings that reproduce the v0.1 code path; explicit config values win.
+PRESETS: dict[str, dict[str, dict[str, Any]]] = {
+    "v0.1": {
+        "readout": {"scale": False},
+    },
+}
+
 
 # ---------------------------------------------------------------------------
 # Configs
@@ -163,13 +170,17 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
     if not cfg.get("name"):
         raise ValueError("A run config needs a name.")
     seed = int(cfg.get("seed", settings.SEED))
-    sections = {key: dict(value) for key, value in DEFAULTS.items()}
+    preset_name = cfg.get("preset")
+    if preset_name is not None and preset_name not in PRESETS:
+        raise ValueError(f"Unknown preset {preset_name!r}; choose from {sorted(PRESETS)}.")
+    preset = PRESETS.get(preset_name, {})
+    sections = {key: {**value, **preset.get(key, {})} for key, value in DEFAULTS.items()}
 
     reservoir = dict(cfg.get("reservoir") or {})
     if "states_from" in reservoir:
         resolved_reservoir = {"states_from": str(reservoir["states_from"])}
     else:
-        params: dict[str, Any] = {}
+        params: dict[str, Any] = dict(preset.get("reservoir", {}))
         source = None
         if reservoir.get("study"):
             found = study_params(reservoir["study"], reservoir.get("trial", "best"),
@@ -178,7 +189,7 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
                 sections[key].update(values)
             source = {"study": reservoir["study"], "trial": found["_trial"],
                       "archive": reservoir.get("archive")}
-            params = {k: v for k, v in found.items() if not k.startswith("_")}
+            params.update({k: v for k, v in found.items() if not k.startswith("_")})
         params.update(reservoir.get("params") or {})
         kind = str(params.get("reservoir_type", reservoir.get("type", "bioreservoir")))
         from optimization.reservoirs import normalize_reservoir_type
@@ -216,6 +227,12 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
             resolved_readout["source"] = readout["source"]
     else:
         raise ValueError("A run config needs a readout (classifier or study).")
+    resolved_readout["scale"] = bool(readout.get("scale", preset.get("readout", {})
+                                                 .get("scale", True)))
+    if readout.get("search"):
+        resolved_readout["search"] = {k: list(v) for k, v in readout["search"].items()}
+        resolved_readout["inner_folds"] = int(readout.get("inner_folds", 3))
+        resolved_readout["seed"] = int(readout.get("seed", seed))
 
     for key in ("task", "features", "cv", "outputs"):
         sections[key].update(cfg.get(key) or {})
@@ -228,6 +245,8 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
            "seed": seed, "task": sections["task"], "reservoir": resolved_reservoir,
            "features": sections["features"], "readout": resolved_readout,
            "cv": sections["cv"], "outputs": sections["outputs"]}
+    if preset_name:
+        out["preset"] = preset_name
     if cfg.get("reference"):
         out["reference"] = str(cfg["reference"])
     return _plain(out)
@@ -258,10 +277,29 @@ def load_task(task: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, list[Path]]
 
 
 def make_readout(readout: dict[str, Any]):
+    """The readout node: the classifier, after a StandardScaler when ``scale`` is set, inside
+    a grid search over the training fold (inner stratified folds) when ``search`` is set."""
     from reservoirpy.nodes import ScikitLearnNode
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
 
-    return ScikitLearnNode(classifier_class(readout["classifier"]),
-                           model_hypers=dict(readout["params"]))
+    cls = classifier_class(readout["classifier"])
+    params = dict(readout.get("params") or {})
+    steps = [("classifier", cls(**params))]
+    if readout.get("scale"):
+        steps.insert(0, ("scale", StandardScaler()))
+    if readout.get("search"):
+        from sklearn.model_selection import GridSearchCV, StratifiedKFold
+
+        inner = StratifiedKFold(int(readout["inner_folds"]), shuffle=True,
+                                random_state=int(readout["seed"]))
+        grid = {f"classifier__{k}": list(v) for k, v in readout["search"].items()}
+        return ScikitLearnNode(GridSearchCV, model_hypers={
+            "estimator": Pipeline(steps), "param_grid": grid, "scoring": "f1_macro",
+            "cv": inner})
+    if readout.get("scale"):
+        return ScikitLearnNode(Pipeline, model_hypers={"steps": steps})
+    return ScikitLearnNode(cls, model_hypers=params)
 
 
 def _simulate(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray,
@@ -317,6 +355,7 @@ def _refit_fold(cfg: dict[str, Any], source):
     fit_readout(readout, list(train_states), list(Y_train))
     Y_pred = np.stack(predict(readout, list(test_states)))
     runtime = round(time.perf_counter() - started, 4)
+    selected = getattr(getattr(readout, "_fitted_sklearn", None), "best_params_", None)
     return FoldArtifact(
         trial_name=source.trial_name, fold_index=source.fold_index,
         Y_train=source.Y_train, Y_test=source.Y_test, Y_pred=Y_pred,
@@ -326,7 +365,8 @@ def _refit_fold(cfg: dict[str, Any], source):
         test_index=source.test_index,
         model_hypers={**source.model_hypers,
                       "model": classifier_class(cfg["readout"]["classifier"]),
-                      "model_hypers": cfg["readout"]["params"]},
+                      "model_hypers": cfg["readout"]["params"],
+                      **({"selected_readout_params": selected} if selected else {})},
     )
 
 
@@ -345,6 +385,9 @@ def summarise(artifacts: list, primary_average: str = "macro") -> dict[str, Any]
                       **{k: float(getattr(m, k)) for k in SCALAR_METRICS},
                       "runtime_s": float(m.runtime),
                       "confusion_matrix": np.asarray(m.confusion_matrix).tolist()})
+        selected = (a.model_hypers or {}).get("selected_readout_params")
+        if selected:
+            folds[-1]["selected"] = selected
     values = {k: np.array([f[k] for f in folds]) for k in SCALAR_METRICS}
     mean = {k: float(v.mean()) for k, v in values.items()}
     sd = {k: float(v.std(ddof=1)) if len(v) > 1 else 0.0 for k, v in values.items()}

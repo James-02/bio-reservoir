@@ -182,13 +182,16 @@ def _is_sklearn_classifier(readout: Node) -> bool:
     """Return *True* if *readout* wraps a scikit-learn classifier.
 
     ReservoirPy's :class:`ScikitLearnNode` stores the underlying sklearn
-    estimator class as a hyper-parameter called ``model``.
+    estimator class as a hyper-parameter called ``model``. The estimator is built
+    to check it, so pipelines and grid searches ending in a classifier qualify.
     """
+    from copy import deepcopy
+
     model_cls = readout.hypers.get("model")
     if model_cls is None:
         return False
     try:
-        return is_classifier(model_cls)
+        return is_classifier(model_cls(**deepcopy(readout.hypers.get("model_hypers") or {})))
     except Exception:
         return False
 
