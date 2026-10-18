@@ -1,11 +1,12 @@
-"""Held-out beat draws: beats that no v0.1 optimisation phase used.
+"""Held-out beat draws: beats that no v0.1 optimisation study used.
 
 The v0.1 studies drew every beat from one balanced pool of 4,015 beats.  Held-out draws
 take N, S, V and Q beats (not F) from the remaining beats of ``data/ecg/ecg_data.npz``:
 
-* draws 1 and 2 (803 beats per class each) were consulted during the revision pilots;
-* draw 3 is the confirmatory set (revision plan X6).  It is balanced, with as many beats
-  per class as the limiting class allows, and is built and sealed before any evaluation.
+* draws 1 and 2 (803 beats per class each) have been evaluated during model development;
+* draw 3 is kept for the final evaluation and has not been evaluated.  It is balanced,
+  with as many beats per class as the limiting class allows, and was recorded before any
+  evaluation.
 
 A draw is a list of row indices (beat IDs) into ``ecg_data.npz``.  ``--write`` records the
 IDs with checksums in ``experiments/heldout/draws.json``; ``--check`` rebuilds the draws
@@ -31,13 +32,13 @@ SEED = config.SEED
 POOL_INSTANCES = 4015
 CLASSES = {0: "N", 1: "S", 2: "V", 4: "Q"}
 PER_CLASS = (803, 803, None)
-STATUS = {1: "consulted during the revision pilots", 2: "consulted during the revision pilots",
-          3: "sealed: confirmatory, not evaluated"}
+STATUS = {1: "evaluated during model development", 2: "evaluated during model development",
+          3: "final test set, not yet evaluated"}
 DRAWS_FILE = config.PROJECT_ROOT / "experiments" / "heldout" / "draws.json"
 
 
 def _sha1(ids: np.ndarray) -> str:
-    """SHA-1 of the beat IDs: the fingerprint the pilots recorded, not a security use."""
+    """SHA-1 fingerprint of the beat IDs, recorded next to the SHA-256 (not a security use)."""
     data = np.asarray(ids, dtype=np.int64).tobytes()
     return hashlib.sha1(data, usedforsecurity=False).hexdigest()  # guardrails-disable-line
 
@@ -88,7 +89,7 @@ def build_draws(dataset: Path, per_class: Sequence[int | None] = PER_CLASS,
 
 def describe(draws: dict[int, np.ndarray], y: np.ndarray, matched: int, dataset: Path) -> dict:
     record = {
-        "description": "Held-out beats unused by every v0.1 optimisation phase "
+        "description": "Held-out beats unused by every v0.1 optimisation study "
                        "(utils/heldout.py)",
         "dataset": {"path": "data/ecg/ecg_data.npz", "content_sha256": dataset_sha256(dataset),
                     "beats": int(len(y))},
@@ -144,7 +145,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     recorded = json.loads(DRAWS_FILE.read_text()) if DRAWS_FILE.is_file() else {}
     if args.write:
         if recorded:
-            raise SystemExit(f"{DRAWS_FILE} exists; draws are sealed and never rewritten")
+            raise SystemExit(f"{DRAWS_FILE} exists; recorded draws are never rewritten")
         DRAWS_FILE.parent.mkdir(parents=True, exist_ok=True)
         DRAWS_FILE.write_text(dumps(describe(draws, y, matched, dataset_path())))
         print(f"wrote {DRAWS_FILE}")

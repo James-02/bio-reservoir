@@ -1,4 +1,4 @@
-"""Held-out draws: the sealed file is self-consistent, and the draw logic on synthetic data."""
+"""Held-out draws: the recorded file is self-consistent, and the draw logic on synthetic data."""
 
 import functools
 import hashlib
@@ -33,10 +33,10 @@ def test_draws_are_disjoint(record):
     assert sum(len(s) for s in sets) == len(set().union(*sets))
 
 
-def test_draw_3_is_balanced_and_sealed(record):
+def test_draw_3_is_balanced_and_not_yet_evaluated(record):
     draw = record["draws"]["3"]
     assert len(set(draw["counts"].values())) == 1
-    assert draw["status"].startswith("sealed")
+    assert draw["status"] == heldout.STATUS[3]
 
 
 def _zscore(X):
@@ -149,7 +149,7 @@ def test_cli_writes_once_then_verifies(cli, capsys):
     heldout.main(["--write"])
     written = json.loads(heldout.DRAWS_FILE.read_text())
     assert written["dataset"]["content_sha256"] == dataset_sha256(path)
-    with pytest.raises(SystemExit, match="sealed"):
+    with pytest.raises(SystemExit, match="never rewritten"):
         heldout.main(["--write"])
     heldout.main(["--check"])
     assert "held-out draws verified" in capsys.readouterr().out
