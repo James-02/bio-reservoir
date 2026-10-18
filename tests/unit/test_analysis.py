@@ -124,6 +124,19 @@ class TestEvaluatePerformance:
         assert "0" in m.class_metrics
         assert "1" in m.class_metrics
 
+    def test_averages_can_run_over_the_classes_of_a_test_set(self):
+        # Class 2 is predicted once but has no test beats: the error lowers class 0's
+        # recall, and class 2 itself is left out of the averages.
+        Y_true = np.eye(3)[[0, 0, 1, 1]]
+        Y_pred = np.eye(3)[[0, 2, 1, 1]]
+        every = evaluate_performance(Y_true, Y_pred, primary_average="macro")
+        present = evaluate_performance(Y_true, Y_pred, primary_average="macro",
+                                       labels=np.array([0, 1]))
+        assert every.f1 == pytest.approx((2 / 3 + 1.0 + 0.0) / 3)
+        assert present.f1 == pytest.approx((2 / 3 + 1.0) / 2)
+        assert present.recall_macro == pytest.approx(0.75)
+        assert present.accuracy == every.accuracy == pytest.approx(0.75)
+
 
 # ---------------------------------------------------------------------------
 # compute_mean_dicts / compute_class_dicts

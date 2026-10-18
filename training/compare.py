@@ -72,24 +72,41 @@ def _classes(Y: np.ndarray) -> np.ndarray:
 
 
 def _scores(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
-    return {"f1_macro": float(f1_score(y_true, y_pred, average="macro")),
-            "f1_weighted": float(f1_score(y_true, y_pred, average="weighted")),
+    """Metrics over the classes of the test labels (other predicted classes are errors)."""
+    labels = np.unique(y_true)
+    return {"f1_macro": float(f1_score(y_true, y_pred, labels=labels, average="macro")),
+            "f1_weighted": float(f1_score(y_true, y_pred, labels=labels, average="weighted")),
             "accuracy": float(accuracy_score(y_true, y_pred)),
             "mcc": float(matthews_corrcoef(y_true, y_pred))}
+
+
+def _f1_macro(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    return f1_score(y_true, y_pred, labels=np.unique(y_true), average="macro")
 
 
 def bootstrap_delta(y_true: np.ndarray, pred_a: np.ndarray, pred_b: np.ndarray,
                     n_boot: int = 2000, seed: int = 0) -> tuple[float, float, float]:
     """Macro-F1 of B minus A, with a 95% percentile CI from resampling beats in pairs."""
     rng = np.random.default_rng(seed)
-    delta = f1_score(y_true, pred_b, average="macro") - f1_score(y_true, pred_a, average="macro")
+    delta = _f1_macro(y_true, pred_b) - _f1_macro(y_true, pred_a)
     draws = np.empty(n_boot)
     for i in range(n_boot):
         idx = rng.integers(0, len(y_true), len(y_true))
-        draws[i] = (f1_score(y_true[idx], pred_b[idx], average="macro")
-                    - f1_score(y_true[idx], pred_a[idx], average="macro"))
+        draws[i] = _f1_macro(y_true[idx], pred_b[idx]) - _f1_macro(y_true[idx], pred_a[idx])
     low, high = np.percentile(draws, [2.5, 97.5])
     return float(delta), float(low), float(high)
+
+
+def bootstrap_ci(y_true: np.ndarray, y_pred: np.ndarray, n_boot: int = 2000,
+                 seed: int = 0) -> tuple[float, float]:
+    """95% percentile CI of one run's macro-F1 from resampling the test beats."""
+    rng = np.random.default_rng(seed)
+    draws = np.empty(n_boot)
+    for i in range(n_boot):
+        idx = rng.integers(0, len(y_true), len(y_true))
+        draws[i] = _f1_macro(y_true[idx], y_pred[idx])
+    low, high = np.percentile(draws, [2.5, 97.5])
+    return float(low), float(high)
 
 
 def compare(ref_a: str | Path, ref_b: str | Path, *, out: str | Path | None = None,

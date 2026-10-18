@@ -1,6 +1,7 @@
 """Run a classification task from a config file.
 
     python -m training.run run CONFIG.yaml [--processes N] [--out DIR] [--allow-dirty]
+                                           [--final-test]
     python -m training.run resolve CONFIG.yaml
     python -m training.run compare RUN_A RUN_B [--out DIR]
 
@@ -16,6 +17,12 @@ predictions and, with ``outputs.save_states``, the state features), ``figures/``
 ``run.log`` and ``manifest.json``, and appends a line to the run registry
 (``utils.provenance``). With ``reservoir.states_from`` the readout is refitted on the
 saved states of another run instead of simulating the reservoir again.
+
+With ``test: {split: <name>}`` the run fits the readout on the whole pool and evaluates it
+on a held-out split instead of cross-validating (``utils.heldout``: ``validation-1``,
+``validation-2`` or ``test``); ``fold-0.npz`` then holds the split's predictions and
+``metrics.json`` a bootstrap 95% CI of its macro F1. The ``test`` split is the final test
+set and needs ``--final-test``.
 """
 
 from __future__ import annotations
@@ -254,11 +261,25 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
     sections["cv"].setdefault("seed", seed)
     if sections["task"]["labels"] not in ("five-class", "binary"):
         raise ValueError("task.labels must be 'five-class' or 'binary'.")
+    split = (cfg.get("test") or {}).get("split")
+    if split is not None:
+        from utils.heldout import SPLITS
+
+        if split not in SPLITS.values():
+            raise ValueError(f"Unknown held-out split {split!r}; choose from "
+                             f"{sorted(SPLITS.values())}.")
+        if sections["task"]["labels"] != "five-class":
+            raise ValueError("The held-out splits hold five-class beats.")
+        if "states_from" in resolved_reservoir:
+            raise ValueError("A held-out evaluation simulates the reservoir; it cannot reuse "
+                             "the states of another run (reservoir.states_from).")
 
     out = {"name": str(cfg["name"]), "description": str(cfg.get("description", "")).strip(),
            "seed": seed, "task": sections["task"], "reservoir": resolved_reservoir,
            "features": sections["features"], "readout": resolved_readout,
            "cv": sections["cv"], "outputs": sections["outputs"]}
+    if split is not None:
+        out["test"] = {"split": str(split)}
     if preset_name:
         out["preset"] = preset_name
     if cfg.get("reference"):
@@ -355,6 +376,45 @@ def _simulate(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray,
     )
 
 
+def _classes(Y: np.ndarray) -> np.ndarray:
+    return np.argmax(np.asarray(Y).reshape(len(Y), -1), axis=1)
+
+
+def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: np.ndarray,
+                    Y_test: np.ndarray, beat_ids: np.ndarray):
+    """Fit the readout on the whole pool and evaluate it on a held-out split, as fold 0.
+
+    The pool is augmented and scaled as a cross-validation training fold, and the metrics
+    average over the classes of the split.
+    """
+    from optimization.reservoirs import build_reservoir
+    from training.cross_validate import Fold, _prepare_fold_data, run_fold
+    from utils.heldout import overlap
+
+    shared = overlap(X, X_test)
+    if shared:
+        raise ValueError(f"{shared} beats of the held-out split {cfg['test']['split']!r} are "
+                         "in the training pool.")
+    X_all, Y_all = np.concatenate((X, X_test)), np.concatenate((Y, Y_test))
+    fold = Fold(train_idx=np.arange(len(X)), val_idx=np.arange(len(X), len(X_all)),
+                fold_index=0)
+    data = _prepare_fold_data(X_all, Y_all, fold, noise_rate=float(cfg["cv"]["noise_rate"]),
+                              noise_ratio=float(cfg["cv"]["noise_ratio"]),
+                              seed=int(cfg["cv"]["seed"]),
+                              scaler_type=str(cfg["task"]["scaler"]))
+    reservoir_cfg = dict(cfg["reservoir"]["params"], reservoir_type=cfg["reservoir"]["type"])
+    reservoir, _ = build_reservoir(reservoir_cfg, seed=int(cfg["reservoir"]["seed"]))
+    artifact = run_fold(reservoir, make_readout(cfg["readout"]), *data, fold_index=0,
+                        save_states=bool(cfg["outputs"]["save_states"]),
+                        readout_aggregation=str(cfg["features"]["aggregation"]),
+                        readout_window=int(cfg["features"]["window"]),
+                        primary_average=str(cfg["cv"]["primary_average"]),
+                        profile=bool(cfg["cv"]["profile"]),
+                        labels=np.unique(_classes(Y_test)))
+    artifact.test_index = np.asarray(beat_ids, dtype=np.int64)
+    return artifact
+
+
 def refit_readout(cfg: dict[str, Any], source_folds: list, processes: int = 1) -> list:
     """Fit the readout on each fold's saved training states and predict its test states."""
     for source in source_folds:
@@ -404,8 +464,12 @@ def _refit_fold(cfg: dict[str, Any], source):
 # Outputs
 # ---------------------------------------------------------------------------
 
-def summarise(artifacts: list, primary_average: str = "macro") -> dict[str, Any]:
-    """Per-fold metrics, their mean and sample SD (ddof=1), and pooled metrics."""
+def summarise(artifacts: list, primary_average: str = "macro",
+              labels: np.ndarray | None = None) -> dict[str, Any]:
+    """Per-fold metrics, their mean and sample SD (ddof=1), and pooled metrics.
+
+    ``labels`` restricts the averaged pooled metrics to those classes (a held-out split).
+    """
     from utils.analysis import evaluate_performance
 
     folds = []
@@ -423,7 +487,8 @@ def summarise(artifacts: list, primary_average: str = "macro") -> dict[str, Any]
     sd = {k: float(v.std(ddof=1)) if len(v) > 1 else 0.0 for k, v in values.items()}
     pooled_true = np.concatenate([a.Y_test.reshape(len(a.Y_test), -1) for a in artifacts])
     pooled_pred = np.concatenate([a.Y_pred.reshape(len(a.Y_pred), -1) for a in artifacts])
-    pooled = evaluate_performance(pooled_true, pooled_pred, 0.0, primary_average=primary_average)
+    pooled = evaluate_performance(pooled_true, pooled_pred, 0.0, primary_average=primary_average,
+                                  labels=labels)
     return {
         "primary_average": primary_average, "n_folds": len(folds), "folds": folds,
         "mean": mean, "sd": sd,
@@ -497,11 +562,20 @@ def _peak_ram_gb() -> float:
 
 
 def execute(cfg: dict[str, Any], *, out: str | Path | None = None, processes: int = 1,
-            allow_dirty: bool = False, registry: Path | None = None) -> Path:
-    """Run a config and write its run folder; return the folder."""
-    from training.compare import load_folds
+            allow_dirty: bool = False, registry: Path | None = None,
+            final_test: bool = False) -> Path:
+    """Run a config and write its run folder; return the folder.
+
+    A config that evaluates on the ``test`` split (the final test set) needs
+    ``final_test=True``.
+    """
+    from training.compare import bootstrap_ci, load_folds
 
     cfg = resolve(cfg)
+    split = cfg.get("test", {}).get("split")
+    if split == "test" and not final_test:
+        raise SystemExit("The 'test' split is the final test set, evaluated once at the end; "
+                         "pass --final-test to evaluate it.")
     git = provenance.git_info()
     citable = provenance.require_clean(git, allow_dirty)
     started = datetime.now(timezone.utc)
@@ -514,6 +588,9 @@ def execute(cfg: dict[str, Any], *, out: str | Path | None = None, processes: in
 
     data_files: list[Path] = []
     pool_sha256 = None
+    beat_ids = None
+    labels = None
+    evaluation: dict[str, Any] = {}
     timings: dict[str, Any] = {}
     with _log_to(run_dir / "run.log"):
         logger.info("Run %s (%s): %s", run_dir.name, cfg["name"], cfg["description"])
@@ -524,19 +601,42 @@ def execute(cfg: dict[str, Any], *, out: str | Path | None = None, processes: in
             X, Y, data_files = load_task(cfg["task"])
             pool_sha256 = _pool_sha256(X, Y)
             logger.info("Pool: %d beats, class counts %s", len(X),
-                        np.bincount(np.argmax(Y.reshape(len(Y), -1), axis=1)).tolist())
-            result, artifacts = _simulate(cfg, X, Y, processes)
-            timings = {k: result[k] for k in ("profiling", "fold_runtimes") if k in result}
+                        np.bincount(_classes(Y)).tolist())
+            if split:
+                from utils import heldout
+
+                X_test, Y_test, beat_ids = heldout.load_split(split, cfg["task"]["scaler"])
+                data_files = [*data_files, heldout.SPLITS_FILE]
+                labels = np.unique(_classes(Y_test))
+                logger.info("Held-out split %s: %d beats, class counts %s", split,
+                            len(X_test), np.bincount(_classes(Y_test)).tolist())
+                artifacts = [_evaluate_split(cfg, X, Y, X_test, Y_test, beat_ids)]
+                low, high = bootstrap_ci(_classes(Y_test), _classes(artifacts[0].Y_pred),
+                                         seed=int(cfg["seed"]))
+                evaluation = {"split": split, "n_beats": int(len(X_test)),
+                              "classes": labels.tolist(), "f1_macro_ci95": [low, high]}
+            else:
+                result, artifacts = _simulate(cfg, X, Y, processes)
+                timings = {k: result[k] for k in ("profiling", "fold_runtimes") if k in result}
         for artifact in artifacts:
             artifact.trial_name = run_dir.name
             artifact.save(results_dir=str(run_dir.parent),
                           save_states=bool(cfg["outputs"]["save_states"]))
-        metrics = {**summarise(artifacts, cfg["cv"]["primary_average"]), **timings}
+        metrics = {**summarise(artifacts, cfg["cv"]["primary_average"], labels), **timings}
+        if evaluation:
+            metrics["test"] = evaluation
+            metrics["summary"].update(f1_macro_ci95_low=evaluation["f1_macro_ci95"][0],
+                                      f1_macro_ci95_high=evaluation["f1_macro_ci95"][1])
         (run_dir / "metrics.json").write_text(json.dumps(metrics, indent=1) + "\n")
         plot_run(run_dir / "figures", metrics)
-        logger.info("F1 %.4f +/- %.4f (sample SD over %d folds), accuracy %.4f",
-                    metrics["mean"]["f1"], metrics["sd"]["f1"], metrics["n_folds"],
-                    metrics["mean"]["accuracy"])
+        if evaluation:
+            logger.info("Held-out split %s: F1 %.4f (95%% CI %.4f to %.4f), accuracy %.4f",
+                        split, metrics["mean"]["f1"], *evaluation["f1_macro_ci95"],
+                        metrics["mean"]["accuracy"])
+        else:
+            logger.info("F1 %.4f +/- %.4f (sample SD over %d folds), accuracy %.4f",
+                        metrics["mean"]["f1"], metrics["sd"]["f1"], metrics["n_folds"],
+                        metrics["mean"]["accuracy"])
 
     ended = datetime.now(timezone.utc)
     outputs = sorted(p for p in run_dir.rglob("*") if p.is_file())
@@ -544,11 +644,12 @@ def execute(cfg: dict[str, Any], *, out: str | Path | None = None, processes: in
                     int(cfg["reservoir"].get("seed", cfg["seed"]))})
     manifest = provenance.build_manifest(
         cfg["name"], cfg, seeds=seeds, started=started, ended=ended, data_files=data_files,
-        outputs=outputs, peak_ram_gb=_peak_ram_gb(), allow_dirty=allow_dirty)
+        beat_ids=beat_ids, outputs=outputs, peak_ram_gb=_peak_ram_gb(),
+        allow_dirty=allow_dirty)
     manifest["data_pool_sha256"] = pool_sha256
     provenance.write_manifest(run_dir, manifest)
     provenance.register(manifest, run_dir, status="ok" if citable else "exploratory",
-                        metrics=metrics["summary"],
+                        metrics=metrics["summary"], evaluation=split,
                         registry=registry or provenance.REGISTRY_FILE)
     return run_dir
 
@@ -572,6 +673,9 @@ def main(argv: list[str] | None = None) -> None:
                        help="Run from uncommitted code; the run is marked non-citable.")
     p_run.add_argument("--save-states", action="store_true",
                        help="Keep the state features in the fold files.")
+    p_run.add_argument("--final-test", action="store_true",
+                       help="Allow a config that evaluates on the test split (the final test "
+                            "set, evaluated once at the end).")
     p_res = sub.add_parser("resolve", help="Print the explicit config.")
     p_res.add_argument("config")
     p_cmp = sub.add_parser("compare", help="Compare two runs.")
@@ -589,7 +693,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.save_states:
             cfg.setdefault("outputs", {})["save_states"] = True
         run_dir = execute(cfg, out=args.out, processes=args.processes,
-                          allow_dirty=args.allow_dirty)
+                          allow_dirty=args.allow_dirty, final_test=args.final_test)
         print(run_dir)
     else:
         from training.compare import compare, format_comparison

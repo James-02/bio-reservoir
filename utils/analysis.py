@@ -203,6 +203,7 @@ def evaluate_performance(
     Y_pred: np.ndarray,
     time: float = 0,
     primary_average: str = "weighted",
+    labels: np.ndarray | None = None,
 ) -> Metrics:
     """Compute classification metrics from true and predicted label arrays.
 
@@ -217,6 +218,10 @@ def evaluate_performance(
     time : float
         Wall-clock runtime in seconds stored directly in the returned
         :class:`Metrics` object; not computed here.
+    labels : np.ndarray, optional
+        Classes that the averaged precision, recall and F1 run over, e.g. the classes of
+        a test set that lacks some training classes; predictions of other classes still
+        count as errors.  By default, every class in ``Y_true`` or ``Y_pred``.
 
     Returns
     -------
@@ -227,12 +232,12 @@ def evaluate_performance(
     yt = np.array([np.argmax(y_t) for y_t in Y_true])
     yp = np.array([np.argmax(y_p) for y_p in Y_pred])
 
-    f1_macro = float(f1_score(yt, yp, average="macro"))
-    f1_weighted = float(f1_score(yt, yp, average="weighted"))
-    precision_macro = float(precision_score(yt, yp, average="macro"))
-    precision_weighted = float(precision_score(yt, yp, average="weighted"))
-    recall_macro = float(recall_score(yt, yp, average="macro"))
-    recall_weighted = float(recall_score(yt, yp, average="weighted"))
+    f1_macro = float(f1_score(yt, yp, labels=labels, average="macro"))
+    f1_weighted = float(f1_score(yt, yp, labels=labels, average="weighted"))
+    precision_macro = float(precision_score(yt, yp, labels=labels, average="macro"))
+    precision_weighted = float(precision_score(yt, yp, labels=labels, average="weighted"))
+    recall_macro = float(recall_score(yt, yp, labels=labels, average="macro"))
+    recall_weighted = float(recall_score(yt, yp, labels=labels, average="weighted"))
 
     if primary_average == "macro":
         f1 = f1_macro

@@ -53,7 +53,8 @@ conventions and integrate with them rather than reinventing.
   housekeeping.
 - `tests/unit/` and `tests/integration/` — pytest suite; `tests/regression_reference.py`
   builds the `v0.1` reference outputs for the regression tests.
-- `experiments/heldout/draws.json` — held-out beat IDs (tracked; never edited).
+- `data/splits/heldout.json` — the held-out validation and test splits (beat IDs and
+  checksums; tracked, never edited).
 - `experiments/benchmarks/v0.1/` — run configs of the `v0.1` headline runs.
 
 ## Workspace data layout (all gitignored)
@@ -74,7 +75,7 @@ All paths and settings come from `utils/config.py` (environment variable, then
   `--runs_dir`). Promote results from `results/` to a new `archive/<version>/` only
   when they are frozen for a release.
 - `data/` — raw datasets and the preprocessed caches (`BIORESERVOIR_DATA_DIR`); build
-  them with `python -m utils.preprocessing`.
+  them with `python -m utils.preprocessing`. Only `data/splits/` is tracked.
 - `config.env` — local settings: paths, Kaggle credentials, deployment hosts.
 
 ## Naming conventions
@@ -164,9 +165,10 @@ ruff format .                        # format
 
 ## Hard rules (do not violate)
 
-- **Never tune on held-out beats.** The draws in `experiments/heldout/draws.json` are
-  never used for selection; draw 3 is the final test set and is evaluated once, at the
-  end. Never change the beat IDs in that file.
+- **Never tune on held-out beats.** Models are selected by cross-validation on the pool.
+  The validation splits in `data/splits/heldout.json` check how a choice generalises; the
+  `test` split is the final test set and is evaluated once, at the end (`--final-test`).
+  Never change the beat IDs in that file.
 - **Never modify `archive/`.** It holds the frozen artefacts of a released
   version (the `v0.1` code is archived on Zenodo, DOI 10.5281/zenodo.23436888).
   Write new results to `results/` and logs to `logs/`. Keep the scientific

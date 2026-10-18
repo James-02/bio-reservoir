@@ -70,6 +70,24 @@ python -m utils.provenance mark <run id> ok --uses "Table 2, balanced"
 
 Each run writes `results/runs/<name>-<UTC time>/`: the resolved `config.yaml`, `metrics.json` (per fold, mean and sample SD, pooled), `fold-<k>.npz`, `figures/`, `run.log` and `manifest.json` (code version, data checksums, environment), and adds a line to `registry.jsonl`. Runs from uncommitted code need `--allow-dirty` and are marked non-citable. `compare` prints per-fold metrics, the prediction agreement and a paired bootstrap 95% CI of the macro-F1 difference, and saves figures with `--out`. `optimize rerun-best` and `optimize apply-best` use the same runner.
 
+### Held-out evaluation
+
+Besides the cross-validation pool, three held-out splits of the five-class dataset hold beats (N, S, V and Q) that no `v0.1` optimisation study used: `validation-1` and `validation-2` (803 beats per class each) and `test` (370 beats per class). Their beat IDs and checksums are tracked in [data/splits/heldout.json](data/splits/heldout.json); `python -m utils.heldout --check` rebuilds them from the data and verifies them. Select models by cross-validation on the pool; use the validation splits to check how a choice generalises, and the `test` split once, for the final evaluation.
+
+A run evaluates on a split when its config has a `test` section; the readout is then fitted on the whole pool and scored on the split (macro F1 over the split's classes, with a bootstrap 95% CI):
+
+```yaml
+test:
+  split: validation-1   # or validation-2, or test (needs --final-test)
+```
+
+```bash
+python -m training.run run my-config.yaml                # validation split
+python -m training.run run my-final-config.yaml --final-test
+```
+
+The run refuses beats of the split that are also in its pool, records the split's beat IDs in the manifest and the split in the registry, and runs on the same split pair beat by beat in `compare`.
+
 `pytest -m benchmark` reruns the `v0.1` headline configs and compares them fold by fold with the archived runs; it needs a capable host (`BIORESERVOIR_BENCHMARK_PROCESSES` sets the parallel folds). The balanced, unbalanced, binary-full and ESN reruns reproduce the archived predictions exactly. The binary-full config reads the binary file the `v0.1` runs used (`data/ecg_archive/binary_ecg_data.npz`, a pre-balanced pool of 37,714 beats, checked by its SHA-256); it is not built by `python -m utils.preprocessing`, and without it the binary tests are skipped.
 
 The code defaults include the fixes listed in the [CHANGELOG](CHANGELOG.md) (one position per oscillator, the delay resolved at every RK4 substep, unit spectral radius, scaled readout features, and others). `preset: v0.1` in a run config, which the benchmark configs use, restores the v0.1 code path; the ablation and heterogeneity scripts take `--preset v0.1`. `python scripts/analysis/drive_bounds.py <config>` reports a reservoir's drive range, negative states and drive shares.
@@ -81,8 +99,9 @@ The code defaults include the fixes listed in the [CHANGELOG](CHANGELOG.md) (one
 - **optimization/** — Optuna hyperparameter studies, study registry, and CLI commands for running/evaluating studies.
 - **utils/** — Preprocessing (ECG loading, augmentation, scaling), analysis metrics, visualisation, and result management.
 - **scripts/** — Standalone experiment scripts and analysis helpers.
-- **experiments/** — Run configs (`benchmarks/v0.1/`: the `v0.1` headline runs) and the held-out beat draws.
-- **data/ecg/** — MIT-BIH arrhythmia dataset files.
+- **experiments/** — Run configs (`benchmarks/v0.1/`: the `v0.1` headline runs).
+- **data/ecg/** — MIT-BIH arrhythmia dataset files (not tracked; `python -m utils.preprocessing`).
+- **data/splits/** — Held-out validation and test splits (beat IDs and checksums, tracked).
 - **results/** — Working outputs (gitignored): Optuna studies, fold runs, metrics and figures; see [Results Layout](#results-layout).
 - **logs/** — Log files from studies and experiment scripts (gitignored).
 
