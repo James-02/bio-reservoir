@@ -48,7 +48,7 @@ def research(study: Study, trials: int, objective_func: Callable, processes: Opt
 
     Args:
         study (Study): The Optuna study object.
-        trials (int): Number of trials to optimize.
+        trials (int): Number of trials to optimize, shared out between the processes.
         objective_func (Callable): The objective function to optimize.
         processes (int, optional): Number of processes for parallel optimization. Defaults to None.
         **kwargs: Additional keyword arguments for the optimization function.
@@ -56,12 +56,14 @@ def research(study: Study, trials: int, objective_func: Callable, processes: Opt
     Returns:
         List[Study]: List of optimized Optuna study objects.
     """
-    if processes <= 1:
+    if not processes or processes <= 1:
         return [_optimize_study(study, trials, objective_func, **kwargs)]
 
     logger.info("Optimizing with %s processes", processes)
+    shares = [trials // processes + (k < trials % processes) for k in range(processes)]
     return joblib.Parallel(n_jobs=processes)(
-        joblib.delayed(_optimize_study)(study, trials // processes, objective_func, **kwargs) for _ in range(processes))
+        joblib.delayed(_optimize_study)(study, share, objective_func, **kwargs)
+        for share in shares if share)
 
 def evaluate_study(
     study: Study,

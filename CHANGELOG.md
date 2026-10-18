@@ -188,6 +188,11 @@ coupling the hyperparameters were tuned for, so the studies need re-tuning.
   BASELINE augmentation (0.2999/0.2862), so `optimize research --type baseline`
   augmented the training folds unless told otherwise; the reported baselines are
   unchanged.
+- [engineering] `optimize research --processes N` runs the requested number of trials:
+  each process ran `trials // N`, so 500 trials on 96 processes ran 480 (the B1-B3
+  studies ran on a 96-thread host and have 480 trials each), and fewer trials than
+  processes ran none. Without `processes` the study runs in one process instead of
+  failing.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or
