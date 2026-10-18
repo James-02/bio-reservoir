@@ -9,6 +9,7 @@ logs/
 archive/
 backups/
 data/*
+!data/splits/
 report/
 .vscode/
 

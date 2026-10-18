@@ -1,16 +1,20 @@
-"""Held-out beat draws: beats that no v0.1 optimisation study used.
+"""Held-out splits: validation and test beats that no v0.1 optimisation study used.
 
-The v0.1 studies drew every beat from one balanced pool of 4,015 beats.  Held-out draws
-take N, S, V and Q beats (not F) from the remaining beats of ``data/ecg/ecg_data.npz``:
+The v0.1 studies drew every beat from one balanced pool of 4,015 beats.  The held-out
+splits take N, S, V and Q beats (not F) from the remaining beats of
+``data/ecg/ecg_data.npz``, in three seeded draws:
 
-* draws 1 and 2 (803 beats per class each) have been evaluated during model development;
-* draw 3 is kept for the final evaluation and has not been evaluated.  It is balanced,
+* ``validation-1`` and ``validation-2`` (draws 1 and 2, 803 beats per class each) have
+  been evaluated during model development;
+* ``test`` (draw 3) is the final test set, evaluated once at the end.  It is balanced,
   with as many beats per class as the limiting class allows, and was recorded before any
   evaluation.
 
-A draw is a list of row indices (beat IDs) into ``ecg_data.npz``.  ``--write`` records the
-IDs with checksums in ``experiments/heldout/draws.json``; ``--check`` rebuilds the draws
-and verifies them against that file.  Never tune anything on a held-out draw::
+A split is a list of row indices (beat IDs) into ``ecg_data.npz``, recorded with checksums
+in ``data/splits/heldout.json`` (tracked in git, unlike the data).  :func:`load_split`
+returns a split's beats, scaled like the training pool, and a run config evaluates on one
+with ``test: {split: <name>}`` (see ``training.run``).  ``--check`` rebuilds the draws from
+the data and verifies them against the record.  Never tune anything on a held-out split::
 
     python -m utils.heldout --check
 """
@@ -26,15 +30,18 @@ from pathlib import Path
 import numpy as np
 
 from utils import config
-from utils.preprocessing import dataset_sha256, load_ecg_data
+from utils.preprocessing import dataset_sha256, load_ecg_data, standardize_data
 
 SEED = config.SEED
 POOL_INSTANCES = 4015
 CLASSES = {0: "N", 1: "S", 2: "V", 4: "Q"}
 PER_CLASS = (803, 803, None)
+SPLITS = {1: "validation-1", 2: "validation-2", 3: "test"}
 STATUS = {1: "evaluated during model development", 2: "evaluated during model development",
           3: "final test set, not yet evaluated"}
-DRAWS_FILE = config.PROJECT_ROOT / "experiments" / "heldout" / "draws.json"
+SPLITS_FILE = config.PROJECT_ROOT / "data" / "splits" / "heldout.json"
+# Scalers that act on each beat alone, so a split is scaled exactly like the pool.
+PER_BEAT_SCALERS = ("sequence_zscore", "sequence_minmax", "sequence_minmax_pos", "none")
 
 
 def _sha1(ids: np.ndarray) -> str:
@@ -45,6 +52,52 @@ def _sha1(ids: np.ndarray) -> str:
 
 def dataset_path() -> Path:
     return config.data_dir() / "ecg" / "ecg_data.npz"
+
+
+def load_split(name: str, scaler_type: str = "sequence_zscore"
+               ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The beats of a held-out split.
+
+    Parameters
+    ----------
+    name : str
+        ``"validation-1"``, ``"validation-2"`` or ``"test"``.
+    scaler_type : str
+        Per-beat scaler, as for the training pool (``utils.preprocessing``).
+
+    Returns
+    -------
+    X : np.ndarray, shape (n, steps, 1)
+        The scaled beats.
+    Y : np.ndarray, shape (n, 1, n_classes)
+        One-hot labels over the dataset's five classes.
+    beat_ids : np.ndarray, shape (n,)
+        Row indices of the beats in ``ecg_data.npz``.
+    """
+    if scaler_type not in PER_BEAT_SCALERS:
+        raise ValueError(f"Held-out splits need a per-beat scaler "
+                         f"({', '.join(PER_BEAT_SCALERS)}); got {scaler_type!r}.")
+    record = json.loads(SPLITS_FILE.read_text())
+    draws = {draw["split"]: draw for draw in record["draws"].values()}
+    if name not in draws:
+        raise ValueError(f"Unknown held-out split {name!r}; choose from {sorted(draws)}.")
+    path = dataset_path()
+    if dataset_sha256(path) != record["dataset"]["content_sha256"]:
+        raise ValueError(f"{path} is not the dataset the held-out splits were drawn from.")
+    ids = np.asarray(draws[name]["beat_ids"], dtype=np.int64)
+    with np.load(path, allow_pickle=True) as data:
+        X = np.asarray(data["X"], dtype=np.float64)
+        y = np.asarray(data["Y"]).reshape(-1).astype(int)
+    beats = X[ids].reshape(len(ids), -1, 1)
+    _, beats = standardize_data(beats, beats, scaler_type=scaler_type)
+    labels = np.eye(len(np.unique(y)))[y[ids]][:, None, :]
+    return beats, labels, ids
+
+
+def overlap(pool: np.ndarray, beats: np.ndarray, decimals: int = 6) -> int:
+    """How many of *beats* also occur in *pool* (values compared after rounding)."""
+    keys = {np.round(np.ravel(x), decimals).tobytes() for x in pool}
+    return sum(np.round(np.ravel(x), decimals).tobytes() in keys for x in beats)
 
 
 def load_pool(instances: int = POOL_INSTANCES, seed: int = SEED) -> np.ndarray:
@@ -100,6 +153,7 @@ def describe(draws: dict[int, np.ndarray], y: np.ndarray, matched: int, dataset:
     for k, ids in draws.items():
         ids = np.asarray(ids, dtype=np.int64)
         record["draws"][str(k)] = {
+            "split": SPLITS.get(k, ""),
             "seed": SEED + k,
             "status": STATUS.get(k, ""),
             "counts": {CLASSES[c]: int((y[ids] == c).sum()) for c in CLASSES},
@@ -129,7 +183,7 @@ def check(record: dict, draws: dict[int, np.ndarray]) -> list[str]:
     for k, ids in draws.items():
         sha1 = _sha1(ids)
         if sha1 != record["draws"][str(k)]["sha1"]:
-            problems.append(f"draw {k}: SHA-1 {sha1} differs from {DRAWS_FILE.name}")
+            problems.append(f"draw {k}: SHA-1 {sha1} differs from {SPLITS_FILE.name}")
     return problems
 
 
@@ -142,25 +196,25 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     draws, y, matched = build_draws(dataset_path())
-    recorded = json.loads(DRAWS_FILE.read_text()) if DRAWS_FILE.is_file() else {}
+    recorded = json.loads(SPLITS_FILE.read_text()) if SPLITS_FILE.is_file() else {}
     if args.write:
         if recorded:
-            raise SystemExit(f"{DRAWS_FILE} exists; recorded draws are never rewritten")
-        DRAWS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        DRAWS_FILE.write_text(dumps(describe(draws, y, matched, dataset_path())))
-        print(f"wrote {DRAWS_FILE}")
+            raise SystemExit(f"{SPLITS_FILE} exists; recorded splits are never rewritten")
+        SPLITS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SPLITS_FILE.write_text(dumps(describe(draws, y, matched, dataset_path())))
+        print(f"wrote {SPLITS_FILE}")
     else:
         if not recorded:
-            raise SystemExit(f"{DRAWS_FILE} not found")
+            raise SystemExit(f"{SPLITS_FILE} not found")
         problems = check(recorded, draws)
         if dataset_sha256(dataset_path()) != recorded["dataset"]["content_sha256"]:
             problems.append(f"{dataset_path()} differs from the recorded dataset")
         if problems:
             raise SystemExit("\n".join(problems))
-        print("held-out draws verified")
+        print("held-out splits verified")
     for k, ids in draws.items():
         counts = {CLASSES[c]: int((y[ids] == c).sum()) for c in CLASSES}
-        print(f"  draw {k}: {len(ids)} beats {counts}  ({STATUS[k]})")
+        print(f"  {SPLITS[k]} (draw {k}): {len(ids)} beats {counts}  ({STATUS[k]})")
 
 
 if __name__ == "__main__":

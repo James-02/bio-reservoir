@@ -1,4 +1,5 @@
-"""Held-out draws: the recorded file is self-consistent, and the draw logic on synthetic data."""
+"""Held-out splits: the recorded file is self-consistent, the draw logic on synthetic data,
+and loading a split."""
 
 import functools
 import hashlib
@@ -17,7 +18,7 @@ PER_CLASS = (3, 3, None)
 
 @pytest.fixture(scope="module")
 def record():
-    return json.loads(heldout.DRAWS_FILE.read_text())
+    return json.loads(heldout.SPLITS_FILE.read_text())
 
 
 def test_checksums_match_recorded_beat_ids(record):
@@ -39,6 +40,12 @@ def test_draw_3_is_balanced_and_not_yet_evaluated(record):
     assert draw["status"] == heldout.STATUS[3]
 
 
+def test_draws_are_named_as_validation_and_test_splits(record):
+    assert {k: draw["split"] for k, draw in record["draws"].items()} == {
+        "1": "validation-1", "2": "validation-2", "3": "test"}
+    assert heldout.SPLITS == {1: "validation-1", 2: "validation-2", 3: "test"}
+
+
 def _zscore(X):
     sd = X.std(axis=1, keepdims=True)
     sd[sd == 0] = 1.0
@@ -57,7 +64,7 @@ def dataset(tmp_path, monkeypatch):
     np.savez(path, X=X, Y=y.reshape(-1, 1).astype(float))
     monkeypatch.setenv("BIORESERVOIR_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(heldout, "load_pool", lambda: _zscore(X[pool])[:, :, None])
-    monkeypatch.setattr(heldout, "DRAWS_FILE", tmp_path / "heldout" / "draws.json")
+    monkeypatch.setattr(heldout, "SPLITS_FILE", tmp_path / "splits" / "heldout.json")
     return path, y, pool
 
 
@@ -102,6 +109,7 @@ def test_record_round_trips_with_one_line_per_draw(dataset):
         assert draw["beat_ids"] == ids.tolist()
         assert draw["sha256"] == hashlib.sha256(ids.astype(np.int64).tobytes()).hexdigest()
         assert draw["status"] == heldout.STATUS[k]
+        assert draw["split"] == heldout.SPLITS[k]
     text = heldout.dumps(record)
     assert json.loads(text) == record
     for draw in record["draws"].values():
@@ -147,12 +155,12 @@ def test_cli_writes_once_then_verifies(cli, capsys):
     with pytest.raises(SystemExit, match="not found"):
         heldout.main(["--check"])
     heldout.main(["--write"])
-    written = json.loads(heldout.DRAWS_FILE.read_text())
+    written = json.loads(heldout.SPLITS_FILE.read_text())
     assert written["dataset"]["content_sha256"] == dataset_sha256(path)
     with pytest.raises(SystemExit, match="never rewritten"):
         heldout.main(["--write"])
     heldout.main(["--check"])
-    assert "held-out draws verified" in capsys.readouterr().out
+    assert "held-out splits verified" in capsys.readouterr().out
 
 
 def test_cli_check_fails_when_the_dataset_changes(cli):
@@ -164,3 +172,39 @@ def test_cli_check_fails_when_the_dataset_changes(cli):
     np.savez(path, X=X, Y=Y)
     with pytest.raises(SystemExit, match="recorded dataset"):
         heldout.main(["--check"])
+
+
+def test_a_split_loads_as_scaled_beats_with_labels_and_ids(cli):
+    path, y, _ = cli
+    heldout.main(["--write"])
+    record = json.loads(heldout.SPLITS_FILE.read_text())
+    X, Y, ids = heldout.load_split("test")
+    assert ids.tolist() == record["draws"]["3"]["beat_ids"]
+    assert X.shape == (len(ids), 8, 1) and Y.shape == (len(ids), 1, 5)
+    with np.load(path) as data:
+        np.testing.assert_allclose(X[..., 0], _zscore(data["X"][ids]), atol=1e-12)
+    np.testing.assert_array_equal(Y[:, 0, :].argmax(axis=1), y[ids])
+    X_minmax, _, _ = heldout.load_split("validation-1", scaler_type="sequence_minmax")
+    assert X_minmax.min() == 0.0 and X_minmax.max() == 1.0
+
+
+def test_loading_a_split_checks_its_name_dataset_and_scaler(cli):
+    path, _, _ = cli
+    heldout.main(["--write"])
+    with pytest.raises(ValueError, match="Unknown held-out split"):
+        heldout.load_split("draw-3")
+    with pytest.raises(ValueError, match="per-beat scaler"):
+        heldout.load_split("test", scaler_type="standard")
+    with np.load(path) as data:
+        X, Y = data["X"].copy(), data["Y"]
+    np.savez(path, X=X[::-1], Y=Y)
+    with pytest.raises(ValueError, match="not the dataset"):
+        heldout.load_split("test")
+
+
+def test_overlap_counts_the_beats_shared_with_a_pool():
+    rng = np.random.default_rng(1)
+    pool = rng.normal(size=(6, 5, 1))
+    beats = np.concatenate([rng.normal(size=(3, 5, 1)), pool[[1, 4]] + 1e-9])
+    assert heldout.overlap(pool, beats) == 2
+    assert heldout.overlap(pool, beats[:3]) == 0
