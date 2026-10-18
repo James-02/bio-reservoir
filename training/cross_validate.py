@@ -35,6 +35,7 @@ from training.pipeline import (
     train,
 )
 from training.profiling import Profiler, _merge_profiles
+from utils import config
 from utils.analysis import Metrics, compute_mean_metrics, evaluate_performance
 from utils.logger import setup_logging
 from utils.preprocessing import augment_data, standardize_data
@@ -101,7 +102,7 @@ def _iter_folds(
     Y: np.ndarray,
     *,
     folds: int,
-    seed: int = 6337,
+    seed: int = config.SEED,
 ) -> List[Fold]:
     """Return train/val index pairs for cross-validation.
 
@@ -336,7 +337,7 @@ def cross_validate(
     noise_ratio: float = 0,
     fold_workers: Optional[int] = None,
     fold_backend: Literal["sequential", "loky"] = "sequential",
-    seed: int = 6337,
+    seed: int = config.SEED,
     scaler_type: str = "sequence_zscore",
     readout_aggregation: str = "final",
     readout_window: int = 1,

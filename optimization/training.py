@@ -97,7 +97,7 @@ def _get_dataset(
     noise_rate: float = 0.0,
     noise_ratio: float = 0.0,
     scaler_type: str = "sequence_zscore",
-    seed: int = 6337,
+    seed: int = DEFAULT_SEED,
     preserve_split: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Load and cache the ECG dataset for the given configuration.
@@ -208,7 +208,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     """
     import datetime
 
-    seed: int         = int(kwargs.get("seed", 6337))
+    seed: int         = int(kwargs.get("seed", DEFAULT_SEED))
     study_config: Dict[str, Any] = kwargs.get("study_config", {})
     profile: bool     = True  # always-on; negligible overhead
 
@@ -552,7 +552,7 @@ def cmd_rerun_best(args: argparse.Namespace) -> None:
     study_config = _get_study_cfg(study_name)
     params = _resolve_params_from_trial(best, study_config)
 
-    seed        = int(getattr(args, "seed", 6337))
+    seed        = int(getattr(args, "seed", DEFAULT_SEED))
     instances   = int(getattr(args, "instances", None) or study_config.get("instances", 4015))
     binary      = bool(getattr(args, "binary", False) or study_config.get("binary", False))
     folds       = int(getattr(args, "folds", None) or study_config.get("folds", 1))
@@ -762,7 +762,7 @@ def _plot_confusion_matrix(
     binary      = bool(study_config.get("binary", False))
     folds       = int(study_config.get("folds", 1))
     scaler_type = str(params.get("scaler_type", "sequence_zscore"))
-    seed        = 6337
+    seed        = DEFAULT_SEED
     preserve_split = bool(params.get("preserve_split", False))
     objective_average = str(params.get("objective_average", "macro"))
     noise_rate  = float(params["noise_rate"])

@@ -39,6 +39,7 @@ from sklearn.neighbors import KNeighborsClassifier as KNN
 
 from bioreservoir import BioReservoir, distance_matrix
 from training import classify, cross_validate
+from utils import config
 from utils.logger import setup_logging
 from utils.preprocessing import load_ecg_data
 
@@ -157,7 +158,7 @@ def _parse_args() -> argparse.Namespace:
 
     # ---- Misc ---------------------------------------------------------------
     misc = p.add_argument_group("misc")
-    misc.add_argument("--seed", type=int, default=6337)
+    misc.add_argument("--seed", type=int, default=config.SEED)
     misc.add_argument("--log_level", type=str, default="INFO",
                       choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     misc.add_argument("--verbosity", type=int, default=0, choices=[0, 1, 2],

@@ -99,7 +99,7 @@ Characterisation of reservoir dynamics and spatial topology. Panels show the rel
 ### Raw MIT-BIH ECG Segment
 ![Raw ECG Segment](.github/static/ecg-10s-segment.png)
 
-Example raw ECG segment from the source MIT-BIH record exploration workflow, showing the morphology and annotation context before conversion into single-beat classification instances.
+Example 10-second segment of a raw MIT-BIH record, showing the morphology and annotation context before conversion into single-beat classification instances.
 
 ### DDE Solver Validation
 ![Solver Validation](.github/static/solver_validation.png)

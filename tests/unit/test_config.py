@@ -7,7 +7,7 @@ import pytest
 from utils import config
 
 KEYS = ("BIORESERVOIR_RESULTS_DIR", "BIORESERVOIR_LOGS_DIR", "BIORESERVOIR_ARCHIVE_DIR",
-        "BIORESERVOIR_TEST_SETTING")
+        "BIORESERVOIR_DATA_DIR", "BIORESERVOIR_TEST_SETTING")
 
 
 @pytest.fixture
@@ -47,6 +47,12 @@ def test_default_layout(config_env):
     assert config.metrics_dir() == results / "metrics"
     assert config.figures_dir("optimization") == results / "figures" / "optimization"
     assert config.logs_dir() == config.PROJECT_ROOT / "logs"
+    assert config.data_dir() == config.PROJECT_ROOT / "data"
+
+
+def test_data_dir_can_be_moved(config_env, tmp_path, monkeypatch):
+    monkeypatch.setenv("BIORESERVOIR_DATA_DIR", str(tmp_path / "datasets"))
+    assert config.data_dir() == tmp_path / "datasets"
 
 
 def test_archive_layout(config_env):
