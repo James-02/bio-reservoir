@@ -3,7 +3,9 @@ import time
 from typing import Any, Optional, Union, Dict, List, Callable, Sequence
 
 import numpy as np
+from scipy import sparse
 from reservoirpy.mat_gen import bernoulli, normal
+from reservoirpy.mat_gen import zeros as rpy_zeros
 from reservoirpy.node import Node
 from reservoirpy.type import Weights
 from reservoirpy.utils.random import noise, rand_generator
@@ -11,7 +13,14 @@ from reservoirpy.nodes.reservoirs.base import initialize, initialize_feedback
 from reservoirpy.utils.validation import is_array
 from reservoirpy.activationsfunc import identity
 
-from bioreservoir.dde import get_dde_params, log_dde_params, solve_dde_rk4, generate_node_params
+from bioreservoir.dde import (
+    generate_node_params,
+    get_dde_params,
+    log_dde_params,
+    solve_dde_rk4,
+    solve_dde_substep,
+    substep_history,
+)
 from bioreservoir.topology import distance_matrix
 
 import logging
@@ -51,14 +60,42 @@ class BioReservoir(Node):
         parallel: bool = True,
         seed: Optional[int] = None,
         output_variables: Sequence[str] = ("A", "I", "Hi", "He"),
-        rk4_substep_aggregation_window: int = 1,
         diagnostics: bool = False,
         param_heterogeneity_cv: float = 0.0,
         param_heterogeneity_seed: Optional[int] = None,
+        param_heterogeneity_mean_preserving: bool = True,
+        geometry: str = "per_node",
+        couple_vars: Optional[Sequence[float]] = None,
+        delay_scheme: str = "substep",
         **kwargs,
     ):
+        """Genetic-oscillator reservoir node (one DDE oscillator per unit).
+
+        ``geometry`` sets how the recurrent term is built when several variables are
+        observed. ``"per_node"``: one ``units x units`` kernel over ``units``
+        oscillators, applied to every observed variable of an oscillator with the weights
+        ``couple_vars`` (default 1 each), so oscillator ``i`` is driven by
+        ``sum_j K_ij sum_v w_v x_vj``. ``"v0.1"``: the v0.1 construction, in which
+        ReservoirPy builds a kernel over ``units x n_observed`` points and only the first
+        ``units`` drives reach the oscillators (kept to reproduce v0.1).
+
+        ``delay_scheme`` sets how the delayed Hi is read within an input step.
+        ``"substep"``: at every RK4 stage, from the Hi history at substep resolution
+        (a delay of 0 is the ordinary differential equation). ``"frozen"``: once per input
+        step, held for all its substeps (v0.1).
+
+        ``param_heterogeneity_cv`` > 0 draws per-oscillator kinetic rates around the
+        nominal values (log-normal, coefficient of variation ``param_heterogeneity_cv``),
+        with mean equal to the nominal value unless
+        ``param_heterogeneity_mean_preserving=False`` (v0.1, biased upwards).
+        """
         if units is None and not is_array(W):
             raise ValueError("'units' must be specified if 'W' is not a matrix.")
+        if geometry not in ("per_node", "v0.1"):
+            raise ValueError(f"geometry must be 'per_node' or 'v0.1', got {geometry!r}.")
+        if delay_scheme not in ("substep", "frozen"):
+            raise ValueError(
+                f"delay_scheme must be 'substep' or 'frozen', got {delay_scheme!r}.")
 
         rng = rand_generator(seed)
         noise_kwargs = noise_kwargs or {}
@@ -95,8 +132,13 @@ class BioReservoir(Node):
                 )
             output_variables = _OUTPUT_VAR_PRESETS[output_variables]
         self.output_indices = np.array([var_index_map[v] for v in output_variables], dtype=np.int64)
-        # Clamp aggregation window to at least 1
-        self.rk4_substep_aggregation_window = max(1, int(rk4_substep_aggregation_window))
+        self.geometry = geometry
+        self.delay_scheme = delay_scheme
+        if couple_vars is None:
+            couple_vars = np.ones(len(self.output_indices))
+        self.couple_vars = np.asarray(couple_vars, dtype=float).reshape(-1)
+        if len(self.couple_vars) != len(self.output_indices):
+            raise ValueError("couple_vars needs one weight per observed variable.")
         output_dim = (len(self.output_indices) * units) if units is not None else None
 
         super(BioReservoir, self).__init__(
@@ -139,7 +181,7 @@ class BioReservoir(Node):
             },
             forward=_forward,
             initializer=partial(
-                initialize,
+                initialize if geometry == "v0.1" else _initialize_per_node,
                 sr=sr,
                 input_scaling=input_scaling,
                 bias_scaling=bias_scaling,
@@ -182,6 +224,7 @@ class BioReservoir(Node):
             self.node_params = generate_node_params(
                 self.units, self.param_heterogeneity_cv,
                 self.dde_kwargs, seed=self._het_seed,
+                mean_preserving=param_heterogeneity_mean_preserving,
             )
             logger.info(
                 "Generated per-node kinetic heterogeneity (CV=%.3f) for %d nodes",
@@ -189,6 +232,15 @@ class BioReservoir(Node):
             )
         else:
             self.node_params = None
+
+        # Per-node parameter table for the substep solver, and the Hi history at
+        # substep resolution (the frozen v0.1 scheme reads the per-step history only).
+        n_nodes = self.states.shape[1]
+        self._param_table = (self.node_params if self.node_params is not None
+                             else generate_node_params(n_nodes, 0.0, self.dde_kwargs, seed=0))
+        if self.delay_scheme == "substep":
+            self._ring, self._ring_pos = substep_history(
+                self.states, self.dde_kwargs["delay"], self.rk4_substeps)
 
         logger.info(
             "Initialized BioReservoir(units=%s, warmup=%s, rk4_substeps=%s, output_variables=%s)",
@@ -205,6 +257,8 @@ class BioReservoir(Node):
             logger.debug("------------------------------------")
         self._warmup_nodes()
         self._warmup_states = self.states.copy()
+        self._warmup_ring = ((self._ring.copy(), self._ring_pos)
+                             if self.delay_scheme == "substep" else None)
         self.t = 0
 
         # Diagnostics are optional and can be expensive (extra allocations/copies).
@@ -332,8 +386,25 @@ class BioReservoir(Node):
           scalar A, I, Hi, He values per node.
         """
 
-        # Normalize input shape to 1D (units,) for the DDE solver.
-        x = np.asarray(x).reshape(self.units)
+        # Normalize input shape to 1D (units,) for the DDE solver. With the v0.1
+        # geometry ReservoirPy produces one drive per observed value; only the first
+        # `units` reach the oscillators (as in v0.1).
+        n_nodes = self.states.shape[1]
+        x = np.asarray(x).reshape(-1)[:n_nodes]
+
+        if self.delay_scheme == "substep":
+            next_state, self._ring_pos = solve_dde_substep(
+                self.states[-1],
+                self._ring,
+                self._ring_pos,
+                x * self.cell_coupling,
+                self.rk4_substeps,
+                parallel=self.parallel,
+                node_params=self._param_table,
+                **self.dde_kwargs,
+            )
+            self._update_history(next_state)
+            return next_state
 
         # Scale the normalized reservoir drive by biological cell coupling strength.
         # This models how strongly the external AHL (He-like signal) influences each oscillator.
@@ -348,17 +419,19 @@ class BioReservoir(Node):
             **self.dde_kwargs,
         )
 
-        # Use the final step of the RK4 solver as the output for this timestep.
+        # The state at the end of the input step (the solver returns every substep).
         next_state = sol[-1]
-
-        # Defensive: ensure we keep a (units, 4) tensor in the history buffer.
-        if next_state.ndim == 3:
-            # If a future change returns a full trajectory here, collapse it.
-            next_state = next_state[-1]
 
         # Update internal history buffer for historical interpolation.
         self._update_history(next_state)
         return next_state
+
+    def _restore_warmup(self) -> None:
+        """Return the state and delay histories to their values after warm-up."""
+        self.states = self._warmup_states.copy()
+        if getattr(self, "_warmup_ring", None) is not None:
+            self._ring = self._warmup_ring[0].copy()
+            self._ring_pos = self._warmup_ring[1]
 
     def reset(self, to_state: np.ndarray = None) -> "BioReservoir":
         """Reset the reservoir to warmup state or a specified state."""
@@ -371,7 +444,7 @@ class BioReservoir(Node):
             # 'to_state' will be None if the current state is None (first timestep)
             if to_state is None:
                 # Reset internal history to warmup states
-                self.states = self._warmup_states.copy()
+                self._restore_warmup()
                 # Project full 4-variable state through output_indices so that
                 # the Node state shape matches the current output_dim
                 last_full = self._warmup_states[-1]                 # (units, 4)
@@ -381,11 +454,66 @@ class BioReservoir(Node):
                 if self.is_initialized and not np.array_equal(to_state, self._state):
                     # State is changing - reset our internal history buffer to warmup states
                     self.t = 0
-                    self.states = self._warmup_states.copy()
+                    self._restore_warmup()
                 # else: state unchanged, don't reset history (to_state == current_state)
 
         # Call parent reset to properly set _state and _state_proxy
         super(BioReservoir, self).reset(to_state=to_state)
+
+
+def _initialize_per_node(
+    reservoir,
+    x=None,
+    y=None,
+    sr=None,
+    input_scaling=None,
+    bias_scaling=None,
+    input_connectivity=None,
+    rc_connectivity=None,
+    W_init=None,
+    Win_init=None,
+    bias_init=None,
+    input_bias=None,
+    seed=None,
+):
+    """ReservoirPy initializer with one coordinate per oscillator.
+
+    Builds the ``units x units`` kernel ``K``, the operator ``K (x) couple_vars`` from the
+    observed state (variables of oscillator j adjacent) to the ``units`` drives, and
+    ``Win`` and the bias with one row per oscillator.
+    """
+    if x is None:
+        return
+    reservoir.set_input_dim(x.shape[1])
+    dtype = reservoir.dtype
+    n = int(reservoir.hypers["units"])
+    K = W_init if is_array(W_init) else W_init(
+        n, n, sr=sr, connectivity=rc_connectivity, dtype=dtype, seed=seed)
+    if K.shape != (n, n):
+        raise ValueError(f"The recurrent kernel must be {n} x {n} (one row per oscillator), "
+                         f"got {K.shape}.")
+    if len(reservoir.couple_vars) == 1 and reservoir.couple_vars[0] == 1.0:
+        W = K  # identical to the v0.1 construction
+    else:
+        weights = sparse.csr_matrix(reservoir.couple_vars.reshape(1, -1))
+        W = sparse.kron(sparse.csr_matrix(K), weights, format="csr")
+
+    Win = Win_init if is_array(Win_init) else Win_init(
+        n, x.shape[1], input_scaling=input_scaling, connectivity=input_connectivity,
+        dtype=dtype, seed=seed)
+    if Win.shape != (n, x.shape[1]):
+        raise ValueError(f"Win must be {n} x {x.shape[1]}, got {Win.shape}.")
+    if input_bias:
+        bias = bias_init if is_array(bias_init) else bias_init(
+            n, 1, input_scaling=bias_scaling, connectivity=input_connectivity, dtype=dtype,
+            seed=seed)
+    else:
+        bias = rpy_zeros(n, 1, dtype=dtype)
+
+    reservoir.set_param("W", W.astype(dtype))
+    reservoir.set_param("Win", Win.astype(dtype))
+    reservoir.set_param("bias", bias.astype(dtype))
+    reservoir.set_param("internal_state", reservoir.zero_state())
 
 
 def _forward(reservoir: BioReservoir, x: np.ndarray) -> np.ndarray:
@@ -406,20 +534,8 @@ def _forward(reservoir: BioReservoir, x: np.ndarray) -> np.ndarray:
         final_input = _compute_input(reservoir, x)
         next_states = reservoir._step(final_input)
 
-    # next_states may be either (units, 4) or (time, units, 4) depending on solver
-    if next_states.ndim == 3:
-        # Aggregate over last K RK4 substeps within this single external timestep.
-        K = reservoir.rk4_substep_aggregation_window
-        K = min(K, next_states.shape[0])
-        window = next_states[-K:]              # (K, units, 4)
-        last_state = window.mean(axis=0)       # (units, 4)
-    else:
-        last_state = next_states               # (units, 4)
-
-    if last_state.ndim == 1:
-        last_state = last_state.reshape(1, -1)
-
-    selected = last_state[:, reservoir.output_indices]
+    # The observed variables at the end of the input step, oscillator by oscillator.
+    selected = next_states[:, reservoir.output_indices]  # (units, n_observed)
     return selected.reshape(1, -1)
 
 

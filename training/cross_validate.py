@@ -144,23 +144,6 @@ def _prepare_fold_data(
     return X_train_fold, Y_train_fold, X_val, Y_val
 
 
-def _new_node_like(node: Node, *, seed: Optional[int]) -> Node:
-    """Best-effort deterministic re-instantiation of a ReservoirPy Node.
-
-    ``node.copy()`` may preserve pre-warmup state or RNG state across folds.
-    This rebuilds the node from its class + hypers so each fold gets a fresh,
-    seeded initialisation.  Falls back to ``copy()`` if reconstruction fails.
-    """
-    cls = node.__class__
-    hypers = dict(getattr(node, "hypers", {}) or {})
-    if seed is not None and "seed" in cls.__init__.__code__.co_varnames:
-        hypers["seed"] = int(seed)
-    try:
-        return cls(**hypers)
-    except Exception:
-        return node.copy()
-
-
 def _average_fold_artifacts(
     fold_artifacts: List[FoldArtifact],
     profile: bool = False,
@@ -196,7 +179,7 @@ def _average_fold_artifacts(
         runtimes = [fa.metrics.runtime for fa in fold_artifacts]
         n = len(runtimes)
         mean_rt = sum(runtimes) / n
-        std_rt  = math.sqrt(sum((t - mean_rt) ** 2 for t in runtimes) / n) if n > 1 else 0.0
+        std_rt  = math.sqrt(sum((t - mean_rt) ** 2 for t in runtimes) / (n - 1)) if n > 1 else 0.0
         result["fold_runtimes"] = {
             "mean_s":   round(mean_rt, 4),
             "std_s":    round(std_rt,  4),
@@ -232,7 +215,8 @@ def run_fold(
     Parameters
     ----------
     reservoir, readout : Node
-        Fresh per-fold nodes (pass via :func:`_new_node_like` for clean state).
+        The run's template nodes. The fold works on copies, so every fold uses the same
+        reservoir (weights, warm-up state, noise generator state) and an unfitted readout.
     X_train_fold, Y_train_fold : np.ndarray
         Augmented + scaled training data for this fold.
     X_val, Y_val : np.ndarray
@@ -305,6 +289,7 @@ def run_fold(
     fold_metrics: Metrics = evaluate_performance(
         Y_val, Y_pred, runtime, primary_average=primary_average
     )
+    selected = getattr(getattr(readout, "_fitted_sklearn", None), "best_params_", None)
 
     return FoldArtifact(
         trial_name   = trial_name,
@@ -315,7 +300,8 @@ def run_fold(
         metrics      = fold_metrics,
         train_states = train_states if save_states else None,
         test_states  = test_states  if save_states else None,
-        model_hypers = {**reservoir.hypers, **readout.hypers},
+        model_hypers = {**reservoir.hypers, **readout.hypers,
+                        **({"selected_readout_params": selected} if selected else {})},
         profiling    = profiler.summary() if profiler.enabled else None,
     )
 
@@ -350,10 +336,11 @@ def cross_validate(
     Parameters
     ----------
     reservoir : Node
-        Template BioReservoir; per-fold copies are generated via
-        :func:`_new_node_like` for deterministic, independent folds.
+        Template reservoir. Every fold runs a copy of it: one reservoir per run, and the
+        folds differ only in their data. (v0.1 meant to rebuild it per fold with a fold
+        seed, but the rebuild always failed and fell back to the same copy.)
     readout : Node
-        Template Ridge readout; same treatment.
+        Template readout; every fold fits its own copy.
     X, Y : np.ndarray
         Full dataset (train + test concatenated).  Labels must be one-hot or
         class-index.  Augmentation is applied per-fold to the training split
@@ -401,9 +388,6 @@ def cross_validate(
     if fold_backend == "sequential":
         artifacts: List[FoldArtifact] = []
         for fold in folds_list:
-            fold_seed = int(seed) + int(fold.fold_index)
-            reservoir_fold = _new_node_like(reservoir, seed=fold_seed)
-            readout_fold   = _new_node_like(readout,   seed=fold_seed)
             X_tr, Y_tr, X_va, Y_va = _prepare_fold_data(
                 X, Y, fold,
                 noise_rate=noise_rate,
@@ -412,7 +396,7 @@ def cross_validate(
                 scaler_type=scaler_type,
             )
             artifacts.append(run_fold(
-                reservoir_fold, readout_fold,
+                reservoir, readout,
                 X_tr, Y_tr, X_va, Y_va,
                 fold_index=fold.fold_index,
                 trial_name=trial_name or "",
@@ -432,8 +416,8 @@ def cross_validate(
         n_jobs = int(fold_workers) if fold_workers else folds
         artifacts = list(Parallel(n_jobs=n_jobs, backend="loky")(
             delayed(run_fold)(
-                _new_node_like(reservoir, seed=int(seed) + int(fold.fold_index)),
-                _new_node_like(readout,   seed=int(seed) + int(fold.fold_index)),
+                reservoir,
+                readout,
                 *_prepare_fold_data(
                     X, Y, fold,
                     noise_rate=noise_rate,

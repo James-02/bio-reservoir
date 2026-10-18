@@ -1,9 +1,10 @@
 # A v0.1 headline run, resolved from the archived study databases with
 # python -m training.run resolve (see the source fields). Reference: the archived run.
-# Its folds cannot be rebuilt: the loader's pool has the same size and per-fold class
-# counts, but the archived fold labels come in an order that no pool it draws
-# reproduces, so the benchmark compares mean F1 (rerun 0.9617 +/- 0.0026, archived
-# 0.9613 +/- 0.0018).
+# The v0.1 binary runs read a pre-balanced pool of 37,714 beats (all 18,857 arrhythmia
+# beats and 18,857 normal beats) written by an earlier version of the loader and kept
+# with the v0.1 results as data/ecg_archive/binary_ecg_data.npz. The preparation command
+# now writes all 109,446 beats, which gives a different pool, so the task names that file
+# (data_file, data_sha256).
 name: v0.1-binary-full
 description: 'Binary headline as submitted (main text 0.961): the P2-distance trial
   416 reservoir on the full balanced binary pool (37,714 beats) with the P4-readout-binary
@@ -14,7 +15,10 @@ task:
   rows: 50000
   balance_classes: true
   max_per_class: null
+  cap_includes_test: false
   scaler: sequence_zscore
+  data_file: ecg_archive/binary_ecg_data.npz
+  data_sha256: d0a083a8002b6567b02ae8fd18d9328f4a22cbabacc4669dca0ff4cf4b3782ed
   seed: 6337
 reservoir:
   type: bioreservoir
@@ -23,7 +27,6 @@ reservoir:
     units: 1000
     warmup: 50
     rk4_substeps: 64
-    rk4_substep_aggregation: 1
     input_scaling: 0.02769874909436638
     input_connectivity: 0.5281956378922816
     input_bias: false
@@ -36,12 +39,16 @@ reservoir:
     output_variables: IHe
     param_heterogeneity_cv: 0.0
     param_heterogeneity_seed: null
+    heterogeneity_mean_preserving: false
     topology_type: distance
     interaction_diameters: 8.2
     fade_alpha: 2.80278092396274e-05
     sparsity: 0.5759952026896107
     signed: true
     p_excite: 0.8354274565239865
+    geometry: v0.1
+    delay_scheme: frozen
+    normalize_after_masks: false
   source:
     study: P2-distance
     trial: 416
@@ -65,6 +72,7 @@ readout:
     study: P4-readout-binary
     trial: 651
     archive: v0.1
+  scale: false
 cv:
   folds: 5
   primary_average: macro
@@ -74,4 +82,5 @@ cv:
   seed: 6337
 outputs:
   save_states: false
+preset: v0.1
 reference: archive:v0.1/P4-readout-binary-best-full

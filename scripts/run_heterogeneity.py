@@ -8,6 +8,13 @@ Each (CV, seed) grid point runs 5-fold stratified cross-validation on
 the balanced five-class ECG task (4015 instances) with a 1000-node
 distance-topology reservoir and macro-F1 as the primary metric.
 
+The beat pool and the folds are fixed (``--seed``). Each grid seed sets both the
+reservoir array (topology, input weights, noise; ``array_seed``) and the parameter
+draws (``het_seed``), so the spread at CV = 0 is the array-to-array spread.
+``--fixed_array`` keeps one array for every point (as in v0.1, where the five CV = 0
+runs were identical). Training folds are not augmented unless ``--noise_rate`` and
+``--noise_ratio`` are given (v0.1 used 0.2999 and 0.2862 here, unlike the headline).
+
 Usage
 -----
     # Single grid point:
@@ -18,6 +25,10 @@ Usage
 
     # Resume (skip existing results):
     python scripts/run_heterogeneity.py --all --processes 5 --resume
+
+    # The v0.1 code path and design (Fig. S10 of the v0.1 paper):
+    python scripts/run_heterogeneity.py --all --preset v0.1 --fixed_array \
+        --noise_rate 0.2999 --noise_ratio 0.2862
 """
 
 from __future__ import annotations
@@ -35,6 +46,7 @@ from sklearn.ensemble import RandomForestClassifier
 
 from bioreservoir import BioReservoir, distance_matrix
 from training import cross_validate
+from training.run import PRESETS
 from utils import config
 from utils.logger import setup_logging
 from utils.preprocessing import load_ecg_data
@@ -87,8 +99,9 @@ RF_HYPERS = dict(
 INSTANCES = 4015
 FOLDS = 5
 SCALER_TYPE = "sequence_zscore"
-NOISE_RATE = 0.2999
-NOISE_RATIO = 0.2862
+# No augmentation by default, as in the headline runs (v0.1 used 0.2999 / 0.2862 here).
+NOISE_RATE = 0.0
+NOISE_RATIO = 0.0
 READOUT_AGGREGATION = "signal_mean"
 PRIMARY_AVERAGE = "macro"
 
@@ -99,12 +112,23 @@ CV_LEVELS = [0.0, 0.025, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5]
 HET_SEEDS = [100, 200, 300, 400, 500]
 
 
+def grid_points(seed: int, fixed_array: bool = False) -> list[tuple[float, int, int]]:
+    """(CV, heterogeneity seed, array seed) for every point of the full grid."""
+    return [(cv, het_seed, seed if fixed_array else het_seed)
+            for cv, het_seed in itertools.product(CV_LEVELS, HET_SEEDS)]
+
+
 def _build_reservoir(
     het_cv: float,
     het_seed: int,
     seed: int = SEED,
+    overrides: dict | None = None,
 ) -> BioReservoir:
-    """Build the reservoir with per-node kinetic heterogeneity."""
+    """Build the reservoir with per-node kinetic heterogeneity.
+
+    ``seed`` is the array seed; ``overrides`` holds a preset's reservoir settings.
+    """
+    overrides = overrides or {}
     W = distance_matrix(
         spatial_dim=2,
         interaction_diameters=RESERVOIR_PARAMS["interaction_diameters"],
@@ -113,6 +137,7 @@ def _build_reservoir(
         signed=RESERVOIR_PARAMS["signed"],
         p_excite=RESERVOIR_PARAMS["p_excite"],
         cutoff_radius="auto",
+        normalize_after_masks=overrides.get("normalize_after_masks", True),
         seed=seed,
     )
 
@@ -132,6 +157,9 @@ def _build_reservoir(
         input_bias=RESERVOIR_PARAMS["input_bias"],
         param_heterogeneity_cv=het_cv,
         param_heterogeneity_seed=het_seed,
+        param_heterogeneity_mean_preserving=overrides.get("heterogeneity_mean_preserving", True),
+        geometry=overrides.get("geometry", "per_node"),
+        delay_scheme=overrides.get("delay_scheme", "substep"),
         W=W,
         parallel=True,
         seed=seed,
@@ -143,12 +171,25 @@ def run_one(
     het_seed: int,
     processes: int,
     seed: int = SEED,
+    array_seed: int | None = None,
+    noise_rate: float = NOISE_RATE,
+    noise_ratio: float = NOISE_RATIO,
+    overrides: dict | None = None,
 ) -> dict:
-    """Run a single heterogeneity grid point with 5-fold CV."""
-    log = logging.getLogger(__name__)
-    trial_name = f"heterogeneity-cv{het_cv:.3f}-seed{het_seed}"
+    """Run a single heterogeneity grid point with 5-fold CV.
 
-    log.info("=== Heterogeneity CV=%.4f, seed=%d ===", het_cv, het_seed)
+    ``seed`` fixes the beat pool and the folds; ``array_seed`` (default ``seed``) the
+    reservoir array.
+    """
+    log = logging.getLogger(__name__)
+    array_seed = seed if array_seed is None else array_seed
+    trial_name = f"heterogeneity-cv{het_cv:.3f}-seed{het_seed}"
+    if array_seed != seed:
+        trial_name += f"-array{array_seed}"
+
+    log.info("=== Heterogeneity CV=%.4f, het seed=%d, array seed=%d ===",
+             het_cv, het_seed, array_seed)
+    log.info("Augmentation: noise_rate=%g noise_ratio=%g", noise_rate, noise_ratio)
 
     # ---- Load data ----------------------------------------------------------
     X_train, Y_train, X_test, Y_test = load_ecg_data(
@@ -169,7 +210,7 @@ def run_one(
     log.info("Dataset: %d instances, X shape %s", len(X), X.shape)
 
     # ---- Build reservoir & readout ------------------------------------------
-    reservoir = _build_reservoir(het_cv, het_seed, seed=seed)
+    reservoir = _build_reservoir(het_cv, het_seed, seed=array_seed, overrides=overrides)
     readout = ScikitLearnNode(RandomForestClassifier, model_hypers=RF_HYPERS)
 
     log.info("Reservoir: %d nodes, het_cv=%.4f, het_seed=%d",
@@ -187,8 +228,8 @@ def run_one(
         trial_name=trial_name,
         save_threshold=0.0,
         save_states=False,
-        noise_rate=NOISE_RATE,
-        noise_ratio=NOISE_RATIO,
+        noise_rate=noise_rate,
+        noise_ratio=noise_ratio,
         fold_backend=fold_backend,
         fold_workers=fold_workers,
         seed=seed,
@@ -215,9 +256,21 @@ def main() -> None:
                        help="Single CV level to run (requires --het_seed).")
     parser.add_argument("--het_seed", type=int, default=None,
                         help="Single heterogeneity seed (required with --cv).")
+    parser.add_argument("--array_seed", type=int, default=None,
+                        help="Array seed for a single point (default: --seed).")
+    parser.add_argument("--fixed_array", action="store_true",
+                        help="Full grid: one array (--seed) for every point, as in v0.1.")
+    parser.add_argument("--noise_rate", type=float, default=NOISE_RATE,
+                        help="Training-fold augmentation rate (v0.1: 0.2999).")
+    parser.add_argument("--noise_ratio", type=float, default=NOISE_RATIO,
+                        help="Training-fold augmentation ratio (v0.1: 0.2862).")
+    parser.add_argument("--preset", choices=sorted(PRESETS), default=None,
+                        help="Reservoir settings of a preset "
+                             "(v0.1: the v0.1 code path).")
     parser.add_argument("--processes", type=int, default=5,
                         help="Parallel fold workers.")
-    parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--seed", type=int, default=SEED,
+                        help="Seed of the beat pool and the folds.")
     parser.add_argument("--resume", action="store_true",
                         help="Skip grid points with existing results.")
     args = parser.parse_args()
@@ -227,13 +280,19 @@ def main() -> None:
     rpy.set_seed(args.seed)
     rpy.verbosity(0)
     np.random.seed(args.seed)
+    overrides = PRESETS[args.preset]["reservoir"] if args.preset else {}
+    log.info("Preset: %s %s", args.preset or "none", overrides)
+    options = dict(seed=args.seed, noise_rate=args.noise_rate, noise_ratio=args.noise_ratio,
+                   overrides=overrides)
 
     if args.all:
-        grid = list(itertools.product(CV_LEVELS, HET_SEEDS))
+        grid = grid_points(args.seed, fixed_array=args.fixed_array)
         log.info("Full heterogeneity grid: %d points", len(grid))
 
-        for i, (cv_val, het_seed) in enumerate(grid, 1):
+        for i, (cv_val, het_seed, array_seed) in enumerate(grid, 1):
             trial_name = f"heterogeneity-cv{cv_val:.3f}-seed{het_seed}"
+            if array_seed != args.seed:
+                trial_name += f"-array{array_seed}"
             results_dir = str(config.runs_dir() / trial_name)
 
             if args.resume and os.path.isdir(results_dir):
@@ -243,11 +302,11 @@ def main() -> None:
                     continue
 
             log.info("[%d/%d] Running %s", i, len(grid), trial_name)
-            run_one(cv_val, het_seed, args.processes, seed=args.seed)
+            run_one(cv_val, het_seed, args.processes, array_seed=array_seed, **options)
     else:
         if args.het_seed is None:
             parser.error("--het_seed is required when using --cv")
-        run_one(args.cv, args.het_seed, args.processes, seed=args.seed)
+        run_one(args.cv, args.het_seed, args.processes, array_seed=args.array_seed, **options)
 
     log.info("=== Heterogeneity study complete ===")
 

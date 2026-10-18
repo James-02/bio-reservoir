@@ -148,6 +148,7 @@ def load_ecg_data(
     max_per_class: Optional[int] = None,
     seed: Optional[int] = config.SEED,
     preserve_split: bool = False,
+    cap_includes_test: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Load ECG dataset from file, encode labels, shuffle, augment, scale, balance classes, and split into training and testing subsets.
@@ -168,6 +169,10 @@ def load_ecg_data(
         test_file (str, optional): Filename of the testing data file. Defaults to "ecg_test.csv".
         save_file (str, optional): Filename to save the preprocessed data. Defaults to "ecg_data.npz".
         binary_save_file (str, optional): Filename to save the preprocessed data with binary targets. Defaults to "binary_ecg_data.npz".
+        max_per_class (int, optional): Most beats per class in the pool (training and test
+            beats together). Classes with fewer beats keep them all.
+        cap_includes_test (bool, optional): When False, ``max_per_class`` caps the training
+            part only, so capped classes also keep their test beats (the v0.1 rule).
 
     Returns:
         Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: Tuple containing X_train, Y_train, X_test, Y_test.
@@ -241,8 +246,15 @@ def load_ecg_data(
         )
 
     logger.info("Balancing classes for training")
+    train_cap = max_per_class
+    if max_per_class is not None and cap_includes_test and not preserve_split:
+        test_per_class = int(np.bincount(np.asarray(Y_test).astype(int)).max())
+        if max_per_class < test_per_class:
+            raise ValueError(f"max_per_class={max_per_class} is smaller than the "
+                             f"{test_per_class} test beats per class.")
+        train_cap = max_per_class - test_per_class
     if balance_classes:
-        X_balanced, Y_balanced = _balance_classes(X_train_raw, Y_train_raw, max_per_class=max_per_class, rng=rng)
+        X_balanced, Y_balanced = _balance_classes(X_train_raw, Y_train_raw, max_per_class=train_cap, rng=rng)
     else:
         X_balanced, Y_balanced = X_train_raw, Y_train_raw
 
@@ -253,6 +265,11 @@ def load_ecg_data(
         logger.warning(f"The {rows} rows requested were capped at {num_rows} rows to keep classes balanced.")
 
     X_train, Y_train = X_limited, Y_limited
+    logger.info(
+        "Beats per class: training %s, test %s",
+        np.bincount(np.asarray(Y_train).astype(int)).tolist(),
+        np.bincount(np.asarray(Y_test).astype(int)).tolist(),
+    )
 
     if encode_labels:
         num_classes = len(np.unique(Y_loaded))

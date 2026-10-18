@@ -19,6 +19,10 @@ All four on one host (sequential):
     for c in full no-coupling no-delay scramble; do
         python scripts/run_ablation.py --condition $c --processes 32
     done
+
+Training folds are not augmented unless ``--noise_rate`` and ``--noise_ratio`` are given
+(the v0.1 ablations were run without augmentation). ``--preset v0.1``
+builds the reservoir as the v0.1 code did.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ from sklearn.ensemble import RandomForestClassifier
 
 from bioreservoir import BioReservoir, distance_matrix
 from training import cross_validate
+from training.run import PRESETS
 from utils import config
 from utils.logger import setup_logging
 from utils.preprocessing import load_ecg_data
@@ -86,14 +91,21 @@ RF_HYPERS = dict(
 INSTANCES = 4015
 FOLDS = 5
 SCALER_TYPE = "sequence_zscore"
-NOISE_RATE = 0.2999
-NOISE_RATIO = 0.2862
+# No augmentation by default: the v0.1 ablations used none (training folds of
+# 3,212 beats). Earlier versions of this script defaulted to 0.2999 / 0.2862.
+NOISE_RATE = 0.0
+NOISE_RATIO = 0.0
 READOUT_AGGREGATION = "signal_mean"
 PRIMARY_AVERAGE = "macro"
 
 
-def _build_reservoir(condition: str, seed: int = SEED) -> BioReservoir:
-    """Build the reservoir with condition-specific overrides."""
+def _build_reservoir(condition: str, seed: int = SEED,
+                     overrides: dict | None = None) -> BioReservoir:
+    """Build the reservoir with condition-specific overrides.
+
+    ``overrides`` holds a preset's reservoir settings.
+    """
+    overrides = overrides or {}
     dde_kwargs: dict = {}
     rc_scaling = RESERVOIR_PARAMS["rc_scaling"]
 
@@ -110,6 +122,7 @@ def _build_reservoir(condition: str, seed: int = SEED) -> BioReservoir:
         signed=RESERVOIR_PARAMS["signed"],
         p_excite=RESERVOIR_PARAMS["p_excite"],
         cutoff_radius="auto",
+        normalize_after_masks=overrides.get("normalize_after_masks", True),
         seed=seed,
     )
 
@@ -128,6 +141,8 @@ def _build_reservoir(condition: str, seed: int = SEED) -> BioReservoir:
         bias_scaling=RESERVOIR_PARAMS["bias_scaling"],
         input_bias=RESERVOIR_PARAMS["input_bias"],
         dde_kwargs=dde_kwargs,
+        geometry=overrides.get("geometry", "per_node"),
+        delay_scheme=overrides.get("delay_scheme", "substep"),
         W=W,
         parallel=True,
         seed=seed,
@@ -147,10 +162,13 @@ def main() -> None:
     parser.add_argument("--processes", type=int, default=5,
                         help="Parallel fold workers.")
     parser.add_argument("--seed", type=int, default=SEED)
-    parser.add_argument("--noise_rate", type=float, default=None,
-                        help="Override NOISE_RATE (default: module constant).")
-    parser.add_argument("--noise_ratio", type=float, default=None,
-                        help="Override NOISE_RATIO (default: module constant).")
+    parser.add_argument("--noise_rate", type=float, default=NOISE_RATE,
+                        help="Training-fold augmentation rate.")
+    parser.add_argument("--noise_ratio", type=float, default=NOISE_RATIO,
+                        help="Training-fold augmentation ratio.")
+    parser.add_argument("--preset", choices=sorted(PRESETS), default=None,
+                        help="Reservoir settings of a preset "
+                             "(v0.1: the v0.1 code path).")
     args = parser.parse_args()
 
     setup_logging(level=logging.INFO, log_file=str(config.log_file(f"ablation-{args.condition}")))
@@ -159,9 +177,8 @@ def main() -> None:
     rpy.verbosity(0)
     np.random.seed(args.seed)
 
-    # Allow CLI overrides for augmentation values.
-    noise_rate = args.noise_rate if args.noise_rate is not None else NOISE_RATE
-    noise_ratio = args.noise_ratio if args.noise_ratio is not None else NOISE_RATIO
+    noise_rate, noise_ratio = args.noise_rate, args.noise_ratio
+    overrides = PRESETS[args.preset]["reservoir"] if args.preset else {}
 
     condition = args.condition
     trial_name = f"ablation-{condition}"
@@ -169,6 +186,8 @@ def main() -> None:
     log.info("Ablation condition : %s", condition)
     log.info("Trial name         : %s", trial_name)
     log.info("Processes          : %d", args.processes)
+    log.info("Augmentation       : noise_rate=%g noise_ratio=%g", noise_rate, noise_ratio)
+    log.info("Preset             : %s %s", args.preset or "none", overrides)
 
     # ---- Load data ----------------------------------------------------------
     X_train, Y_train, X_test, Y_test = load_ecg_data(
@@ -197,7 +216,7 @@ def main() -> None:
             X[i] = X[i][perm]
 
     # ---- Build reservoir & readout ------------------------------------------
-    reservoir = _build_reservoir(condition, seed=args.seed)
+    reservoir = _build_reservoir(condition, seed=args.seed, overrides=overrides)
     readout = ScikitLearnNode(RandomForestClassifier, model_hypers=RF_HYPERS)
 
     log.info("Reservoir: %d nodes, output_dim=%d", RESERVOIR_PARAMS["units"],

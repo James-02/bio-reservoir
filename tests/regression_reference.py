@@ -40,13 +40,15 @@ MODEL_UNITS = 20
 PIPELINE = {"units": 200, "instances": 600, "folds": 2}
 
 _SHARED = {
-    "reservoir_type": "bioreservoir", "rk4_substep_aggregation": 1, "bias_scaling": 0.1,
+    "reservoir_type": "bioreservoir", "bias_scaling": 0.1,
     "readout_aggregation": "signal_mean", "readout_window": 36, "noise_in": 0.01442,
     "noise_rc": 0.2397, "noise_rate": 0.2999, "noise_ratio": 0.2862, "preserve_split": False,
     "objective_average": "macro", "balance_classes": True, "max_per_class": None,
     "input_bias": False, "fixed_bias_scaling": 0.1, "signed": True,
     "interaction_diameters": 8.2, "output_variables": "IHe", "scaler_type": "sequence_zscore",
     "param_heterogeneity_cv": 0.0, "param_heterogeneity_seed": None,
+    # The v0.1 code path (see the v0.1 preset in training/run.py).
+    "geometry": "v0.1", "delay_scheme": "frozen", "normalize_after_masks": False,
 }
 PRESETS = {
     "P2-distance": dict(

@@ -24,13 +24,13 @@ from sklearn.neural_network import MLPClassifier
 
 
 from utils import config
-from utils.analysis import compute_class_dicts, compute_mean_dicts, evaluate_performance
+from utils.analysis import compute_class_dicts, evaluate_performance, sample_sd
 from utils.results import FoldArtifact
 from optimization.base import (
     DEFAULT_SEED,
     research, plot_results, print_topn_trials,
     parse_show_sections, SHOW_DEFAULT,
-    get_default_storage, build_study,
+    get_default_storage, build_study, fold_average_attrs,
 )
 from optimization.environment import get_environment
 from training.pipeline import fit_readout, predict as predict_readout
@@ -503,7 +503,7 @@ def objective(trial, **kwargs):
     _trial_t0 = _time.perf_counter()
 
     classifier_name = trial.suggest_categorical('classifier', kwargs['classifiers'])
-    objective_average = str(kwargs.get("objective_average", "weighted"))
+    objective_average = str(kwargs.get("objective_average", "macro"))
 
     artifacts = FoldArtifact.load_trial(kwargs['trial_name'])
     f1s: List[float] = []
@@ -597,7 +597,7 @@ def objective(trial, **kwargs):
     # Store aggregate metrics
     trial.set_user_attr("metric_primary_average", objective_average)
     trial.set_user_attr("metric_f1",        mean_f1)
-    trial.set_user_attr("metric_f1_std",    float(np.std(f1s, ddof=0)))
+    trial.set_user_attr("metric_f1_std",    sample_sd(f1s))
     trial.set_user_attr("metric_f1_macro",  float(np.mean([m.get("macro avg", {}).get("f1-score", float("nan")) for m in fold_class_metrics])))
     trial.set_user_attr("metric_f1_weighted", float(np.mean([m.get("weighted avg", {}).get("f1-score", float("nan")) for m in fold_class_metrics])))
     trial.set_user_attr("metric_accuracy",  float(np.mean(accuracies)))
@@ -616,13 +616,13 @@ def objective(trial, **kwargs):
     trial.set_user_attr("profile_fit_readout_mean_s",
                         round(float(np.mean(fold_fit_times)), 6))
     trial.set_user_attr("profile_fit_readout_std_s",
-                        round(float(np.std(fold_fit_times, ddof=0)), 6))
+                        round(sample_sd(fold_fit_times), 6))
     trial.set_user_attr("profile_fit_readout_total_s",
                         round(float(np.sum(fold_fit_times)), 6))
     trial.set_user_attr("profile_predict_mean_s",
                         round(float(np.mean(fold_predict_times)), 6))
     trial.set_user_attr("profile_predict_std_s",
-                        round(float(np.std(fold_predict_times, ddof=0)), 6))
+                        round(sample_sd(fold_predict_times), 6))
     trial.set_user_attr("profile_predict_total_s",
                         round(float(np.sum(fold_predict_times)), 6))
 
@@ -636,16 +636,9 @@ def objective(trial, **kwargs):
             safe_mk = _CLASS_KEY_MAP.get(raw_name, raw_name.replace("-", "_"))
             trial.set_user_attr(f"metric_class_{cls_key}_{safe_mk}_{stat}", mv)
 
-    # Macro/weighted averages (from averaged class_metrics using legacy helper)
-    _class_metrics_avg = compute_mean_dicts(fold_class_metrics)
-    for cls_key, cls_vals in _class_metrics_avg.items():
-        if not isinstance(cls_vals, dict):
-            continue
-        if cls_key in ("macro avg", "weighted avg"):
-            tag = cls_key.split()[0]
-            for mk, mv in cls_vals.items():
-                safe_mk = _CLASS_KEY_MAP.get(mk, mk.replace("-", "_"))
-                trial.set_user_attr(f"metric_{tag}_{safe_mk}", mv)
+    # Macro/weighted averages over folds
+    for key, value in fold_average_attrs(fold_class_metrics).items():
+        trial.set_user_attr(key, value)
 
     # Aggregated confusion matrix (summed across folds, stored as nested list)
     agg_cm = sum(fold_confusion_matrices)

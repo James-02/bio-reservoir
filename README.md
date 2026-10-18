@@ -70,7 +70,9 @@ python -m utils.provenance mark <run id> ok --uses "Table 2, balanced"
 
 Each run writes `results/runs/<name>-<UTC time>/`: the resolved `config.yaml`, `metrics.json` (per fold, mean and sample SD, pooled), `fold-<k>.npz`, `figures/`, `run.log` and `manifest.json` (code version, data checksums, environment), and adds a line to `registry.jsonl`. Runs from uncommitted code need `--allow-dirty` and are marked non-citable. `compare` prints per-fold metrics, the prediction agreement and a paired bootstrap 95% CI of the macro-F1 difference, and saves figures with `--out`. `optimize rerun-best` and `optimize apply-best` use the same runner.
 
-`pytest -m benchmark` reruns the `v0.1` headline configs and compares them fold by fold with the archived runs; it needs a capable host (`BIORESERVOIR_BENCHMARK_PROCESSES` sets the parallel folds).
+`pytest -m benchmark` reruns the `v0.1` headline configs and compares them fold by fold with the archived runs; it needs a capable host (`BIORESERVOIR_BENCHMARK_PROCESSES` sets the parallel folds). The balanced, unbalanced, binary-full and ESN reruns reproduce the archived predictions exactly. The binary-full config reads the binary file the `v0.1` runs used (`data/ecg_archive/binary_ecg_data.npz`, a pre-balanced pool of 37,714 beats, checked by its SHA-256); it is not built by `python -m utils.preprocessing`, and without it the binary tests are skipped.
+
+The code defaults include the fixes listed in the [CHANGELOG](CHANGELOG.md) (one position per oscillator, the delay resolved at every RK4 substep, unit spectral radius, scaled readout features, and others). `preset: v0.1` in a run config, which the benchmark configs use, restores the v0.1 code path; the ablation and heterogeneity scripts take `--preset v0.1`. `python scripts/analysis/drive_bounds.py <config>` reports a reservoir's drive range, negative states and drive shares.
 
 ## Project Structure
 
@@ -90,7 +92,7 @@ Each run writes `results/runs/<name>-<UTC time>/`: the resolved `config.yaml`, `
 
 2. **External input** — ECG time-series samples are fed through He, representing the influence of the extracellular environment on the oscillator dynamics.
 
-3. **Reservoir network** — A spatial topology of oscillator nodes is constructed with distance-dependent coupling weights (Gaussian or exponential decay kernels).
+3. **Reservoir network** — A spatial topology of oscillator nodes is constructed with distance-dependent coupling weights (a Gaussian kernel of distance, with random signs and sparsity, normalised to unit spectral radius).
 
 4. **State extraction** — At each timestep the concentration of each node's luxI gene is read out, producing a high-dimensional state representation of the input.
 

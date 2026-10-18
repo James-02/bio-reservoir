@@ -8,6 +8,7 @@ import pytest
 
 import bioreservoir.node as node_module
 from bioreservoir import BioReservoir
+from bioreservoir.topology import distance_matrix
 
 
 @pytest.fixture
@@ -259,7 +260,7 @@ class TestInitialHistory:
 
 class TestStep:
     def test_step_solves_one_input_step_and_appends_the_final_state(self, monkeypatch):
-        node = _node(warmup=0, cell_coupling=3.0)
+        node = _node(warmup=0, cell_coupling=3.0, delay_scheme="frozen")
         history = node.states.copy()
         calls = {}
 
@@ -278,6 +279,51 @@ class TestStep:
         np.testing.assert_array_equal(out, np.full((4, 4), 0.5))
         np.testing.assert_array_equal(node.states[-1], out)
         np.testing.assert_array_equal(node.states[:-1], history[1:])
+
+    def test_substep_step_advances_the_state_and_the_delay_history(self, monkeypatch):
+        node = _node(warmup=0, cell_coupling=3.0)
+        history, ring, pos = node.states.copy(), node._ring, node._ring_pos
+        calls = {}
+
+        def fake_solver(state, ring_, pos_, input_vec, substeps, parallel, node_params,
+                        **dde_kwargs):
+            calls.update(state=state.copy(), ring=ring_, pos=pos_, input_vec=input_vec,
+                         substeps=substeps, parallel=parallel, node_params=node_params,
+                         dde=dde_kwargs)
+            return np.full((4, 4), 0.5), 7
+
+        monkeypatch.setattr(node_module, "solve_dde_substep", fake_solver)
+        out = node._step(np.array([[0.1], [0.2], [0.3], [0.4]]))
+        np.testing.assert_array_equal(calls["state"], history[-1])
+        assert calls["ring"] is ring and calls["pos"] == pos
+        np.testing.assert_allclose(calls["input_vec"], [0.3, 0.6, 0.9, 1.2])
+        assert calls["substeps"] == 4 and calls["parallel"] is False
+        assert calls["node_params"] is node._param_table and calls["dde"] == node.dde_kwargs
+        np.testing.assert_array_equal(out, np.full((4, 4), 0.5))
+        np.testing.assert_array_equal(node.states[-1], out)
+        assert node._ring_pos == 7
+
+    def test_delay_history_starts_from_the_stored_history(self):
+        node = _node(warmup=0, rk4_substeps=4, dde_kwargs={"delay": 2.0})
+        assert node._ring.shape == (4, 9) and node._ring_pos == 8
+        hi = node._initialize_states()[:, :, 2]
+        np.testing.assert_allclose(node._ring[:, ::4], hi.T)
+        np.testing.assert_allclose(node._ring[:, 2], 0.5 * (hi[0] + hi[1]))
+
+    def test_reset_restores_the_delay_history(self):
+        node = _node(noise_rc=0.0, noise_in=0.0)
+        warm = node._ring.copy(), node._ring_pos
+        x = np.random.default_rng(0).uniform(size=(3, 1))
+        first = node.run(x, reset=True)
+        assert not np.array_equal(node._ring, warm[0])
+        node.reset()
+        np.testing.assert_array_equal(node._ring, warm[0])
+        assert node._ring_pos == warm[1]
+        np.testing.assert_array_equal(node.run(x, reset=True), first)
+
+    def test_frozen_scheme_keeps_no_substep_history(self):
+        node = _node(delay_scheme="frozen")
+        assert node._warmup_ring is None and not hasattr(node, "_ring")
 
 
 class TestInputDrive:
@@ -311,7 +357,7 @@ class TestInputDrive:
 class TestForward:
     def test_output_lists_the_selected_variables_unit_by_unit(self, monkeypatch):
         state = np.arange(12.0).reshape(3, 4)
-        stub = SimpleNamespace(t=0, diagnostics=False, rk4_substep_aggregation_window=1,
+        stub = SimpleNamespace(t=0, diagnostics=False,
                                output_indices=np.array([1, 3]), _step=lambda x: state)
         monkeypatch.setattr(node_module, "_compute_input", lambda reservoir, x: x)
         out = node_module._forward(stub, np.zeros((1, 1)))
@@ -322,6 +368,86 @@ class TestForward:
         node = _node(noise_in=0.0, noise_rc=0.0)
         out = node.run(np.array([[0.2], [0.4]]), reset=True)
         np.testing.assert_array_equal(out[-1], node.states[-1][:, 3])
+
+
+class TestGeometry:
+    """With two observed variables the v0.1 node built its kernel over 2N points,
+    became 2N units wide, and only the first N drives reached the oscillators."""
+
+    KERNEL = dict(spatial_dim=2, interaction_diameters=3.0, fade_alpha=0.05, sparsity=1.0,
+                  signed=True, p_excite=0.7, cutoff_radius=None, seed=4)
+
+    def _built(self, **kwargs):
+        node = _node(output_variables="IHe", warmup=0, W=distance_matrix(**self.KERNEL),
+                     seed=4, **kwargs)
+        node.initialize(np.zeros((1, 1)))
+        return node
+
+    def test_the_v0_1_geometry_doubles_the_units(self):
+        node = self._built(geometry="v0.1")
+        assert node.units == 8 and node.W.shape == (8, 8) and node.Win.shape == (8, 1)
+
+    def test_one_kernel_row_per_oscillator(self):
+        node = self._built()
+        K = np.asarray(distance_matrix(4, 4, **self.KERNEL))
+        assert node.units == 4 and node.W.shape == (4, 8)
+        assert node.Win.shape == (4, 1) and node.bias.shape == (4, 1)
+        np.testing.assert_allclose(node.W.toarray(), np.kron(K, [[1.0, 1.0]]))
+
+    def test_drives_match_the_geometry_corrected_variant(self):
+        node = self._built()
+        K = node.W.toarray()[:, 0::2]
+        W_full = np.zeros((8, 8))
+        W_full[:4, 0::2] = K
+        W_full[:4, 1::2] = K
+        r = np.random.default_rng(0).normal(size=(8, 1))
+        np.testing.assert_allclose(node.W @ r, (W_full @ r)[:4])
+
+    def test_observed_variables_can_be_weighted(self):
+        node = self._built(couple_vars=(1.0, 0.0))
+        np.testing.assert_array_equal(node.W.toarray()[:, 1::2], 0.0)
+        with pytest.raises(ValueError, match="couple_vars"):
+            _node(output_variables="IHe", couple_vars=(1.0,))
+
+    def test_one_observed_variable_is_the_same_in_both_geometries(self):
+        x = np.linspace(0, 1, 6)[:, None]
+        a, b = (_node(warmup=2, geometry=g).run(x, reset=True)
+                for g in ("per_node", "v0.1"))
+        np.testing.assert_array_equal(a, b)
+
+    def test_unknown_geometry_is_rejected(self):
+        with pytest.raises(ValueError, match="geometry"):
+            _node(geometry="grid")
+
+    def test_the_initializer_waits_for_data_and_checks_shapes(self):
+        node = _node()
+        assert node_module._initialize_per_node(node, x=None) is None
+        x = np.zeros((1, 1))
+        with pytest.raises(ValueError, match="recurrent kernel"):
+            node_module._initialize_per_node(node, x=x, W_init=np.zeros((3, 3)),
+                                             Win_init=np.zeros((4, 1)))
+        with pytest.raises(ValueError, match="Win"):
+            node_module._initialize_per_node(node, x=x, W_init=np.zeros((4, 4)),
+                                             Win_init=np.zeros((4, 2)))
+
+
+class TestSequentialSolver:
+    """The v0.1 sequential solver crashed when two variables were observed."""
+
+    @pytest.mark.parametrize("geometry", ["per_node", "v0.1"])
+    def test_sequential_and_parallel_runs_agree(self, geometry):
+        x = np.linspace(0, 1, 6)[:, None]
+        runs = [_node(output_variables="IHe", warmup=2, geometry=geometry, parallel=p)
+                .run(x, reset=True) for p in (True, False)]
+        np.testing.assert_allclose(runs[0], runs[1], rtol=1e-10, atol=1e-12)
+
+    @pytest.mark.parametrize("delay_scheme", ["substep", "frozen"])
+    def test_heterogeneous_sequential_and_parallel_runs_agree(self, delay_scheme):
+        x = np.linspace(0, 1, 6)[:, None]
+        runs = [_node(warmup=2, parallel=p, delay_scheme=delay_scheme, rk4_substeps=16,
+                      param_heterogeneity_cv=0.2, param_heterogeneity_seed=3)
+                .run(x, reset=True) for p in (True, False)]
+        np.testing.assert_allclose(runs[0], runs[1], rtol=1e-10, atol=1e-12)
 
 
 class TestResetToState:

@@ -30,8 +30,8 @@ conventions and integrate with them rather than reinventing.
 ## Repository layout
 
 - `bioreservoir/` — the model: DDE solver (`dde.py`), `BioReservoir` node
-  (`node.py`), topology generators (`topology.py`). Must be well tested, documented
-  and easy to read.
+  (`node.py`), topology generators (`topology.py`), drive and state diagnostics
+  (`diagnostics.py`). Must be well tested, documented and easy to read.
 - `training/` — cross-validation, training and evaluation, metrics, profiling, and the
   run framework (`run.py`: config → run folder → registry; `compare.py`).
 - `optimization/` — Optuna study registry (`studies.py`), reservoir builders
@@ -91,6 +91,11 @@ All paths and settings come from `utils/config.py` (environment variable, then
   runner. Compare runs with `python -m training.run compare`, and mark the runs behind
   manuscript items with `python -m utils.provenance mark <run> ok --uses "<item>"`.
 - Metrics are stored in human-readable form; arrays (predictions, states) as `.npz`.
+- Code defaults are the corrected behaviour. `preset: v0.1` in a run config (and
+  `--preset v0.1` in the ablation and heterogeneity scripts) restores the
+  v0.1 code path. When a fix changes numbers, add its v0.1 setting to that preset
+  (`PRESETS` in `training/run.py`) and to `_SHARED` in `tests/regression_reference.py`,
+  regenerate the benchmark configs, and write a `[science]` CHANGELOG entry.
 - Check behaviour before and after every change with the regression tests, and
   explain any change in a reported number. Use figures to check that the model
   behaves as designed.
@@ -101,7 +106,8 @@ All paths and settings come from `utils/config.py` (environment variable, then
   benchmarks marked `@pytest.mark.benchmark` (full-size headline reruns on a capable
   host; skipped unless run with `pytest -m benchmark`). The benchmarks
   (`tests/integration/test_benchmarks.py`) run the configs in
-  `experiments/benchmarks/v0.1/` and compare them fold by fold with the archived runs.
+  `experiments/benchmarks/v0.1/` and compare them fold by fold with the archived runs
+  (binary-full reads the `v0.1` binary file, `data/ecg_archive/binary_ecg_data.npz`).
 - Unit-test as much as possible: fast, no dataset, no network. Integration tests use
   the real dataset (`data/`) and are skipped without it.
 - The archive tests (`tests/integration/test_archive.py`) check the frozen `v0.1`
@@ -110,7 +116,8 @@ All paths and settings come from `utils/config.py` (environment variable, then
   of the lines a PR changes must be covered.
 - Model regression test (`tests/unit/test_model_regression.py`): with fixed synthetic
   beats, the reservoir (solver, node, topology, noise, state aggregation) reproduces the
-  `v0.1` outputs. It does not cover data, cross-validation, readouts or metrics.
+  `v0.1` outputs, using the `v0.1` settings. It does not cover data,
+  cross-validation, readouts or metrics.
 - Pipeline regression test (`tests/integration/test_pipeline_regression.py`): a small
   real-data cross-validation run stays within 0.02 macro-F1 of `v0.1`.
 - Regenerate the regression references (`tests/regression_reference.py`) only for an
@@ -171,8 +178,11 @@ ruff format .                        # format
 - Each node models two genes: **luxI** and **aiiA**, producing intracellular
   AHL (**Hi**) that diffuses externally (**He**).
 - ECG input drives the reservoir through **He**.
-- The extracted reservoir **state is the luxI concentration** per node.
-- Coupling weights are distance-dependent (Gaussian/exponential kernels) built
-  in `bioreservoir/topology.py`.
+- The observed state per oscillator is set by `output_variables` (the headline runs
+  observe LuxI, **I**, and external AHL, **He**). Each oscillator has one position; its
+  observed variables couple through the same kernel row, weighted by `couple_vars`.
+- Coupling weights come from a Gaussian kernel of distance (`decay_mode="gaussian"`)
+  with random signs and sparsity, normalised to unit spectral radius, built in
+  `bioreservoir/topology.py`.
 - `BioReservoir` subclasses the ReservoirPy `Node`; respect that contract when
   extending (e.g. `run(X) -> states`).

@@ -3,6 +3,7 @@
 import argparse
 import importlib
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -19,7 +20,7 @@ BENCHMARKS = Path(__file__).resolve().parents[2] / "experiments" / "benchmarks"
 LOAD_TASK = run_module.load_task
 
 RESERVOIR = {
-    "units": 3, "warmup": 0, "rk4_substeps": 16, "rk4_substep_aggregation": 1,
+    "units": 3, "warmup": 0, "rk4_substeps": 16,
     "input_scaling": 1.0, "input_connectivity": 1.0, "input_bias": False, "bias_scaling": 0.0,
     "rc_scaling": 0.1, "dde_scaling": 0.01, "cell_coupling": 1.0, "noise_in": 0.0,
     "noise_rc": 0.0, "output_variables": "He", "topology_type": "distance",
@@ -69,17 +70,20 @@ def _predictions(run_dir):
 # ---------------------------------------------------------------------------
 
 class TestResolve:
-    def test_defaults_and_seeds_are_filled_in(self):
+    def test_defaults_and_seeds_are_filled_in(self, caplog):
         cfg = _config()
         cfg["reservoir"]["params"]["noise_rate"] = 0.3  # not a reservoir parameter
-        resolved = run_module.resolve(cfg)
+        with caplog.at_level(logging.WARNING, logger="training.run"):
+            resolved = run_module.resolve(cfg)
         assert resolved["task"] == {"labels": "five-class", "rows": 24, "balance_classes": True,
-                                    "max_per_class": None, "scaler": "sequence_zscore",
-                                    "seed": 3}
+                                    "max_per_class": None, "cap_includes_test": True,
+                                    "scaler": "sequence_zscore", "data_file": None, "seed": 3}
         assert resolved["cv"]["seed"] == resolved["reservoir"]["seed"] == 3
         assert resolved["features"] == {"aggregation": "final", "window": 1}
         assert resolved["outputs"] == {"save_states": False}
         assert "noise_rate" not in resolved["reservoir"]["params"]
+        assert any("Ignoring reservoir parameters" in r.getMessage()
+                   and "noise_rate" in r.getMessage() for r in caplog.records)
         assert resolved["reservoir"]["type"] == "bioreservoir"
 
     def test_a_resolved_config_resolves_to_itself(self):
@@ -142,6 +146,37 @@ class TestResolve:
         with pytest.raises(FileNotFoundError, match="P2-distance"):
             run_module.resolve({"name": "x", "reservoir": {"study": "P2-distance"},
                                 "readout": {"classifier": "KNN"}})
+
+    def test_recorded_trial_values_win_over_the_current_baseline(self, isolated):
+        """Phase 1 trials ran with the BASELINE of their time, which later phases
+        changed; resolving them from BASELINE gave other reservoirs."""
+        storage = f"sqlite:///{isolated / 'optuna-P1-scaling.db'}"
+        study = optuna.create_study(study_name="P1-scaling", storage=storage)
+        float_range = optuna.distributions.FloatDistribution(1e-5, 1.0, log=True)
+        study.add_trial(optuna.trial.create_trial(
+            params={"input_scaling": 0.08, "rc_scaling": 0.019, "dde_scaling": 0.0037},
+            distributions={"input_scaling": float_range, "rc_scaling": float_range,
+                           "dde_scaling": float_range},
+            user_attrs={"res_warmup": 40, "res_rk4_substeps": 44, "res_cell_coupling": 16.28,
+                        "res_output_variables": "all", "topo_signed": False,
+                        "res_heterogeneity_seed": None, "dataset_noise_rate": 0.0825,
+                        "dataset_noise_ratio": 0.2348, "dataset_max_per_class": "None",
+                        "dataset_instances": 600, "dataset_binary": True,
+                        "readout_aggregation": "final", "readout_window": 1},
+            value=0.88))
+
+        resolved = run_module.resolve({
+            "name": "phase-1", "reservoir": {"study": "P1-scaling", "storage": storage},
+            "readout": {"classifier": "KNN"}})
+        params = resolved["reservoir"]["params"]
+        assert (params["warmup"], params["rk4_substeps"], params["cell_coupling"]) == (
+            40, 44, 16.28)
+        assert params["output_variables"] == "all" and params["signed"] is False
+        assert params["input_scaling"] == 0.08
+        assert resolved["features"] == {"aggregation": "final", "window": 1}
+        assert (resolved["cv"]["noise_rate"], resolved["cv"]["noise_ratio"]) == (0.0825, 0.2348)
+        assert resolved["task"]["labels"] == "binary" and resolved["task"]["rows"] == 600
+        assert resolved["task"]["max_per_class"] is None
 
 
 @pytest.mark.parametrize("path", sorted(BENCHMARKS.rglob("*.yaml")), ids=lambda p: p.stem)
@@ -244,13 +279,39 @@ def test_load_task_subsamples_to_the_requested_rows(monkeypatch):
     monkeypatch.setattr("utils.preprocessing.load_ecg_data",
                         lambda **kwargs: (X[:40], Y[:40], X[40:], Y[40:]))
     task = {"labels": "five-class", "rows": 25, "balance_classes": True, "max_per_class": None,
-            "scaler": "sequence_zscore", "seed": 1}
+            "cap_includes_test": True, "scaler": "sequence_zscore", "seed": 1}
     first, labels, _ = LOAD_TASK(task)
     again, _, _ = LOAD_TASK(task)
     expected = np.sort(np.random.default_rng(1).permutation(60)[:25])
     np.testing.assert_array_equal(first, X[expected])
     np.testing.assert_array_equal(labels, Y[expected])
     np.testing.assert_array_equal(first, again)
+
+
+def test_load_task_reads_the_named_data_file(tmp_path, monkeypatch):
+    """task.data_file replaces the prepared dataset; task.data_sha256 must match it."""
+    monkeypatch.setenv("BIORESERVOIR_DATA_DIR", str(tmp_path / "data"))
+    pool_file = tmp_path / "data" / "ecg_archive" / "binary_ecg_data.npz"
+    pool_file.parent.mkdir(parents=True)
+    pool_file.write_bytes(b"v0.1 pool")
+    X, Y = _pool(n_per_class=10)
+    calls = []
+    monkeypatch.setattr("utils.preprocessing.load_ecg_data",
+                        lambda **kwargs: calls.append(kwargs) or (X[:15], Y[:15], X[15:], Y[15:]))
+    task = {"labels": "binary", "rows": 20, "balance_classes": True, "max_per_class": None,
+            "cap_includes_test": False, "scaler": "sequence_zscore", "seed": 1,
+            "data_file": "ecg_archive/binary_ecg_data.npz"}
+    _, _, sources = LOAD_TASK(task)
+    assert sources == [pool_file]
+    assert calls[0]["data_dir"] == str(pool_file.parent)
+    assert calls[0]["binary_save_file"] == "binary_ecg_data.npz"
+    LOAD_TASK(dict(task, data_sha256=provenance.sha256_file(pool_file)))
+    with pytest.raises(ValueError, match="data_sha256"):
+        LOAD_TASK(dict(task, data_sha256="0" * 64))
+    with pytest.raises(FileNotFoundError, match="data_file"):
+        LOAD_TASK(dict(task, data_file="ecg_archive/missing.npz"))
+    LOAD_TASK(dict(task, labels="five-class", data_file="ecg_archive/binary_ecg_data.npz"))
+    assert calls[-1]["save_file"] == "binary_ecg_data.npz"
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +360,82 @@ class TestCompare:
         delta, low, high = compare_module.bootstrap_delta(y, pred_a, pred_b, n_boot=300)
         assert low < delta < high and delta > 0
         assert compare_module.bootstrap_delta(y, pred_a, pred_a, n_boot=50) == (0.0, 0.0, 0.0)
+
+
+def _two_scales(n=60, seed=0):
+    """Two classes separated on both features; feature 0 is 10^4 times larger than feature 1."""
+    rng = np.random.default_rng(seed)
+    labels = np.repeat([0, 1], n // 2)
+    centres = np.array([[0.0, 0.0], [1.0, 1.0]])
+    X = centres[labels] + 0.6 * rng.normal(size=(n, 2))
+    X[:, 0] *= 1e4
+    return [x.reshape(1, 2) for x in X], np.eye(2)[labels][:, None, :]
+
+
+class TestReadoutScaling:
+    """The v0.1 readouts were fitted on unscaled features."""
+
+    def test_readouts_are_scaled_by_default_but_not_in_the_v0_1_preset(self):
+        assert run_module.resolve(_config())["readout"]["scale"] is True
+        v0_1 = run_module.resolve(_config(preset="v0.1"))
+        assert v0_1["readout"]["scale"] is False and v0_1["preset"] == "v0.1"
+
+    def test_the_scaler_is_fitted_on_the_training_fold_only(self):
+        from training.pipeline import fit_readout
+
+        states, Y = _two_scales()
+        readout = run_module.make_readout({"classifier": "KNN", "params": {"n_neighbors": 3},
+                                           "scale": True})
+        fit_readout(readout, states[:40], Y[:40])
+        scaler = readout._fitted_sklearn.named_steps["scale"]
+        np.testing.assert_allclose(scaler.mean_, np.vstack(states[:40]).mean(axis=0))
+
+    def test_scaled_predictions_do_not_depend_on_feature_units(self):
+        from training.pipeline import fit_readout, predict
+
+        states, Y = _two_scales()
+        rescaled = [s * np.array([[1e-4, 1.0]]) for s in states]
+        outputs = []
+        for data, scale in ((states, True), (rescaled, True), (states, False),
+                            (rescaled, False)):
+            readout = run_module.make_readout({"classifier": "KNN",
+                                               "params": {"n_neighbors": 3}, "scale": scale})
+            fit_readout(readout, data[:40], Y[:40])
+            outputs.append(np.vstack(predict(readout, data[40:])))
+        np.testing.assert_array_equal(outputs[0], outputs[1])
+        assert not np.array_equal(outputs[2], outputs[3])
+
+
+class TestReadoutSelection:
+    """The v0.1 readout hyperparameters were chosen on the reported folds."""
+
+    def test_hyperparameters_are_chosen_inside_the_training_fold(self):
+        from sklearn.model_selection import GridSearchCV, StratifiedKFold
+        from sklearn.neighbors import KNeighborsClassifier
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import StandardScaler
+
+        from training.pipeline import fit_readout
+
+        states, Y = _two_scales()
+        cfg = run_module.resolve(_config(readout={
+            "classifier": "KNN", "params": {}, "search": {"n_neighbors": [1, 5, 15]}}))
+        assert cfg["readout"]["inner_folds"] == 3 and cfg["readout"]["seed"] == 3
+        readout = run_module.make_readout(cfg["readout"])
+        fit_readout(readout, states[:40], Y[:40])
+        reference = GridSearchCV(
+            Pipeline([("scale", StandardScaler()), ("classifier", KNeighborsClassifier())]),
+            {"classifier__n_neighbors": [1, 5, 15]}, scoring="f1_macro",
+            cv=StratifiedKFold(3, shuffle=True, random_state=3),
+        ).fit(np.vstack(states[:40]), np.argmax(Y[:40, 0], axis=1))
+        assert readout._fitted_sklearn.best_params_ == reference.best_params_
+
+    def test_runs_record_the_hyperparameters_chosen_in_each_fold(self, tmp_path):
+        cfg = _config(readout={"classifier": "Ridge", "params": {},
+                               "search": {"alpha": [0.01, 1.0, 100.0]}})
+        metrics = json.loads((_execute(cfg, tmp_path / "run") / "metrics.json").read_text())
+        for fold in metrics["folds"]:
+            assert set(fold["selected"]) == {"classifier__alpha"}
 
 
 class TestOptimizeCommands:

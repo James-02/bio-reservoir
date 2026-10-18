@@ -43,7 +43,7 @@ from sklearn.neighbors import KNeighborsClassifier
 
 from utils import config
 from utils.preprocessing import load_ecg_data
-from utils.analysis import compute_class_dicts
+from utils.analysis import compute_class_dicts, sample_sd
 from training import classify, cross_validate
 from training.profiling import ResourceMonitor
 from optimization.base import (
@@ -56,6 +56,7 @@ from optimization.base import (
     get_default_storage,
     build_study,
     add_common_args,
+    fold_average_attrs,
 )
 from optimization.environment import get_environment
 from optimization.reservoirs import build_reservoir
@@ -80,6 +81,29 @@ _KNN_HYPERS: Dict[str, Any] = {
     "algorithm":   "auto",
     "leaf_size":   32,
     "p":           1.02,
+}
+
+# Trial attributes recording the value a trial ran with -> its study parameter.
+RECORDED: Dict[str, str] = {
+    "res_units": "units", "res_warmup": "warmup", "res_rk4_substeps": "rk4_substeps",
+    "res_input_scaling": "input_scaling", "res_rc_scaling": "rc_scaling",
+    "res_dde_scaling": "dde_scaling", "res_cell_coupling": "cell_coupling",
+    "res_noise_in": "noise_in", "res_noise_rc": "noise_rc", "res_input_bias": "input_bias",
+    "res_bias_scaling": "bias_scaling", "res_input_connectivity": "input_connectivity",
+    "res_output_variables": "output_variables",
+    "res_heterogeneity_cv": "param_heterogeneity_cv",
+    "res_heterogeneity_seed": "param_heterogeneity_seed",
+    "res_heterogeneity_mean_preserving": "heterogeneity_mean_preserving",
+    "res_geometry": "geometry", "res_delay_scheme": "delay_scheme",
+    "topo_type": "topology_type", "topo_sparsity": "sparsity", "topo_signed": "signed",
+    "topo_p_excite": "p_excite", "topo_interaction_diameters": "interaction_diameters",
+    "topo_fade_alpha": "fade_alpha", "topo_rc_connectivity": "rc_connectivity",
+    "topo_normalize_after_masks": "normalize_after_masks",
+    "esn_spectral_radius": "esn_spectral_radius", "esn_leak_rate": "esn_leak_rate",
+    "esn_activation": "esn_activation",
+    "dataset_noise_rate": "noise_rate", "dataset_noise_ratio": "noise_ratio",
+    "dataset_scaler": "scaler_type", "dataset_balance_classes": "balance_classes",
+    "readout_aggregation": "readout_aggregation", "readout_window": "readout_window",
 }
 
 
@@ -377,7 +401,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     _fold_f1s = [fd.get("f1", float("nan")) for fd in _folds_data]
 
     trial.set_user_attr("metric_f1",        metrics.get("f1",        float("nan")))
-    trial.set_user_attr("metric_f1_std",    float(np.std(_fold_f1s, ddof=0)) if _fold_f1s else float("nan"))
+    trial.set_user_attr("metric_f1_std",    sample_sd(_fold_f1s))
     trial.set_user_attr("metric_f1_macro",  metrics.get("f1_macro",  float("nan")))
     trial.set_user_attr("metric_f1_weighted", metrics.get("f1_weighted", float("nan")))
     trial.set_user_attr("metric_accuracy",  metrics.get("accuracy",  float("nan")))
@@ -421,16 +445,9 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
                 safe_mk = _CLASS_KEY_MAP.get(raw_name, raw_name.replace("-", "_"))
                 trial.set_user_attr(f"metric_class_{cls_key}_{safe_mk}_{stat}", mv)
 
-    # Macro/weighted averages (from mean class_metrics)
-    _class_metrics_avg = metrics.get("class_metrics", {})
-    for cls_key, cls_vals in _class_metrics_avg.items():
-        if not isinstance(cls_vals, dict):
-            continue
-        if cls_key in ("macro avg", "weighted avg"):
-            tag = cls_key.split()[0]
-            for mk, mv in cls_vals.items():
-                safe_mk = _CLASS_KEY_MAP.get(mk, mk.replace("-", "_"))
-                trial.set_user_attr(f"metric_{tag}_{safe_mk}", mv)
+    # Macro/weighted averages over folds
+    for key, value in fold_average_attrs(fold_class_dicts).items():
+        trial.set_user_attr(key, value)
 
     # Aggregated confusion matrix (flattened for Optuna storage)
     _cm = metrics.get("confusion_matrix")
@@ -667,10 +684,13 @@ def _resolve_params_from_trial(
     trial: optuna.Trial,
     study_config: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Merge BASELINE + study fixed overrides + trial params.
+    """The parameters a trial ran with.
 
-    Handles ``fixed_*`` prefix keys produced by :func:`_suggest` for
-    conditional parameters whose condition was not met.
+    BASELINE, then the study's fixed values, then the trial's params, then the values
+    the trial recorded (``RECORDED``): BASELINE changes between phases, so only the
+    recorded values rebuild the trials of earlier phases. Handles ``fixed_*`` prefix
+    keys produced by :func:`_suggest` for conditional parameters whose condition was
+    not met.
     """
     params: Dict[str, Any] = dict(BASELINE)
     params.update(study_config.get("fixed", {}))
@@ -682,6 +702,12 @@ def _resolve_params_from_trial(
                 params[real_k] = v
         else:
             params[k] = v
+    attrs = trial.user_attrs
+    params.update({key: attrs[attr] for attr, key in RECORDED.items()
+                   if attrs.get(attr) is not None})
+    if attrs.get("dataset_max_per_class") is not None:
+        recorded = str(attrs["dataset_max_per_class"])
+        params["max_per_class"] = None if recorded == "None" else int(recorded)
     return params
 
 

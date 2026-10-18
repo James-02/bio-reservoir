@@ -491,6 +491,40 @@ def _write_heartbeat_csv(path, labels, seed):
     pd.DataFrame(rows).to_csv(path, header=False, index=False)
 
 
+class TestCapRule:
+    """In v0.1 the per-class cap applied to the training part only, so capped classes held
+    the cap plus the test beats (4,015 + 160 = 4,175 at 5x)."""
+
+    @pytest.fixture
+    def ecg_dir(self, tmp_path):
+        labels = np.repeat(np.arange(5), [30, 10, 30, 5, 30])
+        _write_heartbeat_csv(tmp_path / "mitbih_train.csv", labels, seed=1)
+        _write_heartbeat_csv(tmp_path / "mitbih_test.csv", labels, seed=2)
+        return tmp_path
+
+    @staticmethod
+    def _counts(ecg_dir, **kwargs):
+        _, Y_tr, _, Y_te = load_ecg_data(rows=None, data_dir=str(ecg_dir), max_per_class=30,
+                                         standardize=False, seed=0, **kwargs)
+        classes = np.argmax(np.concatenate([Y_tr, Y_te])[:, 0], axis=1)
+        return (np.bincount(classes, minlength=5).tolist(),
+                np.bincount(np.argmax(Y_te[:, 0], axis=1), minlength=5).tolist())
+
+    def test_the_cap_includes_the_test_beats(self, ecg_dir):
+        pool, test = self._counts(ecg_dir)
+        assert test == [2, 2, 2, 2, 2]
+        assert pool == [30, 20, 30, 10, 30]
+
+    def test_the_v0_1_rule_capped_the_training_part_only(self, ecg_dir):
+        pool, _ = self._counts(ecg_dir, cap_includes_test=False)
+        assert pool == [32, 20, 32, 10, 32]
+
+    def test_a_cap_below_the_test_beats_is_rejected(self, ecg_dir):
+        with pytest.raises(ValueError, match="max_per_class"):
+            load_ecg_data(rows=None, data_dir=str(ecg_dir), max_per_class=1,
+                          standardize=False, seed=0)
+
+
 class TestPreservedSplit:
     @pytest.fixture
     def ecg_dir(self, tmp_path):

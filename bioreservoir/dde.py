@@ -375,6 +375,7 @@ def generate_node_params(
     cv: float,
     base_params: Mapping[str, Any],
     seed: Optional[int] = None,
+    mean_preserving: bool = True,
 ) -> np.ndarray:
     """Generate per-node kinetic parameter arrays with log-normal heterogeneity.
 
@@ -400,6 +401,10 @@ def generate_node_params(
         Nominal DDE parameters (from get_dde_params()).
     seed : int, optional
         Random seed for reproducibility.
+    mean_preserving : bool, default=True
+        Draw the factors as ``exp(N(-s^2/2, s^2))``, whose mean is 1, so the nominal
+        values are the population means. False draws ``exp(N(0, s^2))`` (v0.1), whose
+        mean is ``exp(s^2/2) = sqrt(1 + cv^2)``: every varied rate is biased upwards.
 
     Returns
     -------
@@ -409,12 +414,13 @@ def generate_node_params(
     prepared = _prepare_dde_params_cached(base_params)
     rng = np.random.default_rng(seed)
     sigma = np.sqrt(np.log(1.0 + cv ** 2)) if cv > 0 else 0.0
+    log_mean = -0.5 * sigma ** 2 if mean_preserving else 0.0
 
     node_params = np.empty((n_nodes, N_NODE_PARAMS), dtype=np.float64)
     for i, name in enumerate(_PARAM_ORDER):
         nominal = getattr(prepared, name)
         if name in _VARY_SET and cv > 0:
-            factors = rng.lognormal(mean=0.0, sigma=sigma, size=n_nodes)
+            factors = rng.lognormal(mean=log_mean, sigma=sigma, size=n_nodes)
             node_params[:, i] = nominal * factors
         else:
             node_params[:, i] = nominal
@@ -588,3 +594,215 @@ def solve_dde_rk4(
     if parallel:
         return _solve_parallel(*jit_args)
     return _solve_sequential(*jit_args)
+
+
+# ---------------------------------------------------------------------------
+# Delay resolved at every substep (the default from v0.2)
+# ---------------------------------------------------------------------------
+#
+# ``solve_dde_rk4`` reads the delayed Hi once per input step and holds it for all the
+# substeps (the v0.1 scheme, ``delay_scheme="frozen"``). The solver below keeps Hi at
+# every substep in a ring buffer, so each RK4 stage reads Hi(t + c*h - delay): the stored
+# value when the delay is a whole number of substeps, otherwise the linear interpolation
+# between the two neighbouring substeps (second order overall). A delay of 0 is the
+# ordinary differential equation: each stage uses its own Hi.
+
+
+def substep_delay_lags(delay: float, substeps: int) -> Optional[Tuple[float, float, float]]:
+    """Delay, in substeps, seen by the RK4 stages at the start, middle and end of a substep.
+
+    Returns ``None`` for a zero delay (the ordinary differential equation).
+    """
+    lag = float(delay) * int(substeps)
+    if lag == 0.0:
+        return None
+    if lag < 1.0 - 1e-9:
+        raise ValueError(
+            f"A delay of {delay} input steps is shorter than one substep (1/{substeps} "
+            "of a step); use 0 or a delay of at least one substep."
+        )
+    lag = max(lag, 1.0)  # a delay of one substep up to rounding
+    return lag, lag - 0.5, lag - 1.0
+
+
+def substep_history(
+    history_states: np.ndarray, delay: float, substeps: int
+) -> Tuple[np.ndarray, int]:
+    """Hi at substep resolution for :func:`solve_dde_substep`.
+
+    The stored history (one entry per input step, the last at t = 0) is interpolated
+    linearly to the substep times. Returns a ring buffer of shape ``(n_nodes, L)`` and the
+    index of the current value in it.
+    """
+    lags = substep_delay_lags(delay, substeps)
+    hi = np.asarray(history_states, dtype=np.float64)[:, :, 2]
+    n_hist = hi.shape[0]
+    length = 1 if lags is None else int(np.ceil(lags[0])) + 1
+    # Positions of the substep times in history-index units (the last entry is t = 0).
+    t = (np.arange(length) - (length - 1)) / int(substeps) + (n_hist - 1)
+    if t[0] < -1e-9:
+        raise ValueError(f"The history ({n_hist} steps) is shorter than the delay {delay}.")
+    if n_hist == 1:
+        ring = np.repeat(hi[0][:, None], length, axis=1)
+    else:
+        t = np.clip(t, 0.0, n_hist - 1)
+        low = np.minimum(np.floor(t).astype(np.int64), n_hist - 2)
+        w = (t - low)[:, None]
+        ring = ((1.0 - w) * hi[low] + w * hi[low + 1]).T
+    return np.ascontiguousarray(ring), length - 1
+
+
+@njit(fastmath=True, inline='always')
+def _ring_value(ring, node, pos, length, back, frac):
+    """Hi ``back + frac`` substeps before the entry at ``pos`` (linear in between)."""
+    i = pos - back
+    if i < 0:
+        i += length
+    value = ring[node, i]
+    if frac > 0.0:
+        i -= 1
+        if i < 0:
+            i += length
+        value = (1.0 - frac) * value + frac * ring[node, i]
+    return value
+
+
+def _substep_kernel(state, ring, pos, instantaneous, back0, frac0, back_mid, frac_mid,
+                    back1, frac1, substeps, input_vec, node_params):
+    """RK4 over one input step with the delayed Hi read at each stage.
+
+    ``state`` (n_nodes, 4) and ``ring`` (n_nodes, L) are updated in place.
+    """
+    n_nodes = state.shape[0]
+    length = ring.shape[1]
+    dt = 1.0 / substeps
+    for node in prange(n_nodes):
+        A = state[node, 0]
+        I = state[node, 1]  # noqa: E741 (LuxI, as in the model equations)
+        Hi = state[node, 2]
+        He = state[node, 3]
+        u = input_vec[node]
+        CA = node_params[node, 0]
+        CI = node_params[node, 1]
+        del_ = node_params[node, 2]
+        alpha = node_params[node, 3]
+        k1 = node_params[node, 4]
+        f = node_params[node, 5]
+        gammaA = node_params[node, 6]
+        gammaI = node_params[node, 7]
+        b = node_params[node, 8]
+        k = node_params[node, 9]
+        gammaH = node_params[node, 10]
+        g = node_params[node, 11]
+        D = node_params[node, 12]
+        d = node_params[node, 13]
+        mu = node_params[node, 14]
+        decay = node_params[node, 15]
+        p = pos
+        for _ in range(substeps):
+            if instantaneous:
+                lag0 = Hi
+                lag_mid = 0.0
+                lag1 = 0.0
+            else:
+                lag0 = _ring_value(ring, node, p, length, back0, frac0)
+                lag_mid = _ring_value(ring, node, p, length, back_mid, frac_mid)
+                lag1 = _ring_value(ring, node, p, length, back1, frac1)
+
+            dA1, dI1, dHi1, dHe1 = _compute_derivatives(
+                A, I, Hi, He, lag0, u,
+                CA, CI, del_, alpha, k1, f, gammaA, gammaI, b, k, gammaH, g, D, d, mu, decay)
+
+            A2 = A + 0.5 * dt * dA1
+            I2 = I + 0.5 * dt * dI1
+            Hi2 = Hi + 0.5 * dt * dHi1
+            He2 = He + 0.5 * dt * dHe1
+            dA2, dI2, dHi2, dHe2 = _compute_derivatives(
+                A2, I2, Hi2, He2, Hi2 if instantaneous else lag_mid, u,
+                CA, CI, del_, alpha, k1, f, gammaA, gammaI, b, k, gammaH, g, D, d, mu, decay)
+
+            A3 = A + 0.5 * dt * dA2
+            I3 = I + 0.5 * dt * dI2
+            Hi3 = Hi + 0.5 * dt * dHi2
+            He3 = He + 0.5 * dt * dHe2
+            dA3, dI3, dHi3, dHe3 = _compute_derivatives(
+                A3, I3, Hi3, He3, Hi3 if instantaneous else lag_mid, u,
+                CA, CI, del_, alpha, k1, f, gammaA, gammaI, b, k, gammaH, g, D, d, mu, decay)
+
+            A4 = A + dt * dA3
+            I4 = I + dt * dI3
+            Hi4 = Hi + dt * dHi3
+            He4 = He + dt * dHe3
+            dA4, dI4, dHi4, dHe4 = _compute_derivatives(
+                A4, I4, Hi4, He4, Hi4 if instantaneous else lag1, u,
+                CA, CI, del_, alpha, k1, f, gammaA, gammaI, b, k, gammaH, g, D, d, mu, decay)
+
+            A = A + (dt / 6.0) * (dA1 + 2.0 * dA2 + 2.0 * dA3 + dA4)
+            I = I + (dt / 6.0) * (dI1 + 2.0 * dI2 + 2.0 * dI3 + dI4)  # noqa: E741
+            Hi = Hi + (dt / 6.0) * (dHi1 + 2.0 * dHi2 + 2.0 * dHi3 + dHi4)
+            He = He + (dt / 6.0) * (dHe1 + 2.0 * dHe2 + 2.0 * dHe3 + dHe4)
+
+            p += 1
+            if p == length:
+                p = 0
+            ring[node, p] = Hi
+
+        state[node, 0] = A
+        state[node, 1] = I
+        state[node, 2] = Hi
+        state[node, 3] = He
+
+
+_solve_substep_parallel = njit(parallel=True, fastmath=True)(_substep_kernel)
+_solve_substep_sequential = njit(fastmath=True)(_substep_kernel)
+
+
+def solve_dde_substep(
+    state: np.ndarray,
+    ring: np.ndarray,
+    pos: int,
+    input_vec: np.ndarray,
+    substeps: int,
+    parallel: bool = False,
+    node_params: Optional[np.ndarray] = None,
+    **dde_overrides: Any,
+) -> Tuple[np.ndarray, int]:
+    """Advance the oscillators by one input step with the delay resolved at every substep.
+
+    Parameters
+    ----------
+    state : np.ndarray, shape (n_nodes, 4)
+        Current A, I, Hi, He.
+    ring, pos
+        Hi history at substep resolution and the index of the current value, from
+        :func:`substep_history` or the previous call. ``ring`` is updated in place.
+    input_vec : np.ndarray, shape (n_nodes,)
+        Drive for this step (added to He in the Hi equation).
+    substeps : int
+        RK4 steps per input step.
+    node_params : np.ndarray, shape (n_nodes, 16), optional
+        Per-node parameters (:func:`generate_node_params`); the nominal ones if omitted.
+
+    Returns
+    -------
+    The state after the step and the new index of the current value in ``ring``.
+    """
+    params = get_dde_params(**dde_overrides)
+    lags = substep_delay_lags(params["delay"], substeps)
+    length = 1 if lags is None else int(np.ceil(lags[0])) + 1
+    if ring.shape != (state.shape[0], length):
+        raise ValueError(f"The delay history has shape {ring.shape}; the delay "
+                         f"{params['delay']} needs {(state.shape[0], length)}.")
+    if node_params is None:
+        node_params = generate_node_params(state.shape[0], 0.0, params, seed=0)
+    offsets = []
+    for lag in lags or (0.0, 0.0, 0.0):
+        back = int(np.floor(lag))
+        offsets += [back, float(lag - back)]
+
+    new_state = np.array(state, dtype=np.float64)
+    solver = _solve_substep_parallel if parallel else _solve_substep_sequential
+    solver(new_state, ring, int(pos), lags is None, *offsets, int(substeps),
+           np.ascontiguousarray(input_vec, dtype=np.float64).reshape(-1),
+           np.ascontiguousarray(node_params, dtype=np.float64))
+    return new_state, (int(pos) + int(substeps)) % length

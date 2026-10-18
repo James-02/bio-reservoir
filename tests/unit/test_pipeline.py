@@ -49,12 +49,20 @@ class TestAggregateStates:
         assert out.shape == (1, 4)
         np.testing.assert_allclose(out[0], states.mean(axis=0))
 
-    def test_signal_mean_excludes_padding(self, states, x_input):
+    def test_signal_mean_is_the_full_mean(self, states, x_input):
+        # v0.1 meant to skip the zero-padded tail, detected as inputs equal to 0, but
+        # the beats reach the reservoir z-scored, where the padding is not 0, so it always
+        # took the full mean. It is now an alias of "mean", whatever the input.
         out = _aggregate_states(states, "signal_mean", x_input)
-        assert out.shape == (1, 4)
-        # x_input has signal up to index 6 (inclusive), so indices 0-6
-        expected = states[:7].mean(axis=0)
-        np.testing.assert_allclose(out[0], expected)
+        np.testing.assert_array_equal(out, _aggregate_states(states, "mean", x_input))
+
+    def test_z_scored_padding_is_not_zero(self):
+        from utils.preprocessing import standardize_data
+
+        beats = np.random.default_rng(0).uniform(0.0, 1.0, size=(50, 187, 1))
+        beats[:, 120:] = 0.0  # the zero-padded tail of the Kachuee beats
+        scaled, _ = standardize_data(beats, beats, scaler_type="sequence_zscore")
+        assert np.all(np.abs(scaled[:, 120:]) > 1e-8)
 
     def test_first_N(self, states, x_input):
         out = _aggregate_states(states, "first_N:3", x_input)
@@ -258,7 +266,7 @@ class TestMergeProfiles:
             {"fit": {"total_s": 3.0, "calls": 2, "mean_s": 1.5}},
         ]
         merged = _merge_profiles(profiles)
-        assert merged["fit"] == {"total_s": 4.0, "mean_s": 2.0, "std_s": 1.0,
+        assert merged["fit"] == {"total_s": 4.0, "mean_s": 2.0, "std_s": round(np.sqrt(2.0), 6),
                                  "calls_total": 4, "calls_per_fold": 2.0, "n_folds": 2}
         # A section missing from a fold is still averaged over every fold.
         assert merged["run"]["mean_s"] == 2.0 and merged["run"]["n_folds"] == 2

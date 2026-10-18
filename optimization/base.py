@@ -48,7 +48,7 @@ def research(study: Study, trials: int, objective_func: Callable, processes: Opt
 
     Args:
         study (Study): The Optuna study object.
-        trials (int): Number of trials to optimize.
+        trials (int): Number of trials to optimize, shared out between the processes.
         objective_func (Callable): The objective function to optimize.
         processes (int, optional): Number of processes for parallel optimization. Defaults to None.
         **kwargs: Additional keyword arguments for the optimization function.
@@ -56,12 +56,14 @@ def research(study: Study, trials: int, objective_func: Callable, processes: Opt
     Returns:
         List[Study]: List of optimized Optuna study objects.
     """
-    if processes <= 1:
+    if not processes or processes <= 1:
         return [_optimize_study(study, trials, objective_func, **kwargs)]
 
     logger.info("Optimizing with %s processes", processes)
+    shares = [trials // processes + (k < trials % processes) for k in range(processes)]
     return joblib.Parallel(n_jobs=processes)(
-        joblib.delayed(_optimize_study)(study, trials // processes, objective_func, **kwargs) for _ in range(processes))
+        joblib.delayed(_optimize_study)(study, share, objective_func, **kwargs)
+        for share in shares if share)
 
 def evaluate_study(
     study: Study,
@@ -156,6 +158,21 @@ def evaluate_study(
             emit(f"  {objective_str} min  : {min_all:.4f}")
             emit(f"  {objective_str} max  : {max_all:.4f}")
             emit()
+
+
+def fold_average_attrs(fold_class_metrics: List[Dict[str, Any]]) -> Dict[str, float]:
+    """``metric_macro_<m>`` and ``metric_weighted_<m>`` trial attributes: each fold's
+    macro and weighted precision, recall, F1 and support, averaged over the folds."""
+    names = {"precision": "precision", "recall": "recall", "f1-score": "f1",
+             "support": "support"}
+    attrs: Dict[str, float] = {}
+    for tag in ("macro", "weighted"):
+        for key, name in names.items():
+            values = [m[f"{tag} avg"][key] for m in fold_class_metrics
+                      if key in m.get(f"{tag} avg", {})]
+            if values:
+                attrs[f"metric_{tag}_{name}"] = float(sum(values) / len(values))
+    return attrs
 
 
 
@@ -464,7 +481,7 @@ def _print_fold_table(row, df_cols) -> None:
             vals = [folds_data[fi].get(m, float("nan")) for fi in sorted(folds_data)]
             arr = _np.array(vals)
             mean_line += f" \u2502 {_np.nanmean(arr):>{col_w}.4f}"
-            std_line  += f" \u2502 {_np.nanstd(arr, ddof=0):>{col_w}.4f}"
+            std_line  += f" \u2502 {_np.nanstd(arr, ddof=1):>{col_w}.4f}"
         print(mean_line)
         print(std_line)
     print(bar)
@@ -566,10 +583,10 @@ def _print_class_table(row, df_cols) -> None:
                 arr = _np.array(vals_arr)
                 if m == "support":
                     mean_line += f" \u2502 {_np.nanmean(arr):>{col_w}.0f}"
-                    std_line  += f" \u2502 {_np.nanstd(arr, ddof=0):>{col_w}.0f}"
+                    std_line  += f" \u2502 {_np.nanstd(arr, ddof=1):>{col_w}.0f}"
                 else:
                     mean_line += f" \u2502 {_np.nanmean(arr):>{col_w}.4f}"
-                    std_line  += f" \u2502 {_np.nanstd(arr, ddof=0):>{col_w}.4f}"
+                    std_line  += f" \u2502 {_np.nanstd(arr, ddof=1):>{col_w}.4f}"
             print(mean_line)
             print(std_line)
         print(bar)

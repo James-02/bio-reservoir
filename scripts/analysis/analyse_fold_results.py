@@ -115,7 +115,7 @@ def _print_fold_table(artifacts: List[FoldArtifact]) -> None:
     arr = np.array(rows)
     print(sep)
     print(row_fmt.format("mean", *[_fmt(v) for v in arr.mean(axis=0)]))
-    print(row_fmt.format("std",  *[_fmt(v) for v in arr.std(axis=0)]))
+    print(row_fmt.format("std",  *[_fmt(v) for v in arr.std(axis=0, ddof=1)]))
     print()
 
 
@@ -145,7 +145,7 @@ def _print_class_table(artifacts: List[FoldArtifact]) -> None:
             continue
         arr = np.array(fold_vals)
         means = arr.mean(axis=0)
-        stds = arr.std(axis=0)
+        stds = arr.std(axis=0, ddof=1)
         # Display support as integer mean (no std — it's constant across folds)
         cells = [f"{means[i]:.4f}±{stds[i]:.4f}" for i in range(3)]
         cells.append(f"{means[3]:.0f}")

@@ -319,10 +319,18 @@ def compute_mean_dicts(dicts_list: List[Dict]) -> Dict[str, Dict[str, float]]:
     return {key: {mk: sv / count for mk, sv in mvs.items()} for key, mvs in sum_values.items()}
 
 
+def sample_sd(values) -> float:
+    """Sample standard deviation (ddof=1) of fold or seed results; 0 for one value."""
+    arr = np.asarray(values, dtype=float)
+    if arr.size == 0:
+        return float("nan")
+    return float(arr.std(ddof=1)) if arr.size > 1 else 0.0
+
+
 def compute_class_dicts(
     dicts_list: List[Dict],
 ) -> Dict[str, Dict[str, float]]:
-    """Compute per-class metric means **and** standard deviations across folds.
+    """Compute per-class metric means **and** sample standard deviations across folds.
 
     Returns a dict keyed by class index (``"0"``, ``"1"``, …) where each
     value is a dict with keys like ``precision_mean``, ``precision_std``,
@@ -345,7 +353,7 @@ def compute_class_dicts(
             if vals:
                 arr = np.array(vals, dtype=float)
                 cls_result[f"{mk}_mean"] = float(arr.mean())
-                cls_result[f"{mk}_std"] = float(arr.std(ddof=0))
+                cls_result[f"{mk}_std"] = sample_sd(arr)
         result[cls] = cls_result
     return result
 

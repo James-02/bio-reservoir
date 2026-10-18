@@ -41,7 +41,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULTS: dict[str, dict[str, Any]] = {
     "task": {"labels": "five-class", "rows": 4015, "balance_classes": True,
-             "max_per_class": None, "scaler": "sequence_zscore"},
+             "max_per_class": None, "cap_includes_test": True, "scaler": "sequence_zscore",
+             "data_file": None},
     "features": {"aggregation": "final", "window": 1},
     "cv": {"folds": 5, "primary_average": "macro", "noise_rate": 0.0, "noise_ratio": 0.0,
            "profile": False},
@@ -51,12 +52,13 @@ DEFAULTS: dict[str, dict[str, Any]] = {
 # Parameters read by optimization.reservoirs.build_reservoir, per reservoir type.
 RESERVOIR_KEYS = {
     "bioreservoir": (
-        "units", "warmup", "rk4_substeps", "rk4_substep_aggregation", "input_scaling",
+        "units", "warmup", "rk4_substeps", "input_scaling",
         "input_connectivity", "input_bias", "bias_scaling", "rc_scaling", "dde_scaling",
         "cell_coupling", "noise_in", "noise_rc", "output_variables",
-        "param_heterogeneity_cv", "param_heterogeneity_seed", "topology_type",
+        "param_heterogeneity_cv", "param_heterogeneity_seed", "heterogeneity_mean_preserving",
+        "topology_type",
         "interaction_diameters", "fade_alpha", "sparsity", "signed", "p_excite",
-        "rc_connectivity",
+        "rc_connectivity", "geometry", "couple_vars", "delay_scheme", "normalize_after_masks",
     ),
     "esn": (
         "units", "esn_leak_rate", "esn_spectral_radius", "esn_activation", "input_scaling",
@@ -67,6 +69,17 @@ RESERVOIR_KEYS = {
 
 SCALAR_METRICS = ("f1", "f1_macro", "f1_weighted", "accuracy", "precision", "recall",
                   "mcc", "kappa")
+
+# Settings that reproduce the v0.1 code path; explicit config values win.
+PRESETS: dict[str, dict[str, dict[str, Any]]] = {
+    "v0.1": {
+        "task": {"cap_includes_test": False},
+        "reservoir": {"geometry": "v0.1", "delay_scheme": "frozen",
+                      "normalize_after_masks": False,
+                      "heterogeneity_mean_preserving": False},
+        "readout": {"scale": False},
+    },
+}
 
 
 # ---------------------------------------------------------------------------
@@ -126,16 +139,19 @@ def _load_trial(study: str, trial: Any, archive: str | None, storage: str | None
 
 def study_params(study: str, trial: Any = "best", archive: str | None = None,
                  storage: str | None = None) -> dict[str, Any]:
-    """BASELINE, then the study's fixed values, then the trial's values (as rerun-best)."""
+    """The parameters a study trial ran with (as rerun-best), with its pool size and
+    labels."""
     from optimization.studies import get_study
     from optimization.training import _resolve_params_from_trial
 
     study_config = get_study(study)
     frozen = _load_trial(study, trial, archive, storage)
     params = _resolve_params_from_trial(frozen, study_config)
+    attrs = frozen.user_attrs
     params["_trial"] = frozen.number
-    params["_instances"] = study_config.get("instances", DEFAULTS["task"]["rows"])
-    params["_binary"] = bool(study_config.get("binary", False))
+    params["_instances"] = attrs.get("dataset_instances",
+                                     study_config.get("instances", DEFAULTS["task"]["rows"]))
+    params["_binary"] = bool(attrs.get("dataset_binary", study_config.get("binary", False)))
     return params
 
 
@@ -163,13 +179,17 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
     if not cfg.get("name"):
         raise ValueError("A run config needs a name.")
     seed = int(cfg.get("seed", settings.SEED))
-    sections = {key: dict(value) for key, value in DEFAULTS.items()}
+    preset_name = cfg.get("preset")
+    if preset_name is not None and preset_name not in PRESETS:
+        raise ValueError(f"Unknown preset {preset_name!r}; choose from {sorted(PRESETS)}.")
+    preset = PRESETS.get(preset_name, {})
+    sections = {key: {**value, **preset.get(key, {})} for key, value in DEFAULTS.items()}
 
     reservoir = dict(cfg.get("reservoir") or {})
     if "states_from" in reservoir:
         resolved_reservoir = {"states_from": str(reservoir["states_from"])}
     else:
-        params: dict[str, Any] = {}
+        params: dict[str, Any] = dict(preset.get("reservoir", {}))
         source = None
         if reservoir.get("study"):
             found = study_params(reservoir["study"], reservoir.get("trial", "best"),
@@ -178,11 +198,16 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
                 sections[key].update(values)
             source = {"study": reservoir["study"], "trial": found["_trial"],
                       "archive": reservoir.get("archive")}
-            params = {k: v for k, v in found.items() if not k.startswith("_")}
+            params.update({k: v for k, v in found.items() if not k.startswith("_")})
         params.update(reservoir.get("params") or {})
         kind = str(params.get("reservoir_type", reservoir.get("type", "bioreservoir")))
         from optimization.reservoirs import normalize_reservoir_type
         kind = normalize_reservoir_type(kind)
+        ignored = sorted(set(reservoir.get("params") or {}) - set(RESERVOIR_KEYS[kind])
+                         - {"reservoir_type"})
+        if ignored:
+            logger.warning("Ignoring reservoir parameters the %s builder does not read: %s",
+                           kind, ", ".join(ignored))
         missing = [k for k in ("units",) if k not in params]
         if missing:
             raise ValueError(f"Reservoir parameters missing: {missing}")
@@ -216,6 +241,12 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
             resolved_readout["source"] = readout["source"]
     else:
         raise ValueError("A run config needs a readout (classifier or study).")
+    resolved_readout["scale"] = bool(readout.get("scale", preset.get("readout", {})
+                                                 .get("scale", True)))
+    if readout.get("search"):
+        resolved_readout["search"] = {k: list(v) for k, v in readout["search"].items()}
+        resolved_readout["inner_folds"] = int(readout.get("inner_folds", 3))
+        resolved_readout["seed"] = int(readout.get("seed", seed))
 
     for key in ("task", "features", "cv", "outputs"):
         sections[key].update(cfg.get(key) or {})
@@ -228,6 +259,8 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
            "seed": seed, "task": sections["task"], "reservoir": resolved_reservoir,
            "features": sections["features"], "readout": resolved_readout,
            "cv": sections["cv"], "outputs": sections["outputs"]}
+    if preset_name:
+        out["preset"] = preset_name
     if cfg.get("reference"):
         out["reference"] = str(cfg["reference"])
     return _plain(out)
@@ -238,30 +271,65 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def load_task(task: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, list[Path]]:
-    """The beat pool of a task: (X, Y, source files), as in ``optimize rerun-best``."""
+    """The beat pool of a task: (X, Y, source files), as in ``optimize rerun-best``.
+
+    The beats come from the prepared dataset (``ecg/ecg_data.npz`` or
+    ``ecg/binary_ecg_data.npz`` in the data folder), or from ``task.data_file`` (relative
+    to the data folder) when it is set. ``task.data_sha256``, when set, must be the file's
+    SHA-256.
+    """
     from utils.preprocessing import load_ecg_data
 
     binary = task["labels"] == "binary"
     rows, seed = int(task["rows"]), int(task["seed"])
+    cache = settings.data_dir() / "ecg" / ("binary_ecg_data.npz" if binary else "ecg_data.npz")
+    source: dict[str, str] = {}
+    if task.get("data_file"):
+        cache = settings.data_dir() / task["data_file"]
+        if not cache.is_file():
+            raise FileNotFoundError(f"task.data_file not found: {cache}")
+        source = {"data_dir": str(cache.parent),
+                  "binary_save_file" if binary else "save_file": cache.name}
     X_train, Y_train, X_test, Y_test = load_ecg_data(
         rows=rows, balance_classes=bool(task["balance_classes"]),
         max_per_class=task["max_per_class"], binary=binary, noise_rate=0.0, noise_ratio=0.0,
         scaler_type=str(task["scaler"]), seed=seed, preserve_split=False,
+        cap_includes_test=bool(task.get("cap_includes_test", True)), **source,
     )
+    if task.get("data_sha256") and provenance.sha256_file(cache) != task["data_sha256"]:
+        raise ValueError(f"{cache} does not match task.data_sha256.")
     X = np.concatenate((X_train, X_test), axis=0)
     Y = np.concatenate((Y_train, Y_test), axis=0)
     if len(X) > rows:
         idx = np.sort(np.random.default_rng(seed).permutation(len(X))[:rows])
         X, Y = X[idx], Y[idx]
-    cache = settings.data_dir() / "ecg" / ("binary_ecg_data.npz" if binary else "ecg_data.npz")
     return X, Y, [cache] if cache.is_file() else []
 
 
 def make_readout(readout: dict[str, Any]):
+    """The readout node: the classifier, after a StandardScaler when ``scale`` is set, inside
+    a grid search over the training fold (inner stratified folds) when ``search`` is set."""
     from reservoirpy.nodes import ScikitLearnNode
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
 
-    return ScikitLearnNode(classifier_class(readout["classifier"]),
-                           model_hypers=dict(readout["params"]))
+    cls = classifier_class(readout["classifier"])
+    params = dict(readout.get("params") or {})
+    steps = [("classifier", cls(**params))]
+    if readout.get("scale"):
+        steps.insert(0, ("scale", StandardScaler()))
+    if readout.get("search"):
+        from sklearn.model_selection import GridSearchCV, StratifiedKFold
+
+        inner = StratifiedKFold(int(readout["inner_folds"]), shuffle=True,
+                                random_state=int(readout["seed"]))
+        grid = {f"classifier__{k}": list(v) for k, v in readout["search"].items()}
+        return ScikitLearnNode(GridSearchCV, model_hypers={
+            "estimator": Pipeline(steps), "param_grid": grid, "scoring": "f1_macro",
+            "cv": inner})
+    if readout.get("scale"):
+        return ScikitLearnNode(Pipeline, model_hypers={"steps": steps})
+    return ScikitLearnNode(cls, model_hypers=params)
 
 
 def _simulate(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray,
@@ -317,6 +385,7 @@ def _refit_fold(cfg: dict[str, Any], source):
     fit_readout(readout, list(train_states), list(Y_train))
     Y_pred = np.stack(predict(readout, list(test_states)))
     runtime = round(time.perf_counter() - started, 4)
+    selected = getattr(getattr(readout, "_fitted_sklearn", None), "best_params_", None)
     return FoldArtifact(
         trial_name=source.trial_name, fold_index=source.fold_index,
         Y_train=source.Y_train, Y_test=source.Y_test, Y_pred=Y_pred,
@@ -326,7 +395,8 @@ def _refit_fold(cfg: dict[str, Any], source):
         test_index=source.test_index,
         model_hypers={**source.model_hypers,
                       "model": classifier_class(cfg["readout"]["classifier"]),
-                      "model_hypers": cfg["readout"]["params"]},
+                      "model_hypers": cfg["readout"]["params"],
+                      **({"selected_readout_params": selected} if selected else {})},
     )
 
 
@@ -345,6 +415,9 @@ def summarise(artifacts: list, primary_average: str = "macro") -> dict[str, Any]
                       **{k: float(getattr(m, k)) for k in SCALAR_METRICS},
                       "runtime_s": float(m.runtime),
                       "confusion_matrix": np.asarray(m.confusion_matrix).tolist()})
+        selected = (a.model_hypers or {}).get("selected_readout_params")
+        if selected:
+            folds[-1]["selected"] = selected
     values = {k: np.array([f[k] for f in folds]) for k in SCALAR_METRICS}
     mean = {k: float(v.mean()) for k, v in values.items()}
     sd = {k: float(v.std(ddof=1)) if len(v) > 1 else 0.0 for k, v in values.items()}

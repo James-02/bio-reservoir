@@ -42,24 +42,23 @@ def _aggregate_states(states: np.ndarray, mode: str, x: np.ndarray) -> np.ndarra
         ``"final"``
             Last timestep only.  Default; preserves pre-existing behaviour.
         ``"mean"``
-            Mean over all T timesteps.  Not recommended when zero-padding is
-            present; the settling tail dilutes class-discriminative states.
+            Mean over all T timesteps, zero-padded tail included.
         ``"signal_mean"``
-            Mean over non-zero-padded timesteps only.  The zero-padded tail is
-            detected from the raw input ``x`` (absolute value > 1e-8).
+            The same as ``"mean"`` (kept so v0.1 configurations still run). It was meant
+            to skip the zero-padded tail, detected as inputs equal to 0, but the beats
+            reach the reservoir z-scored, where the padding is not 0, so it never did.
         ``"first_N:K"``
             Mean over the first K timesteps, e.g. ``"first_N:120"``.
         ``"last_N:K"``
             Mean over the final K timesteps, e.g. ``"last_N:20"``.
             Equivalent to passing ``readout_window=K`` to :func:`train`.
     x : np.ndarray
-        Raw input sequence for this instance; used only for ``"signal_mean"``
-        mode.  Shape ``(T, 1)`` or ``(T,)``.
+        Input sequence for this instance (not used by the current modes).
     """
     if mode == "final":
         return states[-1, np.newaxis]
 
-    if mode == "mean":
+    if mode in ("mean", "signal_mean"):
         return states.mean(axis=0, keepdims=True)
 
     if mode.startswith("first_N:"):
@@ -91,20 +90,6 @@ def _aggregate_states(states: np.ndarray, mode: str, x: np.ndarray) -> np.ndarra
             ) from exc
         k = min(k, len(states))
         return states[-k:].mean(axis=0, keepdims=True)
-
-    if mode == "signal_mean":
-        # Detect the zero-padded tail: last timestep where abs(input) > threshold.
-        # Zero-padding in the Kachuee ECG preprocessing is literal zeros; after
-        # per-sequence z-scoring the padded region may shift, so we use the
-        # *original* input x rather than the scaled version seen by the reservoir.
-        signal = np.asarray(x).ravel()
-        nonzero_mask = np.abs(signal) > 1e-8
-        if nonzero_mask.any():
-            last_signal_t = int(np.flatnonzero(nonzero_mask)[-1]) + 1
-        else:
-            last_signal_t = len(states)  # fallback: no padding detected
-        last_signal_t = max(1, min(last_signal_t, len(states)))
-        return states[:last_signal_t].mean(axis=0, keepdims=True)
 
     raise ValueError(
         f"Unknown readout_aggregation mode '{mode}'. "
@@ -182,13 +167,16 @@ def _is_sklearn_classifier(readout: Node) -> bool:
     """Return *True* if *readout* wraps a scikit-learn classifier.
 
     ReservoirPy's :class:`ScikitLearnNode` stores the underlying sklearn
-    estimator class as a hyper-parameter called ``model``.
+    estimator class as a hyper-parameter called ``model``. The estimator is built
+    to check it, so pipelines and grid searches ending in a classifier qualify.
     """
+    from copy import deepcopy
+
     model_cls = readout.hypers.get("model")
     if model_cls is None:
         return False
     try:
-        return is_classifier(model_cls)
+        return is_classifier(model_cls(**deepcopy(readout.hypers.get("model_hypers") or {})))
     except Exception:
         return False
 

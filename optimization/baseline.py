@@ -16,8 +16,9 @@ The objective mirrors ``optimization.readout.objective`` as closely as
 possible for comparability:
 
 * Same classifier families and hyperparameter ranges (via ``choose_classifier``).
-* Same 5-fold stratified CV protocol with fold-level augmentation and
-  standardisation (matching ``training.cross_validate._prepare_fold_data``).
+* Same 5-fold stratified CV protocol with fold-level standardisation (matching
+  ``training.cross_validate._prepare_fold_data``); training folds are augmented only
+  when ``noise_rate`` and ``noise_ratio`` are set, and the B1-B3 studies set neither.
 * Same macro-F1 optimisation target and per-fold / per-class metrics storage.
 * Same Optuna infrastructure (TPE sampler, SQLite storage, ``research()``).
 
@@ -57,15 +58,15 @@ from optimization.base import (
     DEFAULT_SEED,
     research, plot_results, print_topn_trials,
     parse_show_sections, SHOW_DEFAULT,
-    get_default_storage, build_study,
+    get_default_storage, build_study, fold_average_attrs,
 )
 from optimization.environment import get_environment
 from optimization.readout import choose_classifier, _important_params
 from training.profiling import ResourceMonitor
 from utils.analysis import (
     compute_class_dicts,
-    compute_mean_dicts,
     evaluate_performance,
+    sample_sd,
 )
 from utils.preprocessing import (
     load_ecg_data,
@@ -385,7 +386,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
 
     # ── Store aggregate metrics ─────────────────────────────────────────────
     trial.set_user_attr("metric_f1",        mean_f1)
-    trial.set_user_attr("metric_f1_std",    float(np.std(f1s, ddof=0)))
+    trial.set_user_attr("metric_f1_std",    sample_sd(f1s))
     trial.set_user_attr("metric_f1_macro",
                         float(np.mean([m.get("macro avg", {}).get("f1-score", float("nan"))
                                        for m in fold_class_metrics])))
@@ -415,13 +416,13 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     trial.set_user_attr("profile_fit_mean_s",
                         round(float(np.mean(fold_fit_times)), 6))
     trial.set_user_attr("profile_fit_std_s",
-                        round(float(np.std(fold_fit_times, ddof=0)), 6))
+                        round(sample_sd(fold_fit_times), 6))
     trial.set_user_attr("profile_fit_total_s",
                         round(float(np.sum(fold_fit_times)), 6))
     trial.set_user_attr("profile_predict_mean_s",
                         round(float(np.mean(fold_predict_times)), 6))
     trial.set_user_attr("profile_predict_std_s",
-                        round(float(np.std(fold_predict_times, ddof=0)), 6))
+                        round(sample_sd(fold_predict_times), 6))
     trial.set_user_attr("profile_predict_total_s",
                         round(float(np.sum(fold_predict_times)), 6))
 
@@ -435,16 +436,9 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
             safe_mk = _CLASS_KEY_MAP.get(raw_name, raw_name.replace("-", "_"))
             trial.set_user_attr(f"metric_class_{cls_key}_{safe_mk}_{stat}", mv)
 
-    # Macro/weighted averages
-    _class_metrics_avg = compute_mean_dicts(fold_class_metrics)
-    for cls_key, cls_vals in _class_metrics_avg.items():
-        if not isinstance(cls_vals, dict):
-            continue
-        if cls_key in ("macro avg", "weighted avg"):
-            tag = cls_key.split()[0]
-            for mk, mv in cls_vals.items():
-                safe_mk = _CLASS_KEY_MAP.get(mk, mk.replace("-", "_"))
-                trial.set_user_attr(f"metric_{tag}_{safe_mk}", mv)
+    # Macro/weighted averages over folds
+    for key, value in fold_average_attrs(fold_class_metrics).items():
+        trial.set_user_attr(key, value)
 
     # Aggregated confusion matrix
     agg_cm = sum(fold_confusion_matrices)
@@ -514,8 +508,8 @@ def cmd_research(args: argparse.Namespace) -> None:
         "balance_classes": bool(sfixed.get("balance_classes", True)),
         "max_per_class": max_per_class,
         "scaler_type": str(sfixed.get("scaler_type", "sequence_zscore")),
-        "noise_rate": float(_cli_or("noise_rate", None, "noise_rate", 0.2999)),
-        "noise_ratio": float(_cli_or("noise_ratio", None, "noise_ratio", 0.2862)),
+        "noise_rate": float(_cli_or("noise_rate", None, "noise_rate", 0.0)),
+        "noise_ratio": float(_cli_or("noise_ratio", None, "noise_ratio", 0.0)),
         "folds": int(_cli_or("folds", "folds", None, 5)),
         "objective_average": str(
             _cli_or("primary_average", None, "objective_average", "macro")

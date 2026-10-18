@@ -73,7 +73,6 @@ BASELINE: Dict[str, Any] = {
     "units":                    250,
     "warmup":                   50,        # P1-integration Phase 1 best (was 40)
     "rk4_substeps":             60,        # P1-integration Phase 1 best (was 44); at range ceiling — P2 will confirm
-    "rk4_substep_aggregation":  1,
     # --- Scaling  (P1-scaling Phase 1 best) ---
     # Note: P1-scaling best is substantially different from preliminary values.
     # P1-coupling confirms cell_coupling=8.862 in its own search.
@@ -537,7 +536,8 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
         "optimize": {
             # Aggregation strategy for collapsing reservoir state → feature vector.
             # "final"       = last timestep only
-            # "signal_mean" = mean over ECG signal region (non-zero-padded)
+            # "signal_mean" = mean over all timesteps (meant to skip the zero padding, but
+            #                 the z-scored beats have none to detect)
             # "last_N"      = mean over last readout_window timesteps (Phase 1 winner)
             "readout_aggregation": {
                 "type": "categorical",
@@ -1145,8 +1145,9 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     # No-reservoir baseline: classifiers trained directly on the raw z-scored
     # 187-dimensional ECG feature vectors, bypassing the reservoir entirely.
     # Uses the same classifier families, hyperparameter ranges, 5-fold
-    # stratified CV protocol, per-fold augmentation/standardisation, and
-    # macro-F1 objective as the reservoir readout studies (P4-readout-*).
+    # stratified CV protocol, per-fold standardisation and macro-F1 objective
+    # as the reservoir readout studies (P4-readout-*). No augmentation: the
+    # archived B1-B3 trials all ran (and record) noise_rate = noise_ratio = 0.
     # Handled by optimization/baseline.py, not classification.py.
     #
     # Run via:
@@ -1156,9 +1157,9 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     "B1-balanced": {
         "description": (
             "No-reservoir baseline: classifiers on raw z-scored 187-d ECG vectors. "
-            "Same classifier families, hyperparameter ranges, 5-fold CV protocol, "
-            "per-fold augmentation, and macro-F1 objective as the reservoir readout "
-            "studies. Provides direct evidence of the reservoir's contribution."
+            "Same classifier families, hyperparameter ranges, 5-fold CV protocol "
+            "and macro-F1 objective as the reservoir readout studies, without "
+            "augmentation. Provides direct evidence of the reservoir's contribution."
         ),
         "type":      "baseline",
         "sampler":   "tpe",
@@ -1172,8 +1173,8 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
             "balance_classes":   True,
             "max_per_class":     None,
             "scaler_type":       "sequence_zscore",
-            "noise_rate":        BASELINE["noise_rate"],
-            "noise_ratio":       BASELINE["noise_ratio"],
+            "noise_rate":        0.0,
+            "noise_ratio":       0.0,
         },
     },
 
@@ -1201,8 +1202,8 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
             "balance_classes":   True,
             "max_per_class":     4015,
             "scaler_type":       "sequence_zscore",
-            "noise_rate":        BASELINE["noise_rate"],
-            "noise_ratio":       BASELINE["noise_ratio"],
+            "noise_rate":        0.0,
+            "noise_ratio":       0.0,
         },
     },
 
@@ -1233,8 +1234,8 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
             "balance_classes":   True,
             "max_per_class":     None,
             "scaler_type":       "sequence_zscore",
-            "noise_rate":        BASELINE["noise_rate"],
-            "noise_ratio":       BASELINE["noise_ratio"],
+            "noise_rate":        0.0,
+            "noise_ratio":       0.0,
         },
     },
 }

@@ -10,7 +10,9 @@ task:
   rows: 50000
   balance_classes: true
   max_per_class: 4015
+  cap_includes_test: false
   scaler: sequence_zscore
+  data_file: null
   seed: 6337
 reservoir:
   type: bioreservoir
@@ -19,7 +21,6 @@ reservoir:
     units: 1000
     warmup: 50
     rk4_substeps: 64
-    rk4_substep_aggregation: 1
     input_scaling: 0.0277
     input_connectivity: 0.5282
     input_bias: false
@@ -32,12 +33,16 @@ reservoir:
     output_variables: IHe
     param_heterogeneity_cv: 0.0
     param_heterogeneity_seed: null
+    heterogeneity_mean_preserving: false
     topology_type: distance
     interaction_diameters: 8.2
     fade_alpha: 2.803e-05
     sparsity: 0.576
     signed: true
     p_excite: 0.8354
+    geometry: v0.1
+    delay_scheme: frozen
+    normalize_after_masks: false
   source:
     study: P3-imbalance
     trial: 1
@@ -61,6 +66,7 @@ readout:
     study: P4-readout-unbalanced
     trial: 604
     archive: v0.1
+  scale: false
 cv:
   folds: 5
   primary_average: macro
@@ -70,4 +76,5 @@ cv:
   seed: 6337
 outputs:
   save_states: false
+preset: v0.1
 reference: archive:v0.1/P4-readout-unbalanced-best

@@ -199,6 +199,7 @@ def _distances(coords):
 
 class TestDistanceKernel:
     @pytest.mark.parametrize("mode, kernel", [
+        ("gaussian", lambda s: np.exp(-s)),
         ("exp", lambda s: np.exp(-s)),
         ("inv", lambda s: 1.0 / (1.0 + s)),
     ])
@@ -210,6 +211,12 @@ class TestDistanceKernel:
         np.testing.assert_allclose(_dense(W), expected, rtol=1e-12)
         np.testing.assert_allclose(_dense(W), _dense(W).T)
         assert coords.min() >= 0.0 and coords.max() <= 1.0
+
+    def test_the_default_kernel_is_gaussian(self):
+        default, _ = generate_distance_weights(12, seed=4, normalize="none")
+        gaussian, _ = generate_distance_weights(12, seed=4, normalize="none",
+                                                decay_mode="gaussian")
+        np.testing.assert_array_equal(_dense(default), _dense(gaussian))
 
     def test_unknown_options_are_rejected(self):
         with pytest.raises(ValueError, match="decay_mode"):
@@ -287,3 +294,33 @@ class TestInteractionRangeCalibration:
             distance_matrix(m=5, n=6, seed=0)
         with pytest.raises(ValueError, match="cutoff_radius"):
             distance_matrix(m=5, n=5, seed=0, cutoff_radius="far")
+
+
+class TestNormalisationOrder:
+    """Spectral normalisation applies to the final matrix, after signs and sparsity."""
+
+    KWARGS = dict(m=200, n=200, seed=3, interaction_diameters=8.2, fade_alpha=0.01,
+                  sparsity=0.5, signed=True, p_excite=0.8)
+
+    @pytest.mark.parametrize("signed, sparsity", [(True, 0.5), (False, 0.3), (True, 1.0)])
+    def test_the_final_matrix_has_unit_spectral_radius(self, signed, sparsity):
+        W = distance_matrix(**{**self.KWARGS, "signed": signed, "sparsity": sparsity})
+        assert spectral_radius(_dense(W)) == pytest.approx(1.0, rel=1e-9)
+
+    def test_normalisation_divides_the_masked_matrix_by_its_radius(self):
+        raw = _dense(distance_matrix(normalize="none", **self.KWARGS))
+        new = _dense(distance_matrix(**self.KWARGS))
+        np.testing.assert_allclose(new, raw / spectral_radius(raw), rtol=1e-12)
+
+    def test_the_v0_1_order_divides_by_the_radius_before_the_masks(self):
+        raw = _dense(distance_matrix(normalize="none", **self.KWARGS))
+        unmasked = _dense(distance_matrix(
+            normalize="none", **{**self.KWARGS, "sparsity": 1.0, "signed": False}))
+        old = _dense(distance_matrix(normalize_after_masks=False, **self.KWARGS))
+        np.testing.assert_allclose(old, raw / spectral_radius(unmasked), rtol=1e-12)
+        assert spectral_radius(old) < 0.6
+
+    def test_row_normalisation_after_signs_uses_absolute_weights(self):
+        W, _ = generate_distance_weights(30, seed=1, normalize="row", signed=True,
+                                         p_excite=0.5)
+        np.testing.assert_allclose(np.abs(_dense(W)).sum(axis=1), 1.0)

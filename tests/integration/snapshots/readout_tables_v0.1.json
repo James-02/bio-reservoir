@@ -1,0 +1,304 @@
+{
+ "P4-readout-balanced": {
+  "trials": 950,
+  "complete": 946,
+  "rows": [
+   {
+    "classifier": "RF",
+    "label": "Random Forest",
+    "f1": 0.8952663735055323,
+    "trial": 833,
+    "params": {
+     "rf_n_estimators": 326,
+     "rf_criterion": "log_loss",
+     "rf_max_depth": 23
+    }
+   },
+   {
+    "classifier": "GB",
+    "label": "Gradient Boosting",
+    "f1": 0.8871187933852047,
+    "trial": 47,
+    "params": {
+     "gb_n_estimators": 499,
+     "gb_learning_rate": 0.07198307800973658,
+     "gb_loss": "log_loss"
+    }
+   },
+   {
+    "classifier": "KNN",
+    "label": "KNN",
+    "f1": 0.8831479487679197,
+    "trial": 303,
+    "params": {
+     "knn_n_neighbors": 1,
+     "knn_weights": "distance",
+     "knn_p": 1.642130385519585
+    }
+   },
+   {
+    "classifier": "Ridge",
+    "label": "Ridge Classifier",
+    "f1": 0.8617646749892117,
+    "trial": 52,
+    "params": {
+     "ridge_alpha": 2.663508528455989,
+     "ridge_solver": "auto"
+    }
+   },
+   {
+    "classifier": "LR",
+    "label": "Logistic Regression",
+    "f1": 0.8615970718087409,
+    "trial": 461,
+    "params": {
+     "lr_C": 61515.49181370622,
+     "lr_solver": "liblinear"
+    }
+   },
+   {
+    "classifier": "SVM",
+    "label": "SVM",
+    "f1": 0.8500882834056341,
+    "trial": 411,
+    "params": {
+     "svc_C": 4.898563089006411,
+     "svc_kernel": "linear"
+    }
+   },
+   {
+    "classifier": "DT",
+    "label": "Decision Tree",
+    "f1": 0.8228966332166519,
+    "trial": 342,
+    "params": {
+     "dt_criterion": "log_loss",
+     "min_samples_leaf": 4
+    }
+   },
+   {
+    "classifier": "MLP",
+    "label": "MLP",
+    "f1": 0.5605943116689931,
+    "trial": 557,
+    "params": {
+     "mlp_hidden_layer_sizes": 228,
+     "mlp_activation": "logistic",
+     "mlp_solver": "lbfgs"
+    }
+   },
+   {
+    "classifier": "Perceptron",
+    "label": "Perceptron",
+    "f1": 0.31370603585209644,
+    "trial": 484,
+    "params": {
+     "perceptron_penalty": "elasticnet",
+     "perceptron_alpha": 0.004200797980941445
+    }
+   }
+  ]
+ },
+ "P4-readout-unbalanced": {
+  "trials": 939,
+  "complete": 929,
+  "rows": [
+   {
+    "classifier": "RF",
+    "label": "Random Forest",
+    "f1": 0.9160648991200807,
+    "trial": 604,
+    "params": {
+     "rf_n_estimators": 321,
+     "rf_criterion": "entropy",
+     "rf_max_depth": 23
+    }
+   },
+   {
+    "classifier": "GB",
+    "label": "Gradient Boosting",
+    "f1": 0.8969315901826604,
+    "trial": 36,
+    "params": {
+     "gb_n_estimators": 387,
+     "gb_learning_rate": 0.05708938414744282,
+     "gb_loss": "log_loss"
+    }
+   },
+   {
+    "classifier": "KNN",
+    "label": "KNN",
+    "f1": 0.8906935359404267,
+    "trial": 924,
+    "params": {
+     "knn_n_neighbors": 11,
+     "knn_weights": "distance",
+     "knn_p": 1.2546100796463429
+    }
+   },
+   {
+    "classifier": "Ridge",
+    "label": "Ridge Classifier",
+    "f1": 0.8803267880022594,
+    "trial": 79,
+    "params": {
+     "ridge_alpha": 1.3346617619559344e-05,
+     "ridge_solver": "auto"
+    }
+   },
+   {
+    "classifier": "LR",
+    "label": "Logistic Regression",
+    "f1": 0.8783541856594829,
+    "trial": 47,
+    "params": {
+     "lr_C": 0.3208660839237291,
+     "lr_solver": "newton-cg"
+    }
+   },
+   {
+    "classifier": "SVM",
+    "label": "SVM",
+    "f1": 0.8493374018876316,
+    "trial": 51,
+    "params": {
+     "svc_C": 8147.659529942246,
+     "svc_kernel": "poly",
+     "svc_degree": 5
+    }
+   },
+   {
+    "classifier": "DT",
+    "label": "Decision Tree",
+    "f1": 0.8488876603693976,
+    "trial": 663,
+    "params": {
+     "dt_criterion": "log_loss",
+     "min_samples_leaf": 3
+    }
+   },
+   {
+    "classifier": "MLP",
+    "label": "MLP",
+    "f1": 0.506713812131409,
+    "trial": 512,
+    "params": {
+     "mlp_hidden_layer_sizes": 272,
+     "mlp_activation": "logistic",
+     "mlp_solver": "lbfgs"
+    }
+   },
+   {
+    "classifier": "Perceptron",
+    "label": "Perceptron",
+    "f1": 0.4396765820015144,
+    "trial": 394,
+    "params": {
+     "perceptron_penalty": "l1",
+     "perceptron_alpha": 0.00022662129228161464
+    }
+   }
+  ]
+ },
+ "P4-readout-binary": {
+  "trials": 974,
+  "complete": 971,
+  "rows": [
+   {
+    "classifier": "RF",
+    "label": "Random Forest",
+    "f1": 0.9328112065567975,
+    "trial": 651,
+    "params": {
+     "rf_n_estimators": 279,
+     "rf_criterion": "log_loss",
+     "rf_max_depth": 27
+    }
+   },
+   {
+    "classifier": "GB",
+    "label": "Gradient Boosting",
+    "f1": 0.9308758972891411,
+    "trial": 617,
+    "params": {
+     "gb_n_estimators": 446,
+     "gb_learning_rate": 0.16695910191680952,
+     "gb_loss": "log_loss"
+    }
+   },
+   {
+    "classifier": "KNN",
+    "label": "KNN",
+    "f1": 0.9294159682632092,
+    "trial": 205,
+    "params": {
+     "knn_n_neighbors": 1,
+     "knn_weights": "uniform",
+     "knn_p": 1.707591058842872
+    }
+   },
+   {
+    "classifier": "Ridge",
+    "label": "Ridge Classifier",
+    "f1": 0.920638050363473,
+    "trial": 79,
+    "params": {
+     "ridge_alpha": 10.354694091214144,
+     "ridge_solver": "auto"
+    }
+   },
+   {
+    "classifier": "LR",
+    "label": "Logistic Regression",
+    "f1": 0.9174461404970249,
+    "trial": 821,
+    "params": {
+     "lr_C": 0.3836934530707857,
+     "lr_solver": "newton-cg"
+    }
+   },
+   {
+    "classifier": "SVM",
+    "label": "SVM",
+    "f1": 0.9071066278530433,
+    "trial": 173,
+    "params": {
+     "svc_C": 0.043107186570787936,
+     "svc_kernel": "poly",
+     "svc_degree": 2
+    }
+   },
+   {
+    "classifier": "DT",
+    "label": "Decision Tree",
+    "f1": 0.8957712135444229,
+    "trial": 134,
+    "params": {
+     "dt_criterion": "entropy",
+     "min_samples_leaf": 1
+    }
+   },
+   {
+    "classifier": "MLP",
+    "label": "MLP",
+    "f1": 0.8728241164783344,
+    "trial": 781,
+    "params": {
+     "mlp_hidden_layer_sizes": 285,
+     "mlp_activation": "relu",
+     "mlp_solver": "lbfgs"
+    }
+   },
+   {
+    "classifier": "Perceptron",
+    "label": "Perceptron",
+    "f1": 0.439148178469478,
+    "trial": 34,
+    "params": {
+     "perceptron_penalty": "l1",
+     "perceptron_alpha": 0.0007266139452177276
+    }
+   }
+  ]
+ }
+}
