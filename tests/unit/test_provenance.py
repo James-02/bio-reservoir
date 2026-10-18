@@ -1,4 +1,4 @@
-"""Unit tests for run manifests and the run registry (revision plan, section 7)."""
+"""Unit tests for run manifests and the run registry."""
 
 import functools
 import getpass
@@ -30,14 +30,14 @@ def _manifest(tmp_path, **kwargs):
     data.write_bytes(b"beats")
     out = tmp_path / "metrics.json"
     out.write_text("{}")
-    return provenance.build_manifest("X2-balanced", SPEC, seeds=[6337], started=START, ended=END,
-                                     data_files=[data], beat_ids=np.arange(5), outputs=[out],
-                                     **kwargs)
+    return provenance.build_manifest("balanced-demo", SPEC, seeds=[6337], started=START,
+                                     ended=END, data_files=[data], beat_ids=np.arange(5),
+                                     outputs=[out], **kwargs)
 
 
 def test_run_id_format():
-    run_id = provenance.make_run_id("X2-balanced", SPEC, "a" * 40, START)
-    assert re.fullmatch(r"20261021T090000Z-X2-balanced-aaaaaaa-[0-9a-f]{8}", run_id)
+    run_id = provenance.make_run_id("balanced-demo", SPEC, "a" * 40, START)
+    assert re.fullmatch(r"20261021T090000Z-balanced-demo-aaaaaaa-[0-9a-f]{8}", run_id)
 
 
 def test_spec_hash_ignores_key_order():
@@ -156,7 +156,7 @@ def test_cli_lists_runs(registry, capsys):
     provenance.main(["list"])
     assert capsys.readouterr().out.splitlines() == [
         'run-a  ok  {"f1": 0.8}', 'run-b  ok  {"f1": 0.85}  (not citable)']
-    provenance.main(["list", "--exp", "X3-other"])
+    provenance.main(["list", "--exp", "other-demo"])
     provenance.main(["list", "--status", "superseded"])
     assert capsys.readouterr().out == ""
 
@@ -179,7 +179,7 @@ def test_cli_rejects_unknown_runs(registry):
         provenance.main(["diff", "run-a", "run-x"])
 
 
-def test_cli_records_the_manuscript_items_a_run_backs(registry, capsys):
+def test_cli_records_the_paper_items_a_run_backs(registry, capsys):
     provenance.main(["mark", "run-a", "ok", "--uses", "Table 2, balanced"])
     provenance.main(["mark", "run-a", "ok", "--uses", "Figure 3"])
     provenance.main(["list", "--used"])

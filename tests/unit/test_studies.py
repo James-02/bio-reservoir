@@ -30,7 +30,7 @@ class TestStudyNames:
     def test_names_follow_convention(self, name):
         assert STUDY_NAME_RE.match(name), name
 
-    def test_manuscript_studies_are_registered(self):
+    def test_paper_studies_are_registered(self):
         assert not SI_TABLE_S5_REGISTERED - set(STUDY_REGISTRY)
 
 
