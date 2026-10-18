@@ -17,13 +17,13 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 from utils import config
 
 logger = logging.getLogger(__name__)
 
-_ENV_CACHE: Optional[Dict[str, Any]] = None
+_ENV_CACHE: dict[str, Any] | None = None
 
 
 def _platform_summary() -> str:
@@ -35,9 +35,9 @@ def _platform_summary() -> str:
     return f"{platform.system()}-{release}-{platform.machine()}"
 
 
-def _os_release() -> Dict[str, str]:
+def _os_release() -> dict[str, str]:
     """Parse ``/etc/os-release`` (empty if unavailable)."""
-    values: Dict[str, str] = {}
+    values: dict[str, str] = {}
     try:
         with open("/etc/os-release") as f:
             for line in f:
@@ -57,8 +57,11 @@ def _git(*args: str) -> str:
     ).decode().strip()
 
 
-def _collect_environment() -> Dict[str, Any]:
-    import platform, sys as _sys, importlib, datetime
+def _collect_environment() -> dict[str, Any]:
+    import datetime
+    import importlib
+    import platform
+    import sys as _sys
 
     def _safe(fn, fallback="N/A"):
         try:
@@ -68,7 +71,7 @@ def _collect_environment() -> Dict[str, Any]:
 
     os_release = _os_release()
     now = datetime.datetime.now(datetime.timezone.utc)
-    env: Dict[str, Any] = {}
+    env: dict[str, Any] = {}
     env["timestamp_utc"]     = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     env["python_version"]    = _sys.version.split()[0]
     env["platform"]          = _safe(_platform_summary)
@@ -138,7 +141,7 @@ def _collect_environment() -> Dict[str, Any]:
     return env
 
 
-def get_environment() -> Dict[str, Any]:
+def get_environment() -> dict[str, Any]:
     """Return the cached environment snapshot, collecting it on first call."""
     global _ENV_CACHE
     if _ENV_CACHE is None:

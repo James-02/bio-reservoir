@@ -12,18 +12,15 @@ visualisation helpers in ``utils.visualisation`` to give an overview of:
 
 import argparse
 import os
-from typing import Optional, Dict, List
 
 import numpy as np
 
 from utils.preprocessing import load_ecg_data, standardize_data
 from utils.visualisation import (
-    plot_data_distribution,
-    plot_noise,
-    plot_average_instances_with_band_and_exemplars,
     _save_figure,
+    plot_average_instances_with_band_and_exemplars,
+    plot_noise,
 )
-
 
 _ECG_SAMPLING_FREQ_HZ = 125
 
@@ -41,7 +38,7 @@ def _select_single_sample(
     Y,
     *,
     index: int = 0,
-    target_class: Optional[int] = None,
+    target_class: int | None = None,
 ):
     """Pick a single (X, y) pair, optionally constrained to a given class index.
 
@@ -82,7 +79,7 @@ def _select_single_sample(
     return x, y
 
 
-def _make_noise_example(x: np.ndarray, noise_std: float = 0.1, seed: Optional[int] = 0):
+def _make_noise_example(x: np.ndarray, noise_std: float = 0.1, seed: int | None = 0):
     """Generate a simple additive Gaussian noise example for a 1D signal x."""
     rng = np.random.RandomState(seed)
     noise = rng.normal(scale=noise_std, size=x.shape)
@@ -90,7 +87,7 @@ def _make_noise_example(x: np.ndarray, noise_std: float = 0.1, seed: Optional[in
     return noise, noisy_x
 
 
-def _class_names(*, binary: bool) -> List[str]:
+def _class_names(*, binary: bool) -> list[str]:
     # Keep this local to avoid importing globals from utils.visualisation.
     return ["Normal", "Arrhythmia"] if bool(binary) else ["Normal", "Supraventricular", "Ventricular", "Fusion", "Unknown"]
 
@@ -165,21 +162,9 @@ def visualise_dataset(args: argparse.Namespace) -> None:
         max_per_class=None,
     )
 
-    # 1) Class / sample distribution (train + test combined labels)
-    # ``plot_data_distribution`` expects a sequence where each element is
-    # indexable (targets[0]) and, for one-hot, possibly a sequence itself.
-    # We therefore build a simple (N, 1) integer-label array that is
-    # compatible with ``count_labels``.
-    if args.encode_labels:
-        # Y_train/Y_test are one-hot sequences per timestep; reduce to class per sample
-        train_labels = [int(np.argmax(y_seq[0])) for y_seq in Y_train]
-        test_labels = [int(np.argmax(y_seq[0])) for y_seq in Y_test]
-    else:
-        train_labels = [int(y_seq[0]) for y_seq in Y_train]
-        test_labels = [int(y_seq[0]) for y_seq in Y_test]
-
-    all_labels = np.array(train_labels + test_labels).reshape(-1, 1)
-    # plot_data_distribution(all_labels, filename="ecg_data_distribution.png", show=False)
+    # 1) Class / sample distribution: disabled. To draw it, pass the train + test labels
+    # as an (N, 1) integer array to ``plot_data_distribution`` (it calls ``count_labels``):
+    # plot_data_distribution(labels, filename="ecg_data_distribution.png", show=False)
 
     # 2) Average instances figure (mean + quantile band + multiple exemplars)
     #    We compute it on sequence_zscore-scaled waveforms.
@@ -205,7 +190,7 @@ def visualise_dataset(args: argparse.Namespace) -> None:
         unique_classes = sorted(set(int(c) for c in np.unique(labels)))
 
         # Build index lists for each class.
-        idx_by_class: Dict[int, List[int]] = {}
+        idx_by_class: dict[int, list[int]] = {}
         for c in unique_classes:
             idx_by_class[int(c)] = [int(i) for i in np.where(labels == int(c))[0].tolist()]
 
@@ -301,6 +286,7 @@ def visualise_dataset(args: argparse.Namespace) -> None:
 
     # Plot comparison
     import matplotlib.pyplot as plt
+
     from utils.visualisation import _save_figure
 
     # Accessibility + readability: small multiples (4 subplots) instead of 4 overlapping lines.

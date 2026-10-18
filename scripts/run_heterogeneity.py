@@ -37,7 +37,6 @@ import argparse
 import itertools
 import logging
 import os
-import sys
 
 import numpy as np
 import reservoirpy as rpy

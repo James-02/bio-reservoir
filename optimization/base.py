@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import argparse
-from typing import Any, Callable, Dict, List, Optional, Set
+import logging
+from collections.abc import Callable
 from pathlib import Path
-import pandas as pd
+from typing import Any
+
 import joblib
 import matplotlib.pyplot as plt
-import logging
-
 import optuna
+import pandas as pd
 import reservoirpy as rpy
 from optuna.study import Study
 
@@ -43,7 +44,7 @@ def _optimize_study(study: Study, trials: int, objective_func: Callable, **kwarg
     study.optimize(lambda trial: objective_func(trial, **kwargs), n_trials=trials, catch=(Exception,))
     return study
 
-def research(study: Study, trials: int, objective_func: Callable, processes: Optional[int] = None, **kwargs) -> List[Study]:
+def research(study: Study, trials: int, objective_func: Callable, processes: int | None = None, **kwargs) -> list[Study]:
     """Conduct research by optimizing the study through hyperparameter sampling.
 
     Args:
@@ -160,12 +161,12 @@ def evaluate_study(
             emit()
 
 
-def fold_average_attrs(fold_class_metrics: List[Dict[str, Any]]) -> Dict[str, float]:
+def fold_average_attrs(fold_class_metrics: list[dict[str, Any]]) -> dict[str, float]:
     """``metric_macro_<m>`` and ``metric_weighted_<m>`` trial attributes: each fold's
     macro and weighted precision, recall, F1 and support, averaged over the folds."""
     names = {"precision": "precision", "recall": "recall", "f1-score": "f1",
              "support": "support"}
-    attrs: Dict[str, float] = {}
+    attrs: dict[str, float] = {}
     for tag in ("macro", "weighted"):
         for key, name in names.items():
             values = [m[f"{tag} avg"][key] for m in fold_class_metrics
@@ -186,7 +187,7 @@ def fold_average_attrs(fold_class_metrics: List[Dict[str, Any]]) -> Dict[str, fl
 # Section keys map to one or more column prefixes in the Optuna
 # trials_dataframe().
 #
-_ATTR_PREFIXES: Dict[str, tuple] = {
+_ATTR_PREFIXES: dict[str, tuple] = {
     "metrics":   ("user_attrs_metric_",),
     "hypers":    ("user_attrs_res_", "user_attrs_topo_",
                   "user_attrs_readout_", "user_attrs_dataset_"),
@@ -199,7 +200,7 @@ SHOW_CHOICES = ("params", "metrics", "hypers", "timings", "resources", "env")
 SHOW_DEFAULT = "params"
 
 # Aliases so users can type friendlier names on the CLI (e.g. --show environment).
-_SECTION_ALIASES: Dict[str, str] = {
+_SECTION_ALIASES: dict[str, str] = {
     "environment": "env",
     "folds":       "metrics",   # per-fold view is part of the metrics section
 }
@@ -218,7 +219,7 @@ def _pretty_label(col: str) -> str:
     return col
 
 
-def _cols_for_section(df_columns, section: str) -> List[str]:
+def _cols_for_section(df_columns, section: str) -> list[str]:
     """Return sorted columns from *df_columns* that belong to *section*."""
     prefixes = _ATTR_PREFIXES.get(section, ())
     return sorted(c for c in df_columns if any(c.startswith(p) for p in prefixes))
@@ -253,7 +254,7 @@ def _print_timings_table(row, df_cols) -> None:
 
     # Discover sections from *_total_s columns
     total_re = re.compile(r"^user_attrs_profile_(.+)_total_s$")
-    sections: Dict[str, str] = {}  # safe_name -> display_name
+    sections: dict[str, str] = {}  # safe_name -> display_name
     for col in df_cols:
         m = total_re.match(col)
         if m:
@@ -318,7 +319,7 @@ def _print_timings_table(row, df_cols) -> None:
         rt_std  = _get_float(row, "user_attrs_fold_runtime_std_s")
         rt_min  = _get_float(row, "user_attrs_fold_runtime_min_s")
         rt_max  = _get_float(row, "user_attrs_fold_runtime_max_s")
-        per_fold: List[str] = []
+        per_fold: list[str] = []
         for i in range(32):  # support up to 32 folds
             col = f"user_attrs_fold_runtime_fold_{i}_s"
             if col not in row.index:
@@ -344,7 +345,7 @@ def _print_timings_cross_trial_summary(df_top) -> None:
     PHASE_ORDER = ["train_reservoir", "fit_readout", "val_reservoir", "predict"]
 
     total_re = re.compile(r"^user_attrs_profile_(.+)_total_s$")
-    sections: Dict[str, str] = {}
+    sections: dict[str, str] = {}
     for col in df_top.columns:
         m = total_re.match(col)
         if m:
@@ -402,7 +403,7 @@ def _print_timings_cross_trial_summary(df_top) -> None:
         print(f"  Fold runtime (mean/fold):  \u03bc={rt_mu:.4f}s  \u03c3={rt_sig:.4f}s  across {n} trials")
 
 
-def _print_kv_block(row, cols: List[str], header: str) -> None:
+def _print_kv_block(row, cols: list[str], header: str) -> None:
     """Print a headed key-value block from a pandas Series row.
 
     Silently skips NaN values so optional user_attrs don't clutter output.
@@ -433,7 +434,7 @@ def _print_fold_table(row, df_cols) -> None:
     import re
     fold_re = re.compile(r"^user_attrs_fold_(\d+)_(.+)$")
 
-    folds_data: Dict[int, Dict[str, float]] = {}
+    folds_data: dict[int, dict[str, float]] = {}
     for col in df_cols:
         m = fold_re.match(col)
         if not m:
@@ -500,7 +501,7 @@ def _print_class_table(row, df_cols) -> None:
     import re
     cls_re = re.compile(r"^user_attrs_metric_class_(\d+)_(.+)$")
 
-    classes_data: Dict[int, Dict[str, float]] = {}
+    classes_data: dict[int, dict[str, float]] = {}
     for col in df_cols:
         m = cls_re.match(col)
         if not m:
@@ -595,7 +596,7 @@ def _print_class_table(row, df_cols) -> None:
     _ORDER_FALLBACK = ["precision", "recall", "f1", "support"]
     _agg_bar_printed = False
     for avg_label in ("macro", "weighted"):
-        vals: Dict[str, float] = {}
+        vals: dict[str, float] = {}
         for m_name in (ordered_bases if has_mean_std else _ORDER_FALLBACK):
             col = f"user_attrs_metric_{avg_label}_{m_name}"
             v = row.get(col)
@@ -623,9 +624,9 @@ def print_topn_trials(
     top_n: int,
     title: str,
     *,
-    group_col: Optional[str] = None,
-    sections: Optional[Set[str]] = None,
-    strip_prefix: Optional[str] = None,
+    group_col: str | None = None,
+    sections: set[str] | None = None,
+    strip_prefix: str | None = None,
     best_only_detail: bool = False,
 ) -> None:
     """Print a human-readable evaluation report for the top-N trials.
@@ -678,7 +679,7 @@ def print_topn_trials(
 
     # ── params (+ optional metrics) table ───────────────────────────────────
     param_cols = [c for c in df_top.columns if c.startswith("params_")]
-    active_params: List[str] = []
+    active_params: list[str] = []
     for c in sorted(param_cols):
         non_nan = df_top[c].dropna()
         if not non_nan.empty and non_nan.nunique() > 0:
@@ -708,7 +709,7 @@ def print_topn_trials(
     available = [c for c in cols_to_show if c in df_top.columns]
     tab = df_top[available].copy()
 
-    renamed: Dict[str, str] = {"number": "trial", "value": "f1"}
+    renamed: dict[str, str] = {"number": "trial", "value": "f1"}
     if group_col:
         renamed[group_col] = _pretty_label(group_col)
     for c in active_params:
@@ -801,7 +802,7 @@ def print_topn_trials(
     print()
 
 
-def parse_show_sections(show_str: str) -> Set[str]:
+def parse_show_sections(show_str: str) -> set[str]:
     """Parse a ``--show`` CLI string into a validated set of section names.
 
     Unknown section names are silently dropped with a warning so users are
@@ -820,7 +821,7 @@ def parse_show_sections(show_str: str) -> Set[str]:
 def _call_plot_func(
     study: Study,
     plot_func: Callable,
-    params: Optional[list] = None,
+    params: list | None = None,
     target_name: str = "Macro F1",
 ) -> bool:
     """Call an Optuna plot function, handling signature differences.
@@ -828,7 +829,7 @@ def _call_plot_func(
     Returns *True* on success, *False* if the plot was skipped.
     """
     # Build kwargs that the function *might* accept.
-    kw: Dict[str, Any] = {"study": study}
+    kw: dict[str, Any] = {"study": study}
     if params is not None:
         kw["params"] = params
     kw["target_name"] = target_name
@@ -905,8 +906,8 @@ def _save_and_close(fig: plt.Figure, filename: str, *, also_pdf: bool = False) -
 def plot_results(
     study: Study,
     plot_func: Callable,
-    params: Optional[Dict] = None,
-    filename: Optional[str] = None,
+    params: dict | None = None,
+    filename: str | None = None,
     *,
     target_name: str = "Macro F1",
     also_pdf: bool = False,
@@ -968,7 +969,7 @@ def plot_results(
 # ---------------------------------------------------------------------------
 
 def get_default_storage(
-    study_name: str, *, must_exist: bool = False, archive: Optional[str] = None
+    study_name: str, *, must_exist: bool = False, archive: str | None = None
 ) -> str:
     """Return the default SQLite Optuna storage URL for *study_name*.
 
@@ -1002,8 +1003,8 @@ def build_study(
     study_name: str,
     storage: str,
     seed: int = DEFAULT_SEED,
-    study_config: Optional[Dict[str, Any]] = None,
-    sampler_override: Optional[str] = None,
+    study_config: dict[str, Any] | None = None,
+    sampler_override: str | None = None,
 ) -> optuna.study.Study:
     """Create (or load) an Optuna study with the appropriate sampler.
 

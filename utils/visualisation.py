@@ -1,11 +1,11 @@
-from typing import List, Dict, Any, Optional
 import os
 
+import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from sklearn.manifold import TSNE
+
 from utils import config
 from utils.analysis import count_labels, measure_class_deviation
 
@@ -81,7 +81,7 @@ def _save_figure(filename: str) -> None:
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     plt.savefig(file_path, bbox_inches="tight", dpi=DPI)
 
-def plot_states(states: np.ndarray, labels: List[str] = None, xlabel: str = "Time", 
+def plot_states(states: np.ndarray, labels: list[str] = None, xlabel: str = "Time", 
          ylabel: str = "State", filename: str = "states.png", legend: bool = True, show: bool = True) -> None:
     """
     Plot a generic line graph of the evolution of system states over time.
@@ -118,9 +118,9 @@ def plot_dde_overlay(
     *,
     t_axis: np.ndarray,
     baseline_trace: np.ndarray,
-    driven_traces: List[np.ndarray],
-    driven_applied: List[np.ndarray],
-    amps: List[float],
+    driven_traces: list[np.ndarray],
+    driven_applied: list[np.ndarray],
+    amps: list[float],
     warmup: int,
     overlay_variable: str,
     filename: str,
@@ -198,7 +198,8 @@ def plot_dde_overlay(
     )
 
     # Driven rows
-    for i, (a, trace, applied) in enumerate(zip(amps, driven_traces, driven_applied), start=1):
+    for i, (a, trace, _applied) in enumerate(
+            zip(amps, driven_traces, driven_applied, strict=False), start=1):
         col = okabe_ito[(i - 1) % len(okabe_ito)]
         ax_var = axes[i]
 
@@ -265,11 +266,11 @@ def plot_dde_ecg_multiscale(
     *,
     t_axis: np.ndarray,
     warmup: int,
-    baseline_states_by_var: Dict[str, np.ndarray],
-    driven_states_by_scale: Dict[float, Dict[str, np.ndarray]],
-    driven_input_by_scale: Dict[float, np.ndarray],
-    input_trace_unscaled: Optional[np.ndarray] = None,
-    ecg_class_label: Optional[str] = None,
+    baseline_states_by_var: dict[str, np.ndarray],
+    driven_states_by_scale: dict[float, dict[str, np.ndarray]],
+    driven_input_by_scale: dict[float, np.ndarray],
+    input_trace_unscaled: np.ndarray | None = None,
+    ecg_class_label: str | None = None,
     filename: str,
     show: bool = False,
 ) -> None:
@@ -328,7 +329,7 @@ def plot_dde_ecg_multiscale(
     if n_rows == 1:
         axes = _np.array([axes])
 
-    def _plot_states_row(ax, states_by_var: Dict[str, _np.ndarray], *, show_baseline_warmup: bool) -> None:
+    def _plot_states_row(ax, states_by_var: dict[str, _np.ndarray], *, show_baseline_warmup: bool) -> None:
         # Only luxI (I) + aiiA (A)
         for v in ("I", "A"):
             if v not in states_by_var:
@@ -636,7 +637,7 @@ def plot_average_instances_with_band_and_exemplars(
     q_low: float = 0.10,
     q_high: float = 0.90,
     seed: int = 0,
-    binary: Optional[bool] = None,
+    binary: bool | None = None,
 ) -> None:
     """Paper-ready average ECG instances figure.
 
@@ -806,17 +807,19 @@ def plot_confusion_matrix(confusion_matrix: np.ndarray, cmap=plt.cm.Blues,
     if show:
         plt.show()
 
-def plot_metrics_across_folds(metrics: List[Dict[str, any]], metric_names: List[str] = ["accuracy", "f1", "mcc", "kappa"], 
+def plot_metrics_across_folds(metrics: list[dict[str, any]], metric_names: list[str] | None = None,
                               show: bool = True, filename: str = "metrics_folds.png") -> None:
     """
     Plot the metrics across different folds.
 
     Args:
         metrics (List[Dict[str, any]]): List of dictionaries containing metric values for each fold.
-        metric_names (List[str], optional): List of metric names to plot. Default is ["accuracy", "mse", "rmse", "f1"].
+        metric_names (List[str], optional): Metric names to plot. Default: accuracy, f1, mcc, kappa.
         show (bool, optional): Whether to display the plot. Default is True.
         filename (str, optional): Filename to save the plot. Default is "metrics_folds.png".
     """
+    if metric_names is None:
+        metric_names = ["accuracy", "f1", "mcc", "kappa"]
     num_folds = len(metrics)
     num_metrics = len(metric_names)
     bar_width = 0.2
@@ -837,7 +840,7 @@ def plot_metrics_across_folds(metrics: List[Dict[str, any]], metric_names: List[
     if show:
         plt.show()
 
-def plot_class_metrics(metrics: Dict[str, Dict[str, float]], show: bool = True, filename: str = "class_metrics.png") -> None:
+def plot_class_metrics(metrics: dict[str, dict[str, float]], show: bool = True, filename: str = "class_metrics.png") -> None:
     """
     Plot the metrics for each class.
 
@@ -883,7 +886,7 @@ def plot_noise(
     noise: np.ndarray,
     noisy_X: np.ndarray,
     *,
-    noise_std: Optional[float] = None,
+    noise_std: float | None = None,
     show: bool = True,
     filename: str = "noise.png",
 ) -> None:
@@ -1099,7 +1102,7 @@ def plot_distance_histograms(units: int = 250,
                              spatial_dim: int = 2,
                              bins: int = 50,
                              filename: str = "distance_histograms.png",
-                             show: bool = True) -> Dict[str, float]:
+                             show: bool = True) -> dict[str, float]:
     """Visualise the distribution of pairwise and nearest-neighbour distances.
 
     This helps understand the geometry of the randomly generated node cloud
@@ -1156,7 +1159,7 @@ def plot_distance_histograms(units: int = 250,
     return stats
 
 
-def _compute_distance_matrices_from_coords(coords: np.ndarray) -> Dict[str, np.ndarray]:
+def _compute_distance_matrices_from_coords(coords: np.ndarray) -> dict[str, np.ndarray]:
     """Utility: compute full and nearest-neighbour distance matrices from coords."""
 
     diff = coords[:, None, :] - coords[None, :, :]
@@ -1172,7 +1175,7 @@ def plot_weight_vs_distance_from_matrix(
     diameters: float = 8.2,
     filename: str = "weight_vs_distance.png",
     show: bool = True,
- ) -> Dict[str, float]:
+ ) -> dict[str, float]:
     """Scatter plot of distance vs. raw kernel weight from an existing matrix.
 
     This variant does *not* generate weights; it assumes you already have a
@@ -1300,9 +1303,9 @@ def plot_spatial_topology(
 # ---------------------------------------------------------------------------
 
 def plot_heterogeneity_robustness(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     study_name: str = "P3-heterogeneity",
-    output_dir: Optional[str] = None,
+    output_dir: str | None = None,
     filename: str = "heterogeneity_robustness",
     show: bool = False,
 ) -> None:
@@ -1326,6 +1329,7 @@ def plot_heterogeneity_robustness(
         Whether to call ``plt.show()`` after saving.
     """
     import collections
+
     import optuna
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
@@ -1341,7 +1345,7 @@ def plot_heterogeneity_robustness(
     ]
 
     # ---- collect data ----
-    by_cv: Dict[float, list] = collections.defaultdict(list)
+    by_cv: dict[float, list] = collections.defaultdict(list)
     all_cvs_raw, all_f1s = [], []
     for t in completed:
         cv = t.params["param_heterogeneity_cv"]
@@ -1393,8 +1397,8 @@ def plot_heterogeneity_robustness(
     )
     ax.fill_between(
         x_pos,
-        [m - s for m, s in zip(means, stds)],
-        [m + s for m, s in zip(means, stds)],
+        [m - s for m, s in zip(means, stds, strict=False)],
+        [m + s for m, s in zip(means, stds, strict=False)],
         alpha=0.15, color="#d62728", zorder=2,
     )
 

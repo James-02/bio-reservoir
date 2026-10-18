@@ -8,9 +8,10 @@ Public API:
     spectral_radius(W): largest absolute eigenvalue
 """
 from __future__ import annotations
-from typing import Optional, Tuple
-import numpy as np
+
 from functools import partial
+
+import numpy as np
 from scipy.sparse import csr_matrix
 
 __all__ = ["generate_distance_weights", "spectral_radius", "distance_matrix", "random_gaussian_weights"]
@@ -43,17 +44,17 @@ def generate_distance_weights(
     decay_power: float = 2.0,
     include_self: bool = False,
     normalize: str = "spectral",
-    sr: Optional[float] = None,
+    sr: float | None = None,
     jitter: float = 0.0,
     sparsity: float = 1.0,
-    seed: Optional[int] = None,
+    seed: int | None = None,
     gain: float = 1.0,  # Final multiplicative factor applied to the matrix (useful to bake in rc scaling).
-    cutoff_radius: Optional[float] = None,
+    cutoff_radius: float | None = None,
     signed: bool = False,
     p_excite: float = 0.5,
     heterogeneous_gain: bool = False,
     normalize_after_masks: bool = True,
-) -> Tuple[np.ndarray | csr_matrix, np.ndarray]:
+) -> tuple[np.ndarray | csr_matrix, np.ndarray]:
     """Generate a distance-decay weight matrix and node coordinates.
 
     The normalisation (``normalize``) applies to the final matrix, after the random
@@ -135,7 +136,7 @@ def generate_distance_weights(
     return W, coords
 
 
-def _normalise(W: np.ndarray, normalize: str, sr: Optional[float], *,
+def _normalise(W: np.ndarray, normalize: str, sr: float | None, *,
                absolute_rows: bool) -> np.ndarray:
     """Divide ``W`` by its spectral radius (or the given ``sr``) or by its row sums."""
     if normalize == "spectral":
@@ -163,7 +164,7 @@ def random_gaussian_weights(
     signed: bool = True,
     p_excite: float = 0.5,
     include_self: bool = False,
-    seed: Optional[int] = None,
+    seed: int | None = None,
     **kwargs,
 ) -> np.ndarray | partial:
     """Gaussian sparse recurrent weight matrix, ReservoirPy-compatible.
@@ -253,19 +254,19 @@ def distance_matrix(
     decay_power: float = 2.0,
     include_self: bool = False,
     normalize: str = "spectral",
-    sr: Optional[float] = None,
+    sr: float | None = None,
     jitter: float = 0.0,
     sparsity: float = 0.1,
-    seed: Optional[int] = None,
+    seed: int | None = None,
     return_coords: bool = False,
     gain: float = 1.0,
     # High-level biological parametrization: interaction range expressed in
     # "cell diameters" and an associated fade level. If provided, these will
     # be used to automatically calibrate ``length_scale`` and a sensible
     # geometric cutoff radius once the number of units (m) is known.
-    interaction_diameters: Optional[float] = 8.2,
+    interaction_diameters: float | None = 8.2,
     fade_alpha: float = 0.01,
-    cutoff_radius: Optional[float] | str = 'auto',
+    cutoff_radius: float | None | str = 'auto',
     signed: bool = True,
     p_excite: float = 0.5,
     heterogeneous_gain: bool = False,

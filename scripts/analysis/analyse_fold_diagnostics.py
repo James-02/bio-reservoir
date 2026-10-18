@@ -31,21 +31,21 @@ import argparse
 import glob
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 from utils import config
 from utils.analysis import evaluate_performance
 from utils.results import FoldArtifact
-from utils.visualisation import classes as categorical_classes, binary_classes
-
+from utils.visualisation import binary_classes
+from utils.visualisation import classes as categorical_classes
 
 RESULTS_DIR = str(config.figures_dir("diagnostics"))
 
 
-def _class_names(n_classes: int) -> List[str]:
+def _class_names(n_classes: int) -> list[str]:
     """Return human-readable class names consistent with utils.visualisation."""
     if int(n_classes) == 2:
         return list(binary_classes)
@@ -59,7 +59,7 @@ class FoldData:
     path: str
     y_pred: np.ndarray
     y_true: np.ndarray
-    metrics: Dict[str, Any] | None
+    metrics: dict[str, Any] | None
     test_states: Any | None
 
 
@@ -122,7 +122,7 @@ def _load_fold(path: str) -> FoldData:
     return FoldData(path=path, y_pred=y_pred, y_true=y_true, metrics=metrics, test_states=test_states)
 
 
-def _stack_folds(folds: List[FoldData]) -> Tuple[np.ndarray, np.ndarray]:
+def _stack_folds(folds: list[FoldData]) -> tuple[np.ndarray, np.ndarray]:
     y_true = np.concatenate([f.y_true for f in folds], axis=0)
     y_pred = np.concatenate([f.y_pred for f in folds], axis=0)
     return y_true, y_pred

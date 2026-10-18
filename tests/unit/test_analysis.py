@@ -1,20 +1,19 @@
 """Unit tests for utils.analysis — Metrics, evaluate_performance, aggregation."""
 
-import pytest
 import numpy as np
+import pytest
 
 from utils.analysis import (
     Metrics,
-    evaluate_performance,
-    compute_mean_dicts,
+    _is_class_key,
     compute_class_dicts,
+    compute_mean_dicts,
     compute_mean_metrics,
     count_labels,
+    evaluate_performance,
     measure_dataset_deviation,
     sample_sd,
-    _is_class_key,
 )
-
 
 # ---------------------------------------------------------------------------
 # _is_class_key

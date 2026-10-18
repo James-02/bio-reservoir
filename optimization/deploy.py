@@ -45,12 +45,11 @@ import shlex
 import subprocess
 import textwrap
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
-from typing import Callable
 
 from utils import config
 from utils.logger import setup_logging
@@ -447,7 +446,7 @@ def for_hosts(hosts: Sequence[str], action: Callable[[str], object]) -> dict[str
             log.error("[%s] failed: %s", host, exc)
             return None
     with ThreadPoolExecutor(max_workers=max(1, len(hosts))) as pool:
-        return dict(zip(hosts, pool.map(run, hosts)))
+        return dict(zip(hosts, pool.map(run, hosts), strict=True))
 
 
 def inventory(deployer: Deployer, hosts: Sequence[str]) -> None:

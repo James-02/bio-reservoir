@@ -27,13 +27,14 @@ get_dde_params
     Return the full DDE parameter dict (with defaults filled in).
 """
 
+from bioreservoir.dde import generate_node_params, get_dde_params, solve_dde_rk4
 from bioreservoir.node import BioReservoir
 from bioreservoir.topology import distance_matrix, random_gaussian_weights
-from bioreservoir.dde import solve_dde_rk4, get_dde_params, generate_node_params
 
 __all__ = [
     "BioReservoir",
     "distance_matrix",
+    "random_gaussian_weights",
     "solve_dde_rk4",
     "get_dde_params",
     "generate_node_params",

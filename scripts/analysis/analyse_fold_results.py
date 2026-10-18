@@ -51,7 +51,7 @@ from __future__ import annotations
 import argparse
 import glob
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 from sklearn.metrics import cohen_kappa_score, matthews_corrcoef
@@ -76,7 +76,7 @@ def _argmax_labels(Y: np.ndarray) -> np.ndarray:
     return np.argmax(Y, axis=-1).flatten()
 
 
-def _stack_preds(artifacts: List[FoldArtifact]) -> Tuple[np.ndarray, np.ndarray]:
+def _stack_preds(artifacts: list[FoldArtifact]) -> tuple[np.ndarray, np.ndarray]:
     """Return (y_true, y_pred) as 1-D class-index arrays across all folds."""
     y_true = np.concatenate([_argmax_labels(a.Y_test) for a in artifacts])
     y_pred = np.concatenate([_argmax_labels(a.Y_pred) for a in artifacts])
@@ -96,7 +96,7 @@ _SCALAR_HEADERS = ["fold", "F1", "Accuracy", "Precision", "Recall", "RMSE", "R²
 _SCALAR_COL_W = [5] + [10] * len(_SCALAR_KEYS)
 
 
-def _print_fold_table(artifacts: List[FoldArtifact]) -> None:
+def _print_fold_table(artifacts: list[FoldArtifact]) -> None:
     """Print per-fold scalar metrics with a mean ± std footer."""
     row_fmt = "  ".join(f"{{:<{w}}}" for w in _SCALAR_COL_W)
     sep = "  ".join("-" * w for w in _SCALAR_COL_W)
@@ -105,7 +105,7 @@ def _print_fold_table(artifacts: List[FoldArtifact]) -> None:
     print(row_fmt.format(*_SCALAR_HEADERS))
     print(sep)
 
-    rows: List[List[float]] = []
+    rows: list[list[float]] = []
     for a in artifacts:
         m = a.metrics
         vals = [float(m[k]) if k in m else 0.0 for k in _SCALAR_KEYS]
@@ -119,7 +119,7 @@ def _print_fold_table(artifacts: List[FoldArtifact]) -> None:
     print()
 
 
-def _print_class_table(artifacts: List[FoldArtifact]) -> None:
+def _print_class_table(artifacts: list[FoldArtifact]) -> None:
     """Print per-class precision / recall / F1 / support averaged across folds."""
     # Gather class keys from fold 0; order: numeric classes first, then avg rows
     cm0 = artifacts[0].metrics.class_metrics
@@ -154,7 +154,7 @@ def _print_class_table(artifacts: List[FoldArtifact]) -> None:
     print()
 
 
-def _print_extra_metrics(artifacts: List[FoldArtifact]) -> None:
+def _print_extra_metrics(artifacts: list[FoldArtifact]) -> None:
     """Print MCC and Cohen's Kappa on concatenated predictions."""
     y_true, y_pred = _stack_preds(artifacts)
     mcc = matthews_corrcoef(y_true, y_pred)
@@ -165,7 +165,7 @@ def _print_extra_metrics(artifacts: List[FoldArtifact]) -> None:
     print()
 
 
-def _print_model_info(artifacts: List[FoldArtifact]) -> None:
+def _print_model_info(artifacts: list[FoldArtifact]) -> None:
     """Print the classifier class and hypers from fold 0."""
     mh = artifacts[0].model_hypers or {}
     clf_cls = mh.get("model", None)
@@ -193,7 +193,7 @@ def _fig_out(trial_name: str, suffix: str) -> str:
 
 
 def _run_plots(
-    artifacts: List[FoldArtifact],
+    artifacts: list[FoldArtifact],
     trial_name: str,
     wanted: set,
     show: bool,

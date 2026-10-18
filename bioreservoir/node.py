@@ -1,17 +1,19 @@
-from functools import partial
+import logging
 import time
-from typing import Any, Optional, Union, Dict, List, Callable, Sequence
+from collections.abc import Callable, Sequence
+from functools import partial
+from typing import Any
 
 import numpy as np
-from scipy import sparse
+from reservoirpy.activationsfunc import identity
 from reservoirpy.mat_gen import bernoulli, normal
 from reservoirpy.mat_gen import zeros as rpy_zeros
 from reservoirpy.node import Node
+from reservoirpy.nodes.reservoirs.base import initialize, initialize_feedback
 from reservoirpy.type import Weights
 from reservoirpy.utils.random import noise, rand_generator
-from reservoirpy.nodes.reservoirs.base import initialize, initialize_feedback
 from reservoirpy.utils.validation import is_array
-from reservoirpy.activationsfunc import identity
+from scipy import sparse
 
 from bioreservoir.dde import (
     generate_node_params,
@@ -21,9 +23,6 @@ from bioreservoir.dde import (
     solve_dde_substep,
     substep_history,
 )
-from bioreservoir.topology import distance_matrix
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -36,36 +35,36 @@ class BioReservoir(Node):
         rk4_substeps: int = 24,
         cell_coupling: float = 1.0,
         dde_scaling: float = 5e-3,
-        dde_kwargs: Optional[Dict] = None,
-        sr: Optional[float] = None,
+        dde_kwargs: dict | None = None,
+        sr: float | None = None,
         input_bias: bool = False,
         noise_rc: float = 0.1,
         noise_in: float = 0.05,
         noise_fb: float = 0.1,
         noise_type: str = "normal",
-        noise_kwargs: Dict = None,
-        input_scaling: Union[float, Sequence] = 1e-2,
+        noise_kwargs: dict = None,
+        input_scaling: float | Sequence = 1e-2,
         bias_scaling: float = 1.0,
-        fb_scaling: Union[float, Sequence] = 1e-4,
+        fb_scaling: float | Sequence = 1e-4,
         input_connectivity: float = 1.0,
         rc_connectivity: float = 0.1,
         fb_connectivity: float = 0.1,
         fb_activation: Callable = identity,
-        Win: Union[Weights, Callable] = bernoulli,
-        W: Union[Weights, Callable] = normal,
-        Wfb: Union[Weights, Callable] = bernoulli,
-        bias: Union[Weights, Callable] = bernoulli,
-        input_dim: Optional[int] = None,
-        feedback_dim: Optional[int] = None,
+        Win: Weights | Callable = bernoulli,
+        W: Weights | Callable = normal,
+        Wfb: Weights | Callable = bernoulli,
+        bias: Weights | Callable = bernoulli,
+        input_dim: int | None = None,
+        feedback_dim: int | None = None,
         parallel: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         output_variables: Sequence[str] = ("A", "I", "Hi", "He"),
         diagnostics: bool = False,
         param_heterogeneity_cv: float = 0.0,
-        param_heterogeneity_seed: Optional[int] = None,
+        param_heterogeneity_seed: int | None = None,
         param_heterogeneity_mean_preserving: bool = True,
         geometry: str = "per_node",
-        couple_vars: Optional[Sequence[float]] = None,
+        couple_vars: Sequence[float] | None = None,
         delay_scheme: str = "substep",
         **kwargs,
     ):
@@ -141,7 +140,7 @@ class BioReservoir(Node):
             raise ValueError("couple_vars needs one weight per observed variable.")
         output_dim = (len(self.output_indices) * units) if units is not None else None
 
-        super(BioReservoir, self).__init__(
+        super().__init__(
             fb_initializer=partial(
                 initialize_feedback,
                 Wfb_init=Wfb,
@@ -272,12 +271,12 @@ class BioReservoir(Node):
         # Per-timestep timing accumulator — only populated when diagnostics=True.
         # Lists grow as _forward() is called and are cleared on reset().
         # Call get_timing_summary() to obtain statistics after a run.
-        self._timing: Dict[str, List[float]] = {
+        self._timing: dict[str, list[float]] = {
             "input_computation": [],
             "dde_solve": [],
         }
 
-    def get_timing_summary(self) -> Dict[str, Any]:
+    def get_timing_summary(self) -> dict[str, Any]:
         """Return per-component timing statistics accumulated since the last reset().
 
         Components (only populated when ``diagnostics=True``):
@@ -302,7 +301,7 @@ class BioReservoir(Node):
         """
         if not getattr(self, "diagnostics", False):
             return {}
-        out: Dict[str, Any] = {}
+        out: dict[str, Any] = {}
         for key, vals in self._timing.items():
             if not vals:
                 continue
@@ -458,7 +457,7 @@ class BioReservoir(Node):
                 # else: state unchanged, don't reset history (to_state == current_state)
 
         # Call parent reset to properly set _state and _state_proxy
-        super(BioReservoir, self).reset(to_state=to_state)
+        super().reset(to_state=to_state)
 
 
 def _initialize_per_node(

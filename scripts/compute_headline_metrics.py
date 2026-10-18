@@ -15,16 +15,16 @@ from __future__ import annotations
 import argparse
 
 import numpy as np
-from sklearn.metrics import (
-    classification_report,
-    confusion_matrix,
-    matthews_corrcoef,
-    cohen_kappa_score,
-    f1_score,
-    accuracy_score,
-)
-from sklearn.ensemble import RandomForestClassifier
 from joblib import Parallel, delayed
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    cohen_kappa_score,
+    confusion_matrix,
+    f1_score,
+    matthews_corrcoef,
+)
 
 from utils import config
 from utils.results import FoldArtifact
@@ -119,7 +119,7 @@ def run_task(task, runs_dir=RUNS_DIR):
     macro_f1 = f1_score(all_y_true, all_y_pred, average="macro")
     accuracy = accuracy_score(all_y_true, all_y_pred)
 
-    print(f"\n  Aggregated (all folds pooled):")
+    print("\n  Aggregated (all folds pooled):")
     print(f"    Macro F1  = {macro_f1:.4f}")
     print(f"    Accuracy  = {accuracy:.4f}")
     print(f"    MCC       = {mcc:.4f}")
@@ -169,7 +169,7 @@ def run_task(task, runs_dir=RUNS_DIR):
     CLASS_NAMES_2 = {"0": "Normal", "1": "Arrhythmia"}
     names = CLASS_NAMES_2 if len(class_labels) == 2 else CLASS_NAMES_5
 
-    print(f"\n  LaTeX rows:")
+    print("\n  LaTeX rows:")
     for cls in class_labels:
         d = class_data[cls]
         name = names.get(cls, f"Class {cls}")
@@ -179,7 +179,7 @@ def run_task(task, runs_dir=RUNS_DIR):
               f"${d['f1_mean']:.3f} \\pm {d['f1_std']:.3f}$ & "
               f"{d['support']} \\\\")
 
-    print(f"\n  Confusion matrix:")
+    print("\n  Confusion matrix:")
     print(f"  {cm}")
 
     return {

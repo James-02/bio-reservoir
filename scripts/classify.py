@@ -43,7 +43,6 @@ from utils import config
 from utils.logger import setup_logging
 from utils.preprocessing import load_ecg_data
 
-
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------

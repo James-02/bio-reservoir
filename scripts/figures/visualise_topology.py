@@ -15,8 +15,8 @@ import argparse
 from bioreservoir import distance_matrix
 from utils.visualisation import (
     plot_distance_histograms,
-    plot_weight_vs_distance_from_matrix,
     plot_spatial_topology,
+    plot_weight_vs_distance_from_matrix,
 )
 
 

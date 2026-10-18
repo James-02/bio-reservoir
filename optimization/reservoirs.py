@@ -8,7 +8,7 @@ ReservoirPy leaky ESN can now be evaluated through the same workflow.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Tuple
+from typing import Any
 
 from reservoirpy.node import Node
 from reservoirpy.nodes import Reservoir
@@ -35,7 +35,7 @@ def normalize_reservoir_type(value: str | None) -> str:
     return aliases[raw]
 
 
-def _build_bioreservoir_topology(params: Dict[str, Any], seed: int):
+def _build_bioreservoir_topology(params: dict[str, Any], seed: int):
     topo = params.get("topology_type", "distance")
     if topo == "distance":
         return distance_matrix(
@@ -66,7 +66,7 @@ def _build_bioreservoir_topology(params: Dict[str, Any], seed: int):
     )
 
 
-def build_reservoir(params: Dict[str, Any], seed: int) -> Tuple[Node, Dict[str, Any]]:
+def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, Any]]:
     """Build the requested reservoir and return reproducibility metadata."""
     reservoir_type = normalize_reservoir_type(params.get("reservoir_type", "bioreservoir"))
     units = int(params["units"])

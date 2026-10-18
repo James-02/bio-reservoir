@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any
 
 import numpy as np
 from numba import njit, prange
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # NOTE: These are the “biological model” parameters (i.e., independent of
 # solver settings like substeps). Keeping them here ensures all DDE logic and
 # defaults live in one module.
-DEFAULT_DDE_PARAMS: Dict[str, float] = {
+DEFAULT_DDE_PARAMS: dict[str, float] = {
     "CA": 1.0,
     "CI": 4.0,
     "del_": 1e-3,
@@ -40,7 +40,7 @@ DEFAULT_DDE_PARAMS: Dict[str, float] = {
 }
 
 
-def get_dde_params(**overrides: Any) -> Dict[str, Any]:
+def get_dde_params(**overrides: Any) -> dict[str, Any]:
     """Return a *full* DDE parameter dict with defaults overridden by kwargs.
 
     Example
@@ -52,7 +52,7 @@ def get_dde_params(**overrides: Any) -> Dict[str, Any]:
     - Adds/updates the derived parameter `decay`.
     - Does not include the time-varying `input_vec`.
     """
-    params: Dict[str, Any] = dict(DEFAULT_DDE_PARAMS)
+    params: dict[str, Any] = dict(DEFAULT_DDE_PARAMS)
     if overrides:
         params.update(overrides)
     params["decay"] = compute_decay_term(float(params["d"]), float(params["d0"]))
@@ -83,7 +83,7 @@ def compute_decay_term(d: float, d0: float) -> float:
     return 1.0 - (d / d0) ** 4
 
 
-def _freeze_param_key(params: Mapping[str, Any]) -> Tuple[float, ...]:
+def _freeze_param_key(params: Mapping[str, Any]) -> tuple[float, ...]:
     """Build a hashable cache key from the constant parameters."""
     # Keep order stable and explicit.
     return (
@@ -107,7 +107,7 @@ def _freeze_param_key(params: Mapping[str, Any]) -> Tuple[float, ...]:
     )
 
 
-_PREPARED_CACHE: Dict[Tuple[float, ...], "PreparedDDEParams"] = {}
+_PREPARED_CACHE: dict[tuple[float, ...], PreparedDDEParams] = {}
 
 
 def clear_prepared_cache() -> None:
@@ -374,7 +374,7 @@ def generate_node_params(
     n_nodes: int,
     cv: float,
     base_params: Mapping[str, Any],
-    seed: Optional[int] = None,
+    seed: int | None = None,
     mean_preserving: bool = True,
 ) -> np.ndarray:
     """Generate per-node kinetic parameter arrays with log-normal heterogeneity.
@@ -490,7 +490,7 @@ def solve_dde_rk4(
     times: np.ndarray,
     input_vec: np.ndarray,
     parallel: bool = False,
-    node_params: Optional[np.ndarray] = None,
+    node_params: np.ndarray | None = None,
     **dde_overrides: Any,
 ) -> np.ndarray:
     """RK4 integrator for delay differential equations.
@@ -608,7 +608,7 @@ def solve_dde_rk4(
 # ordinary differential equation: each stage uses its own Hi.
 
 
-def substep_delay_lags(delay: float, substeps: int) -> Optional[Tuple[float, float, float]]:
+def substep_delay_lags(delay: float, substeps: int) -> tuple[float, float, float] | None:
     """Delay, in substeps, seen by the RK4 stages at the start, middle and end of a substep.
 
     Returns ``None`` for a zero delay (the ordinary differential equation).
@@ -627,7 +627,7 @@ def substep_delay_lags(delay: float, substeps: int) -> Optional[Tuple[float, flo
 
 def substep_history(
     history_states: np.ndarray, delay: float, substeps: int
-) -> Tuple[np.ndarray, int]:
+) -> tuple[np.ndarray, int]:
     """Hi at substep resolution for :func:`solve_dde_substep`.
 
     The stored history (one entry per input step, the last at t = 0) is interpolated
@@ -764,9 +764,9 @@ def solve_dde_substep(
     input_vec: np.ndarray,
     substeps: int,
     parallel: bool = False,
-    node_params: Optional[np.ndarray] = None,
+    node_params: np.ndarray | None = None,
     **dde_overrides: Any,
-) -> Tuple[np.ndarray, int]:
+) -> tuple[np.ndarray, int]:
     """Advance the oscillators by one input step with the delay resolved at every substep.
 
     Parameters

@@ -82,3 +82,10 @@ target-version = "py310"
 [tool.ruff.lint]
 # Start lenient (errors, pyflakes, import-sort, pyupgrade, bugbear); tighten later.
 select = ["E", "F", "I", "UP", "B"]
+# Line length is left to the formatter: turn E501 on once the code base has been
+# formatted with `ruff format` (a separate, formatting-only change).
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# I is LuxI, as in the model equations.
+"bioreservoir/dde.py" = ["E741"]

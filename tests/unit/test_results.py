@@ -1,8 +1,9 @@
 """Unit tests for utils.results — FoldArtifact save/load round-trip."""
 
 import os
-import pytest
+
 import numpy as np
+import pytest
 
 from utils.analysis import Metrics
 from utils.results import FoldArtifact

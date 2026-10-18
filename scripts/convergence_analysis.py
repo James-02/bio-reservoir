@@ -88,13 +88,10 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
-from typing import Tuple
 
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-
 
 # ---------------------------------------------------------------------------
 # Exact piecewise analytical solution — NO numerical reference required
@@ -129,7 +126,7 @@ def mos_rk4(
     t_end: float,
     n_steps: int,
     tau: float = 1.0,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Solve y'(t) = -y(t) + 0.5*y(t-tau), y(t<=0) = 1.
 
@@ -243,7 +240,7 @@ def run_solver_validation(
     dict  keyed by delay label, each value a dict with keys:
         'substeps_list', 'validation' (ns → (rel_err, neg_violations)), 'ns_ref'.
     """
-    from bioreservoir import solve_dde_rk4, get_dde_params
+    from bioreservoir import get_dde_params, solve_dde_rk4
 
     if substeps_list is None:
         substeps_list = [24, 48, 64, 96]   # 64 = production default; 96 = reference
@@ -352,7 +349,8 @@ def plot_convergence(results: dict, save_path: str | None = None) -> None:
          "C1", "s", 1, r"$\mathcal{O}(h^1)$ reference"),
     ]
 
-    for ax, (key, title, color, marker, expected_order, ref_label) in zip(axes, configs):
+    for ax, (key, title, color, marker, expected_order, ref_label) in zip(axes, configs,
+                                                                           strict=False):
         h_vals = np.array([r[0] for r in results[key]])
         e_vals = np.array([r[1] for r in results[key]])
         valid  = e_vals > 1e-16
@@ -446,7 +444,8 @@ def plot_combined(
         ("fractional", r"Fractional delay ($\tau = \sqrt{2}$)",
          "C1", "s", 1, r"$\mathcal{O}(h^1)$ reference"),
     ]
-    for ax, (key, title, color, marker, expected_order, ref_label) in zip(axes[:2], configs):
+    for ax, (key, title, color, marker, expected_order, ref_label) in zip(axes[:2], configs,
+                                                                           strict=False):
         h_vals = np.array([r[0] for r in convergence_results[key]])
         e_vals = np.array([r[1] for r in convergence_results[key]])
         valid  = e_vals > 1e-16

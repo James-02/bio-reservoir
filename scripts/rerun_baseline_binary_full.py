@@ -19,12 +19,15 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import (
-    f1_score, accuracy_score, matthews_corrcoef, cohen_kappa_score,
+    accuracy_score,
     classification_report,
+    cohen_kappa_score,
+    f1_score,
+    matthews_corrcoef,
 )
+from sklearn.model_selection import StratifiedKFold
+from sklearn.neighbors import KNeighborsClassifier
 
 from utils import config
 from utils.preprocessing import load_ecg_data, standardize_data
@@ -130,7 +133,8 @@ def main():
         y_1d = Y.copy()
 
     print(f"CV pool: {len(X)} instances, {len(np.unique(y_1d))} classes")
-    print(f"Class distribution: {dict(zip(*np.unique(y_1d, return_counts=True)))}")
+    counts = dict(zip(*np.unique(y_1d, return_counts=True), strict=True))
+    print(f"Class distribution: {counts}")
     print(f"KNN hypers: {KNN_HYPERS}")
     print()
 
