@@ -66,6 +66,14 @@ Each entry is marked **[science]** if it changes a reported number, or
   `list --used`). Configs of the `v0.1` headline runs (`experiments/benchmarks/v0.1/`)
   are checked against the archived models and pools, and rerun in full as benchmarks
   (`pytest -m benchmark`).
+- [engineering] Tests of the optimisation package: the study runner, evaluation report
+  and plots, the readout, baseline and reservoir objectives (checked fold by fold against
+  direct scikit-learn computations), their commands, the command line and the
+  deployment and collection helpers; integration tests for a reservoir trial through the
+  study runner, pruned and failed trials, cross-validation, and the archived B1-B3 best
+  trials reproduced fold by fold. Line coverage of `optimization/` (unit and integration
+  tests) is 90-100% per module, up from 0-90%; the unused `classification.py` is not
+  tested.
 
 ### Fixed
 
