@@ -37,7 +37,7 @@ conventions and integrate with them rather than reinventing.
   (`reservoirs.py`), objectives, the CLI (`optimize.py`), and the deployment helpers
   (`deploy.py`, `collect.py`).
 - `utils/` — settings (`config.py`), preprocessing, analysis metrics, results,
-  held-out draws, logging, visualisation.
+  provenance, held-out draws, logging, visualisation.
 - `scripts/` — independent argparse CLIs for experiments, analysis, figures and
   housekeeping.
 - `tests/unit/` and `tests/integration/` — pytest suite; `tests/regression_reference.py`
@@ -75,6 +75,18 @@ All paths and settings come from `utils/config.py` (environment variable, then
 - **Runs**: `<study>-best[-<variant>]` for re-runs of a study's best trial (the
   `rerun-best` default), e.g. `P4-readout-binary-best-full`; script-driven runs use a
   descriptive prefix (`ablation-<condition>`, `heterogeneity-cv<cv>-seed<seed>`).
+
+## Experiments and traceability
+
+- Every result must be traceable to its code (git SHA, dirty flag), configuration,
+  data (checksums, beat IDs), software (package versions) and hardware (machine label,
+  CPU, RAM). Optuna trials store this as `env_*` attributes; other runs write a
+  `manifest.json` (`utils/provenance.py`).
+- New results go to `results/`; only frozen results move to `archive/<version>/`.
+- Metrics are stored in human-readable form; arrays (predictions, states) as `.npz`.
+- Check behaviour before and after every change with the regression tests, and
+  explain any change in a reported number. Use figures to check that the model
+  behaves as designed.
 
 ## Tests
 
