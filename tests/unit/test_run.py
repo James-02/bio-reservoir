@@ -74,8 +74,8 @@ class TestResolve:
         cfg["reservoir"]["params"]["noise_rate"] = 0.3  # not a reservoir parameter
         resolved = run_module.resolve(cfg)
         assert resolved["task"] == {"labels": "five-class", "rows": 24, "balance_classes": True,
-                                    "max_per_class": None, "scaler": "sequence_zscore",
-                                    "seed": 3}
+                                    "max_per_class": None, "cap_includes_test": True,
+                                    "scaler": "sequence_zscore", "seed": 3}
         assert resolved["cv"]["seed"] == resolved["reservoir"]["seed"] == 3
         assert resolved["features"] == {"aggregation": "final", "window": 1}
         assert resolved["outputs"] == {"save_states": False}
@@ -244,7 +244,7 @@ def test_load_task_subsamples_to_the_requested_rows(monkeypatch):
     monkeypatch.setattr("utils.preprocessing.load_ecg_data",
                         lambda **kwargs: (X[:40], Y[:40], X[40:], Y[40:]))
     task = {"labels": "five-class", "rows": 25, "balance_classes": True, "max_per_class": None,
-            "scaler": "sequence_zscore", "seed": 1}
+            "cap_includes_test": True, "scaler": "sequence_zscore", "seed": 1}
     first, labels, _ = LOAD_TASK(task)
     again, _, _ = LOAD_TASK(task)
     expected = np.sort(np.random.default_rng(1).permutation(60)[:25])

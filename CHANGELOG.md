@@ -80,6 +80,11 @@ Each entry is marked **[science]** if it changes a reported number, or
 - [engineering] Readout hyperparameters can be chosen by nested cross-validation inside
   each training fold (`readout.search`, `readout.inner_folds`); the choice per fold is
   recorded in `metrics.json`. The Phase 4 studies chose the readout on the reported folds.
+- [science] A per-class cap (`max_per_class`) caps each class's whole pool, test beats
+  included, as the Supporting Information states. The `v0.1` loader capped only the
+  training part, so capped classes kept the cap plus their test beats (4,175 instead of
+  4,015 per class at 5x). `cap_includes_test=False` (and the `v0.1` preset)
+  keeps the `v0.1` rule; the loader logs the beats per class.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or

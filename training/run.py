@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULTS: dict[str, dict[str, Any]] = {
     "task": {"labels": "five-class", "rows": 4015, "balance_classes": True,
-             "max_per_class": None, "scaler": "sequence_zscore"},
+             "max_per_class": None, "cap_includes_test": True, "scaler": "sequence_zscore"},
     "features": {"aggregation": "final", "window": 1},
     "cv": {"folds": 5, "primary_average": "macro", "noise_rate": 0.0, "noise_ratio": 0.0,
            "profile": False},
@@ -71,6 +71,7 @@ SCALAR_METRICS = ("f1", "f1_macro", "f1_weighted", "accuracy", "precision", "rec
 # Settings that reproduce the v0.1 code path; explicit config values win.
 PRESETS: dict[str, dict[str, dict[str, Any]]] = {
     "v0.1": {
+        "task": {"cap_includes_test": False},
         "readout": {"scale": False},
     },
 }
@@ -266,6 +267,7 @@ def load_task(task: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, list[Path]]
         rows=rows, balance_classes=bool(task["balance_classes"]),
         max_per_class=task["max_per_class"], binary=binary, noise_rate=0.0, noise_ratio=0.0,
         scaler_type=str(task["scaler"]), seed=seed, preserve_split=False,
+        cap_includes_test=bool(task.get("cap_includes_test", True)),
     )
     X = np.concatenate((X_train, X_test), axis=0)
     Y = np.concatenate((Y_train, Y_test), axis=0)

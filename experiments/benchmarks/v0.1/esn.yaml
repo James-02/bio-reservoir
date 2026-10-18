@@ -9,6 +9,7 @@ task:
   rows: 4015
   balance_classes: true
   max_per_class: null
+  cap_includes_test: false
   scaler: sequence_zscore
   seed: 6337
 reservoir:
