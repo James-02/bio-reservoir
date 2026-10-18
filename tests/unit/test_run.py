@@ -1,6 +1,7 @@
 """Unit tests for the run framework (training.run and training.compare)."""
 
 import argparse
+import hashlib
 import importlib
 import json
 import logging
@@ -10,6 +11,7 @@ import numpy as np
 import optuna
 import pytest
 import yaml
+from sklearn.metrics import f1_score
 
 from training import compare as compare_module
 from training import run as run_module
@@ -360,6 +362,114 @@ class TestCompare:
         delta, low, high = compare_module.bootstrap_delta(y, pred_a, pred_b, n_boot=300)
         assert low < delta < high and delta > 0
         assert compare_module.bootstrap_delta(y, pred_a, pred_a, n_boot=50) == (0.0, 0.0, 0.0)
+
+    def test_scores_average_over_the_classes_of_the_test_labels(self):
+        y = np.array([0, 0, 1, 1])
+        pred = np.array([0, 2, 1, 1])
+        assert compare_module._scores(y, pred)["f1_macro"] == pytest.approx(
+            f1_score(y, pred, labels=[0, 1], average="macro"))
+        low, high = compare_module.bootstrap_ci(y, y, n_boot=50)
+        assert low == high == 1.0
+
+
+# ---------------------------------------------------------------------------
+# Held-out evaluation
+# ---------------------------------------------------------------------------
+
+def _three_classes(n_per_class=10, steps=8, seed=0):
+    rng = np.random.default_rng(seed)
+    t = np.linspace(0.0, 1.0, steps)
+    shapes = (t, 1.0 - t, np.sin(np.pi * t))
+    X = np.concatenate([s + 0.3 * rng.normal(size=(n_per_class, steps)) for s in shapes])
+    return X[..., None], np.eye(3)[np.repeat([0, 1, 2], n_per_class)][:, None, :]
+
+
+class TestHeldOutEvaluation:
+    """``test: {split}``: the readout is fitted on the whole pool and scored on the split."""
+
+    @pytest.fixture
+    def split(self, monkeypatch):
+        from utils import heldout
+
+        X, Y = _three_classes()
+        X_split, Y_split = _three_classes(n_per_class=6, seed=1)
+        keep = Y_split[:, 0, 2] == 0  # the split has no beats of class 2
+        X_split, Y_split = X_split[keep], Y_split[keep]
+        ids = np.arange(100, 100 + len(X_split))
+        calls = []
+        monkeypatch.setattr(run_module, "load_task", lambda task: (X, Y, []))
+        monkeypatch.setattr(heldout, "load_split", lambda name, scaler_type: (
+            calls.append((name, scaler_type)) or (X_split, Y_split, ids)))
+        return X, X_split, Y_split, ids, calls
+
+    def test_the_split_is_scored_after_fitting_on_the_whole_pool(self, tmp_path, split,
+                                                                isolated):
+        X, _, Y_split, ids, calls = split
+        run_dir = _execute(_config(test={"split": "validation-1"}), tmp_path / "run")
+        assert calls == [("validation-1", "sequence_zscore")]
+        assert [p.name for p in run_dir.glob("fold-*.npz")] == ["fold-0.npz"]
+        with np.load(run_dir / "fold-0.npz", allow_pickle=True) as fold:
+            assert len(fold["Y_train"]) == len(X)
+            np.testing.assert_array_equal(fold["Y_test"], Y_split)
+            np.testing.assert_array_equal(fold["test_index"], ids)
+            y_true, y_pred = (run_module._classes(fold[k]) for k in ("Y_test", "Y_pred"))
+        metrics = json.loads((run_dir / "metrics.json").read_text())
+        assert metrics["n_folds"] == 1
+        assert metrics["test"]["split"] == "validation-1"
+        assert metrics["test"]["n_beats"] == len(ids) and metrics["test"]["classes"] == [0, 1]
+        assert metrics["mean"]["f1"] == pytest.approx(
+            f1_score(y_true, y_pred, labels=[0, 1], average="macro"))
+        low, high = metrics["test"]["f1_macro_ci95"]
+        assert 0.0 <= low <= high <= 1.0
+        assert metrics["summary"]["f1_macro_ci95_low"] == low
+        manifest = json.loads((run_dir / "manifest.json").read_text())
+        assert manifest["beat_ids_sha256"] == hashlib.sha256(ids.astype(np.int64).tobytes()
+                                                             ).hexdigest()
+        assert manifest["spec"]["test"] == {"split": "validation-1"}
+        (entry,) = provenance.load_registry(isolated / "registry.jsonl").values()
+        assert entry["evaluation"] == "validation-1"
+
+    def test_two_runs_on_a_split_are_paired_by_beat(self, tmp_path, split):
+        a = _execute(_config(test={"split": "validation-1"}), tmp_path / "a")
+        b = _execute(_config(test={"split": "validation-1"}), tmp_path / "b")
+        result = compare_module.compare(a, b, n_boot=50)
+        assert result["paired"] and result["paired_by"] == "beat position"
+        assert result["agreement"] == 1.0
+
+    def test_the_test_split_needs_final_test(self, tmp_path, split):
+        with pytest.raises(SystemExit, match="final test set"):
+            _execute(_config(test={"split": "test"}), tmp_path / "refused")
+        assert not (tmp_path / "refused").exists()
+        run_dir = _execute(_config(test={"split": "test"}), tmp_path / "run", final_test=True)
+        assert json.loads((run_dir / "metrics.json").read_text())["test"]["split"] == "test"
+
+    def test_split_beats_in_the_pool_are_refused(self, tmp_path, split, monkeypatch):
+        from utils import heldout
+
+        X, X_split, Y_split, ids, _ = split
+        Y = np.eye(3)[np.zeros(2, dtype=int)][:, None, :]
+        monkeypatch.setattr(heldout, "load_split", lambda name, scaler_type: (
+            np.concatenate([X_split, X[:2]]), np.concatenate([Y_split, Y]),
+            np.arange(len(ids) + 2)))
+        with pytest.raises(ValueError, match="2 beats of the held-out split"):
+            _execute(_config(test={"split": "validation-2"}), tmp_path / "run")
+
+    @pytest.mark.parametrize("change, message", [
+        ({"test": {"split": "draw-3"}}, "Unknown held-out split"),
+        ({"test": {"split": "test"}, "task": {"labels": "binary"}}, "five-class"),
+    ])
+    def test_invalid_splits_are_rejected(self, change, message):
+        with pytest.raises(ValueError, match=message):
+            run_module.resolve(_config(**change))
+
+    def test_a_split_needs_a_simulated_reservoir(self):
+        with pytest.raises(ValueError, match="states_from"):
+            run_module.resolve({"name": "x", "reservoir": {"states_from": "run"},
+                                "readout": {"classifier": "KNN"},
+                                "test": {"split": "validation-1"}})
+
+    def test_cross_validated_configs_have_no_test_section(self):
+        assert "test" not in run_module.resolve(_config())
 
 
 def _two_scales(n=60, seed=0):

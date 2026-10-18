@@ -158,9 +158,13 @@ def _append(entry: dict[str, Any], registry: Path) -> None:
 
 
 def register(manifest: dict[str, Any], run_dir: Path, *, status: str = "ok",
-             metrics: dict[str, float] | None = None,
+             metrics: dict[str, float] | None = None, evaluation: str | None = None,
              registry: Path = REGISTRY_FILE) -> dict[str, Any]:
-    """Append a run to the registry."""
+    """Append a run to the registry.
+
+    *evaluation* names the held-out split a run was evaluated on (``None`` for a
+    cross-validated run).
+    """
     if status not in STATUSES:
         raise ValueError(f"status must be one of {STATUSES}")
     entry = {
@@ -169,6 +173,8 @@ def register(manifest: dict[str, Any], run_dir: Path, *, status: str = "ok",
         "citable": manifest["citable"], "status": status, "metrics": metrics or {},
         "path": _relative(run_dir), "registered_utc": _utc(),
     }
+    if evaluation:
+        entry["evaluation"] = evaluation
     _append(entry, registry)
     return entry
 
@@ -261,9 +267,10 @@ def main(argv: Sequence[str] | None = None) -> None:
                     args.used and not entry.get("uses")):
                 continue
             flag = "" if entry.get("citable") else "  (not citable)"
+            split = f"  split: {entry['evaluation']}" if entry.get("evaluation") else ""
             uses = f"  uses: {'; '.join(entry['uses'])}" if entry.get("uses") else ""
             print(f"{run_id}  {entry.get('status')}  {json.dumps(entry.get('metrics', {}))}"
-                  f"{flag}{uses}")
+                  f"{split}{flag}{uses}")
     elif args.command == "mark":
         mark(args.run_id, args.status, by=args.by, note=args.note, uses=args.uses)
     else:

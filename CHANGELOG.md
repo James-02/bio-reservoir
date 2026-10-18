@@ -57,11 +57,20 @@ Each entry is marked **[science]** if it changes a reported number, or
   needed, five-class and binary caches) and prints content checksums;
   `tests/integration/test_dataset.py` checks the datasets and the `v0.1` CV pools against
   the `v0.1` checksums.
-- [engineering] Held-out beat draws: `python -m utils.heldout --write` draws balanced sets
-  of beats that no `v0.1` optimisation study used and records their beat IDs and checksums
-  in `experiments/heldout/draws.json`; `--check` rebuilds and verifies them. Draws 1 and 2
-  have been evaluated during model development; draw 3 is kept for the final evaluation
-  and has not been evaluated.
+- [engineering] Held-out splits: `python -m utils.heldout --write` draws balanced sets of
+  N, S, V and Q beats that no `v0.1` optimisation study used and records their beat IDs
+  and checksums in `data/splits/heldout.json` (`data/splits/` is tracked, the rest of
+  `data/` is not); `--check` rebuilds and verifies them. The splits `validation-1` and
+  `validation-2` (draws 1 and 2) have been evaluated during model development; `test`
+  (draw 3) is the final test set and has not been evaluated.
+- [engineering] Held-out evaluation: a run config with `test: {split: <name>}` fits the
+  readout on the whole pool and evaluates it on the split (`utils.heldout.load_split`
+  loads its beats, scaled like the pool): macro F1 over the split's classes (it has no F
+  beats) with a bootstrap 95% CI, the split's beat IDs in the manifest and the split in
+  the registry. The run refuses split beats that are in its pool, and the `test` split
+  needs `--final-test`. `evaluate_performance` and `run_fold` take the classes to average
+  over, and `compare` averages over the classes of the test labels (unchanged for
+  cross-validated runs).
 - [engineering] Run manifests (code version, data and lock-file checksums, environment)
   and an append-only run registry (`registry.jsonl`, `python -m utils.provenance`).
 - [engineering] Unit tests of the current behaviour of the model, training and
