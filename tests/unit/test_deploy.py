@@ -1,9 +1,14 @@
 """Unit tests for the deployment helpers: host details only come from config, dry runs
 execute nothing, and remote runs are labelled with the host label and git SHA."""
 
+import json
+import logging
+import subprocess
+
 import pytest
 
 from optimization import collect, deploy
+from utils import config
 
 
 @pytest.fixture
@@ -92,3 +97,229 @@ def test_collect_reads_results_optuna(settings):
     source, destination = deployer.commands[-1][-2:]
     assert source == "runner@192.0.2.10:/srv/bioreservoir/results/optuna/optuna-P2-distance.db"
     assert destination.endswith("/results/optuna/")
+
+
+@pytest.fixture
+def quiet(monkeypatch):
+    """main() configures logging for the whole process."""
+    monkeypatch.setattr(deploy, "setup_logging", lambda **kwargs: None)
+    monkeypatch.setattr(collect, "setup_logging", lambda **kwargs: None)
+
+
+def _answer(text, returncode=0):
+    """A subprocess.run stand-in that records commands and returns *text*."""
+    commands = []
+
+    def run(cmd, **kwargs):
+        commands.append(cmd)
+        return subprocess.CompletedProcess(cmd, returncode, stdout=text, stderr="boom")
+
+    run.commands = commands
+    return run
+
+
+class TestDeployer:
+    def test_sync_replaces_the_code_and_adds_missing_data(self, settings):
+        deployer = deploy.Deployer(settings, dry_run=True)
+        deployer.sync("host1")
+        mkdir, *copies = deployer.commands
+        assert mkdir[-1] == "mkdir -p /srv/bioreservoir/logs /srv/bioreservoir/results"
+        assert len(copies) == len(deploy.SYNC_SOURCES) + 1
+        assert all("--delete" in cmd for cmd in copies[:-1])
+        assert [cmd[-1] for cmd in copies[:-1]] == [
+            f"runner@node1.example.org:/srv/bioreservoir/{source}"
+            for source in deploy.SYNC_SOURCES]
+        assert "--ignore-existing" in copies[-1]
+        assert copies[-1][-1] == "runner@node1.example.org:/srv/bioreservoir/data/"
+
+    def test_push_copies_results_to_the_same_place(self, settings, monkeypatch, tmp_path):
+        monkeypatch.setattr(deploy.config, "PROJECT_ROOT", tmp_path)
+        (tmp_path / "results" / "optuna").mkdir(parents=True)
+        (tmp_path / "results" / "optuna" / "optuna-x.db").write_text("db")
+        deployer = deploy.Deployer(settings, dry_run=True)
+        deployer.push("host1", ["results/optuna/optuna-x.db", "results/optuna"])
+        file_copy, folder_copy = (cmd for cmd in deployer.commands if cmd[0] == "rsync")
+        assert file_copy[-1].endswith(":/srv/bioreservoir/results/optuna/optuna-x.db")
+        assert folder_copy[-2].endswith("/results/optuna/")
+        for path in ("results/missing", "/etc/hosts", "results/../config.env"):
+            with pytest.raises(SystemExit):
+                deployer.push("host1", [path])
+
+    def test_the_venv_needs_a_supported_python_and_can_use_a_proxy(self, settings,
+                                                                     monkeypatch):
+        monkeypatch.setenv("BIORESERVOIR_DEPLOY_PIP_PROXY", "http://proxy.example:3128")
+        deployer = deploy.Deployer(deploy.load_settings(), dry_run=True)
+        deployer.setup_venv("host1")
+        script = deployer.commands[-1][-1]
+        assert "(3, 10) <= v <= (3, 12)" in script
+        assert "--proxy http://proxy.example:3128" in script
+        assert "/srv/bioreservoir/venv/bin/pip install" in script
+
+    def test_services_are_paused_and_started_only_when_configured(self, settings,
+                                                                  monkeypatch):
+        deployer = deploy.Deployer(settings, dry_run=True)
+        deployer.stop_service("host1")
+        deployer.start_service("host1")
+        assert deployer.commands == []
+        monkeypatch.setenv("BIORESERVOIR_DEPLOY_SERVICE", "worker.service")
+        deployer = deploy.Deployer(deploy.load_settings(), dry_run=True)
+        deployer.stop_service("host1")
+        deployer.start_service("host1")
+        stop, start = (cmd[-1] for cmd in deployer.commands)
+        assert stop.startswith("systemctl stop worker.service")
+        assert start.startswith("systemctl start worker.service")
+
+    def test_cleanup_stops_the_session_and_removes_the_workspace(self, settings):
+        deployer = deploy.Deployer(settings, dry_run=True)
+        deployer.cleanup("host1")
+        script = deployer.commands[-1][-1]
+        assert "pkill -f /srv/bioreservoir/venv/bin/python" in script
+        assert "rm -rf -- /srv/bioreservoir" in script
+
+    def test_remote_commands_report_their_output(self, settings, monkeypatch):
+        run = _answer("alive\n")
+        monkeypatch.setattr(deploy.subprocess, "run", run)
+        deployer = deploy.Deployer(settings)
+        assert deployer.session_alive("host1") is True
+        assert deployer.rsync("host1", "a", "b") is True
+        assert run.commands[0][:2] == ["ssh", "-o"] and run.commands[1][0] == "rsync"
+        assert deploy.Deployer(settings, dry_run=True).session_alive("host1") is False
+
+    def test_failed_copies_stop_or_warn(self, settings, monkeypatch, caplog):
+        monkeypatch.setattr(deploy.subprocess, "run", _answer("", returncode=1))
+        deployer = deploy.Deployer(settings)
+        with pytest.raises(SystemExit, match=r"\[host1\] rsync failed: boom"):
+            deployer.rsync("host1", "a", "b")
+        with caplog.at_level(logging.WARNING, logger="deploy"):
+            assert deployer.rsync("host1", "a", "b", check=False) is False
+        assert any("boom" in message for message in caplog.messages)
+
+
+class TestJobs:
+    def test_commands_are_named_after_the_label(self):
+        assert deploy.command_jobs(["echo a"], None) == [("run", "echo a")]
+        assert deploy.command_jobs(["a", "b"], "batch") == [("batch-1", "a"), ("batch-2", "b")]
+        with pytest.raises(SystemExit, match="--label"):
+            deploy.command_jobs(["a"], "bad label")
+
+    def test_baseline_studies_are_named_with_study_name(self):
+        assert deploy.study_jobs(["B1-balanced"], 8, [], study_type="baseline") == [(
+            "B1-balanced", "python -m optimization.optimize research --type baseline "
+            '--study_name B1-balanced --processes "8"')]
+        with pytest.raises(SystemExit, match="Invalid study"):
+            deploy.study_jobs(["bad;name"], None, [], study_type="readout")
+
+    def test_requirements_name_each_problem(self):
+        problems = deploy.check_requirements({"os_family": "debian", "os_name": "Debian",
+                                              "os_version": "12",
+                                              "configured_python": "3.9.2"})
+        assert len(problems) == 2
+        assert "RHEL 9" in problems[0] and "3.9.2" in problems[1]
+
+
+class TestMonitoring:
+    INFO = {"os_name": "Rocky Linux", "os_version": "9.6", "os_family": "rocky rhel centos",
+            "kernel": "5.14.0", "arch": "x86_64", "cpu_model": "CPU", "sockets": 2,
+            "physical_cores": 48, "logical_cpus": 96, "ram_gb": 754.3,
+            "configured_python": "3.12.1", "pythons": {}}
+
+    @staticmethod
+    def _deployer(settings, monkeypatch, answer):
+        deployer = deploy.Deployer(settings)
+        monkeypatch.setattr(deployer, "ssh", lambda host, script, capture=False, check=True:
+                            answer)
+        return deployer
+
+    def test_errors_are_logged_per_host(self, caplog):
+        def action(host):
+            if host == "bad":
+                raise SystemExit("unreachable")
+            return host.upper()
+
+        with caplog.at_level(logging.ERROR, logger="deploy"):
+            assert deploy.for_hosts(["good", "bad"], action) == {"good": "GOOD", "bad": None}
+        assert any("[bad] failed" in message for message in caplog.messages)
+
+    def test_the_inventory_is_recorded_per_host(self, settings, monkeypatch, capsys):
+        deployer = self._deployer(settings, monkeypatch, "noise\n" + json.dumps(self.INFO))
+        deploy.inventory(deployer, ["host1"])
+        record = json.loads((config.metrics_dir() / "hosts.json").read_text())
+        assert record["hosts"]["host1"]["problems"] == []
+        assert record["hosts"]["host1"]["logical_cpus"] == 96
+        assert "48 cores / 96 threads" in capsys.readouterr().out
+        deploy.inventory(deploy.Deployer(settings, dry_run=True), ["host2"])
+        assert set(json.loads((config.metrics_dir() / "hosts.json").read_text())["hosts"]) == {
+            "host1"}
+
+    def test_status_progress_logs_and_resets_are_printed(self, settings, monkeypatch, capsys):
+        deploy.show_status(self._deployer(settings, monkeypatch, "running|1h05m|trial 12"),
+                           ["host1"])
+        assert "running" in capsys.readouterr().out
+        deploy.show_progress(self._deployer(settings, monkeypatch,
+                                            "P2-distance|10|2|1|0|0.9047\nnot a row"),
+                             ["host1"], [])
+        out = capsys.readouterr().out
+        assert "P2-distance" in out and "0.9047" in out and "not a row" not in out
+        deploy.show_logs(self._deployer(settings, monkeypatch, "--- run-a.log\nline"),
+                         ["host1"], 5)
+        assert "=== host1 ===" in capsys.readouterr().out
+        deploy.reset_running(self._deployer(settings, monkeypatch, "P2-distance: 2 RUNNING"),
+                             ["host1"], ["P2-distance"])
+        assert "2 RUNNING" in capsys.readouterr().out
+
+    def test_waiting_collects_when_the_sessions_end(self, settings, monkeypatch):
+        collected = []
+        monkeypatch.setattr(collect, "collect_host",
+                            lambda deployer, host, **kwargs: collected.append(host))
+        deploy.wait_and_collect(deploy.Deployer(settings, dry_run=True), ["host1", "host2"],
+                                poll_s=0)
+        assert sorted(collected) == ["host1", "host2"]
+
+
+class TestMain:
+    @pytest.mark.parametrize("argv", [
+        ["--study", "P2-distance"],
+        ["--host", "host1", "--host", "host2", "--study", "P2-distance"],
+        ["--host", "host1"],
+        ["--host", "host1", "--study", "P2-distance", "--run", "echo"],
+        ["--reset-running"],
+        ["--host", "host1", "--run", "echo", "--", "--trials", "3"],
+    ])
+    def test_incomplete_requests_are_rejected(self, settings, quiet, argv):
+        with pytest.raises(SystemExit):
+            deploy.main([*argv, "--dry-run"])
+
+    def test_a_dry_run_launch_goes_through_every_step(self, settings, quiet, caplog):
+        with caplog.at_level(logging.INFO, logger="deploy"):
+            deploy.main(["--host", "host1", "--study", "P2-distance", "--dry-run", "--",
+                         "--trials", "5"])
+        assert any("launching: P2-distance" in message for message in caplog.messages)
+
+    def test_cleanup_asks_first(self, settings, quiet, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda prompt: "n")
+        with pytest.raises(SystemExit, match="aborted"):
+            deploy.main(["--cleanup", "--host", "host1"])
+
+
+class TestCollect:
+    def test_runs_and_logs_are_collected_with_the_databases(self, settings):
+        deployer = deploy.Deployer(settings, dry_run=True)
+        collect.collect_host(deployer, "host1", runs=["P2-distance-best"], logs=True)
+        databases, run, logs = deployer.commands
+        assert "--include=optuna-*.db" in databases
+        assert run[-2] == ("runner@node1.example.org:"
+                           "/srv/bioreservoir/results/runs/P2-distance-best/")
+        assert "--include=*.log" in logs and logs[-1].endswith("/logs/remote/host1/")
+        with pytest.raises(SystemExit, match="Invalid"):
+            collect.collect_host(deployer, "host1", runs=["../elsewhere"])
+
+    def test_remote_databases_are_listed(self, settings, quiet, monkeypatch, capsys):
+        monkeypatch.setattr(deploy.Deployer, "ssh",
+                            lambda self, host, script, capture=False, check=True:
+                            "optuna-P2-distance.db\nnotes.txt")
+        collect.main(["--list", "--host", "host1"])
+        out = capsys.readouterr().out
+        assert "optuna-P2-distance.db" in out and "notes.txt" not in out
+
+    def test_a_dry_run_collects_from_every_host(self, settings, quiet):
+        collect.main(["--dry-run", "--study", "P2-distance"])
