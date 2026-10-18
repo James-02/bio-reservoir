@@ -616,11 +616,12 @@ def substep_delay_lags(delay: float, substeps: int) -> Optional[Tuple[float, flo
     lag = float(delay) * int(substeps)
     if lag == 0.0:
         return None
-    if lag < 1.0:
+    if lag < 1.0 - 1e-9:
         raise ValueError(
             f"A delay of {delay} input steps is shorter than one substep (1/{substeps} "
             "of a step); use 0 or a delay of at least one substep."
         )
+    lag = max(lag, 1.0)  # a delay of one substep up to rounding
     return lag, lag - 0.5, lag - 1.0
 
 

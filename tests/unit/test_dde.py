@@ -484,6 +484,9 @@ class TestDelayResolution:
 
     def test_lags_between_substeps_are_interpolated(self):
         assert dde.substep_delay_lags(1.3, 64) == pytest.approx((83.2, 82.7, 82.2))
+        # One substep up to rounding (1/49 * 49 < 1 in floating point) is one substep.
+        assert 1 / 49 * 49 < 1.0
+        assert dde.substep_delay_lags(1 / 49, 49) == (1.0, 0.5, 0.0)
         ring = np.array([[10.0, 11.0, 12.0, 13.0, 14.0]])  # entry 4 is the current one
         assert dde._ring_value(ring, 0, 4, 5, 1, 0.25) == pytest.approx(12.75)
         ring = np.array([[14.0, 15.0, 11.0, 12.0, 13.0]])  # current entry 1, older ones wrap
