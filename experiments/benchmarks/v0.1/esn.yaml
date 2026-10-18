@@ -11,6 +11,7 @@ task:
   max_per_class: null
   cap_includes_test: false
   scaler: sequence_zscore
+  data_file: null
   seed: 6337
 reservoir:
   type: esn

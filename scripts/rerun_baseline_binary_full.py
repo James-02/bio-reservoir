@@ -8,6 +8,10 @@ instances), matching the headline binary task size.
 Usage:
     python scripts/rerun_baseline_binary_full.py
     python scripts/rerun_baseline_binary_full.py --rows 10000 --folds 3 --workers 3
+    python scripts/rerun_baseline_binary_full.py --data-file ecg_archive/binary_ecg_data.npz
+
+The v0.1 result read the v0.1 binary dataset file (``--data-file``; see
+``experiments/benchmarks/v0.1/binary-full.yaml``).
 """
 
 import argparse
@@ -92,8 +96,17 @@ def main():
                         help="Parallel fold workers.")
     parser.add_argument("--seed", type=int, default=SEED,
                         help="Random seed for reproducibility.")
+    parser.add_argument("--data-file", default=None,
+                        help="Binary dataset file relative to the data folder "
+                             "(default: the prepared ecg/binary_ecg_data.npz).")
     args = parser.parse_args()
 
+    source = {}
+    if args.data_file:
+        path = config.data_dir() / args.data_file
+        if not path.is_file():
+            raise SystemExit(f"--data-file not found: {path}")
+        source = {"data_dir": str(path.parent), "binary_save_file": path.name}
     print("Loading full binary dataset...")
     X_train, Y_train, X_test, Y_test = load_ecg_data(
         rows=args.rows,
@@ -104,6 +117,7 @@ def main():
         seed=args.seed,
         noise_rate=0.0,
         noise_ratio=0.0,
+        **source,
     )
 
     # Combine train+test for CV pool

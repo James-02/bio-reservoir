@@ -1,9 +1,10 @@
 # A v0.1 headline run, resolved from the archived study databases with
 # python -m training.run resolve (see the source fields). Reference: the archived run.
-# Its folds cannot be rebuilt: the loader's pool has the same size and per-fold class
-# counts, but the archived fold labels come in an order that no pool it draws
-# reproduces, so the benchmark compares mean F1 (rerun 0.9617 +/- 0.0026, archived
-# 0.9613 +/- 0.0018).
+# The v0.1 binary runs read a pre-balanced pool of 37,714 beats (all 18,857 arrhythmia
+# beats and 18,857 normal beats) written by an earlier version of the loader and kept
+# with the v0.1 results as data/ecg_archive/binary_ecg_data.npz. The preparation command
+# now writes all 109,446 beats, which gives a different pool, so the task names that file
+# (data_file, data_sha256).
 name: v0.1-binary-full
 description: 'Binary headline as submitted (main text 0.961): the P2-distance trial
   416 reservoir on the full balanced binary pool (37,714 beats) with the P4-readout-binary
@@ -16,6 +17,8 @@ task:
   max_per_class: null
   cap_includes_test: false
   scaler: sequence_zscore
+  data_file: ecg_archive/binary_ecg_data.npz
+  data_sha256: d0a083a8002b6567b02ae8fd18d9328f4a22cbabacc4669dca0ff4cf4b3782ed
   seed: 6337
 reservoir:
   type: bioreservoir

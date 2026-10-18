@@ -165,6 +165,16 @@ coupling the hyperparameters were tuned for, so the studies need re-tuning.
   `scripts/analysis/drive_bounds.py`) splits the drive into the input term and the
   coupling through each observed variable. For the `v0.1` balanced headline reservoir the
   coupling through LuxI (I) makes up 98.8% of the drive, the input 1.2% and He 0.009%.
+- [engineering] Binary runs can reproduce `v0.1`. The `v0.1` binary runs read the binary
+  dataset file the hosts had then: a pre-balanced pool of 37,714 beats (all 18,857
+  arrhythmia beats and 18,857 normal beats) written by an earlier loader. The preparation
+  command writes all 109,446 beats instead, from which the loader draws other normal
+  beats, so binary folds and scores differed from the archive (binary headline 0.9617
+  instead of 0.9613, no-reservoir B3-binary 0.9308 instead of 0.9355). A task can name
+  its dataset file (`task.data_file`, checked against `task.data_sha256`); the binary
+  headline benchmark reads the `v0.1` file and is compared fold by fold like the other
+  benchmarks, and `tests/integration/test_dataset.py` checks the `v0.1` binary pool
+  against that file.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or

@@ -41,7 +41,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULTS: dict[str, dict[str, Any]] = {
     "task": {"labels": "five-class", "rows": 4015, "balance_classes": True,
-             "max_per_class": None, "cap_includes_test": True, "scaler": "sequence_zscore"},
+             "max_per_class": None, "cap_includes_test": True, "scaler": "sequence_zscore",
+             "data_file": None},
     "features": {"aggregation": "final", "window": 1},
     "cv": {"folds": 5, "primary_average": "macro", "noise_rate": 0.0, "noise_ratio": 0.0,
            "profile": False},
@@ -267,23 +268,38 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def load_task(task: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, list[Path]]:
-    """The beat pool of a task: (X, Y, source files), as in ``optimize rerun-best``."""
+    """The beat pool of a task: (X, Y, source files), as in ``optimize rerun-best``.
+
+    The beats come from the prepared dataset (``ecg/ecg_data.npz`` or
+    ``ecg/binary_ecg_data.npz`` in the data folder), or from ``task.data_file`` (relative
+    to the data folder) when it is set. ``task.data_sha256``, when set, must be the file's
+    SHA-256.
+    """
     from utils.preprocessing import load_ecg_data
 
     binary = task["labels"] == "binary"
     rows, seed = int(task["rows"]), int(task["seed"])
+    cache = settings.data_dir() / "ecg" / ("binary_ecg_data.npz" if binary else "ecg_data.npz")
+    source: dict[str, str] = {}
+    if task.get("data_file"):
+        cache = settings.data_dir() / task["data_file"]
+        if not cache.is_file():
+            raise FileNotFoundError(f"task.data_file not found: {cache}")
+        source = {"data_dir": str(cache.parent),
+                  "binary_save_file" if binary else "save_file": cache.name}
     X_train, Y_train, X_test, Y_test = load_ecg_data(
         rows=rows, balance_classes=bool(task["balance_classes"]),
         max_per_class=task["max_per_class"], binary=binary, noise_rate=0.0, noise_ratio=0.0,
         scaler_type=str(task["scaler"]), seed=seed, preserve_split=False,
-        cap_includes_test=bool(task.get("cap_includes_test", True)),
+        cap_includes_test=bool(task.get("cap_includes_test", True)), **source,
     )
+    if task.get("data_sha256") and provenance.sha256_file(cache) != task["data_sha256"]:
+        raise ValueError(f"{cache} does not match task.data_sha256.")
     X = np.concatenate((X_train, X_test), axis=0)
     Y = np.concatenate((Y_train, Y_test), axis=0)
     if len(X) > rows:
         idx = np.sort(np.random.default_rng(seed).permutation(len(X))[:rows])
         X, Y = X[idx], Y[idx]
-    cache = settings.data_dir() / "ecg" / ("binary_ecg_data.npz" if binary else "ecg_data.npz")
     return X, Y, [cache] if cache.is_file() else []
 
 

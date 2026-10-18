@@ -1,7 +1,7 @@
 """The v0.1 headline benchmark configs (experiments/benchmarks/v0.1) against the archive.
 
 Integration checks (need the archive and the dataset): each config builds the archived
-reservoir and readout and loads the archived beat pool, and refitting the balanced
+reservoir and readout and rebuilds the archived folds, and refitting the balanced
 readout on the archived states reproduces the Phase 4 study's value. The full reruns are
 benchmarks (``pytest -m benchmark`` on a capable host): each config runs through the
 runner and is compared fold by fold with its archived run.
@@ -16,6 +16,7 @@ import pytest
 
 from optimization.reservoirs import build_reservoir
 from training import compare, run
+from training.cross_validate import _iter_folds
 from utils import config
 
 CONFIGS = sorted((Path(__file__).resolve().parents[2] / "experiments" / "benchmarks" / "v0.1")
@@ -27,10 +28,6 @@ NODE_KEYS = {
     "esn": ("units", "lr", "sr", "input_scaling", "noise_in", "noise_rc", "rc_connectivity",
             "input_connectivity", "bias_scaling"),
 }
-# Archived runs whose folds the loader cannot rebuild, compared by mean F1 instead: the
-# loader's binary-full pool has the archived size and per-fold class counts, but the
-# archived fold labels come in an order no pool it draws reproduces.
-UNPAIRED = {"binary-full"}
 
 
 def _reference_fold(cfg):
@@ -44,7 +41,12 @@ def _reference_fold(cfg):
 
 
 def _require_dataset(cfg):
-    name = "binary_ecg_data.npz" if cfg["task"]["labels"] == "binary" else "ecg_data.npz"
+    task = cfg["task"]
+    if task.get("data_file"):
+        if not (config.data_dir() / task["data_file"]).is_file():
+            pytest.skip(f"{task['data_file']} (the v0.1 binary pool) is not in the data folder")
+        return
+    name = "binary_ecg_data.npz" if task["labels"] == "binary" else "ecg_data.npz"
     if not (config.data_dir() / "ecg" / name).is_file():
         pytest.skip("dataset not prepared (python -m utils.preprocessing)")
 
@@ -65,16 +67,18 @@ def test_config_builds_the_archived_models(path):
 
 
 @pytest.mark.parametrize("path", CONFIGS, ids=lambda p: p.stem)
-def test_config_loads_the_archived_pool(path):
+def test_config_rebuilds_the_archived_folds(path):
     cfg = run.load_config(path)
-    archived = _reference_fold(cfg)
+    _reference_fold(cfg)
     _require_dataset(cfg)
-    _, Y, _ = run.load_task(cfg["task"])
-    archived_labels = np.concatenate([archived["Y_train"], archived["Y_test"]])
-    assert len(Y) == len(archived_labels)
-    np.testing.assert_array_equal(
-        np.bincount(np.argmax(Y.reshape(len(Y), -1), axis=1)),
-        np.bincount(np.argmax(archived_labels.reshape(len(Y), -1), axis=1)))
+    X, Y, _ = run.load_task(cfg["task"])
+    archived = compare.load_folds(cfg["reference"])
+    folds = _iter_folds(X, Y, folds=cfg["cv"]["folds"], seed=cfg["cv"]["seed"])
+    labels = np.argmax(Y.reshape(len(Y), -1), axis=1)
+    for fold, reference in zip(folds, archived, strict=True):
+        expected = np.argmax(np.asarray(reference.Y_test).reshape(len(reference.Y_test), -1),
+                             axis=1)
+        np.testing.assert_array_equal(labels[fold.val_idx], expected)
 
 
 @pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning")
@@ -112,10 +116,6 @@ def test_headline_rerun_matches_the_archive(path, tmp_path):
                           allow_dirty=True, registry=tmp_path / "registry.jsonl")
     result = compare.compare(cfg["reference"], run_dir, out=tmp_path / "compare")
     print(compare.format_comparison(result))
-    if path.stem in UNPAIRED:
-        means = [result[side]["mean"]["f1_macro"] for side in ("summary_a", "summary_b")]
-        assert abs(means[1] - means[0]) <= 0.005
-        return
     assert result["paired"], "the rerun's folds differ from the archived run's"
     assert result["agreement"] >= 0.99
     assert abs(result["pooled_delta_f1_macro"]["delta"]) <= 0.005

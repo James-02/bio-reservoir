@@ -77,7 +77,7 @@ class TestResolve:
             resolved = run_module.resolve(cfg)
         assert resolved["task"] == {"labels": "five-class", "rows": 24, "balance_classes": True,
                                     "max_per_class": None, "cap_includes_test": True,
-                                    "scaler": "sequence_zscore", "seed": 3}
+                                    "scaler": "sequence_zscore", "data_file": None, "seed": 3}
         assert resolved["cv"]["seed"] == resolved["reservoir"]["seed"] == 3
         assert resolved["features"] == {"aggregation": "final", "window": 1}
         assert resolved["outputs"] == {"save_states": False}
@@ -255,6 +255,32 @@ def test_load_task_subsamples_to_the_requested_rows(monkeypatch):
     np.testing.assert_array_equal(first, X[expected])
     np.testing.assert_array_equal(labels, Y[expected])
     np.testing.assert_array_equal(first, again)
+
+
+def test_load_task_reads_the_named_data_file(tmp_path, monkeypatch):
+    """task.data_file replaces the prepared dataset; task.data_sha256 must match it."""
+    monkeypatch.setenv("BIORESERVOIR_DATA_DIR", str(tmp_path / "data"))
+    pool_file = tmp_path / "data" / "ecg_archive" / "binary_ecg_data.npz"
+    pool_file.parent.mkdir(parents=True)
+    pool_file.write_bytes(b"v0.1 pool")
+    X, Y = _pool(n_per_class=10)
+    calls = []
+    monkeypatch.setattr("utils.preprocessing.load_ecg_data",
+                        lambda **kwargs: calls.append(kwargs) or (X[:15], Y[:15], X[15:], Y[15:]))
+    task = {"labels": "binary", "rows": 20, "balance_classes": True, "max_per_class": None,
+            "cap_includes_test": False, "scaler": "sequence_zscore", "seed": 1,
+            "data_file": "ecg_archive/binary_ecg_data.npz"}
+    _, _, sources = LOAD_TASK(task)
+    assert sources == [pool_file]
+    assert calls[0]["data_dir"] == str(pool_file.parent)
+    assert calls[0]["binary_save_file"] == "binary_ecg_data.npz"
+    LOAD_TASK(dict(task, data_sha256=provenance.sha256_file(pool_file)))
+    with pytest.raises(ValueError, match="data_sha256"):
+        LOAD_TASK(dict(task, data_sha256="0" * 64))
+    with pytest.raises(FileNotFoundError, match="data_file"):
+        LOAD_TASK(dict(task, data_file="ecg_archive/missing.npz"))
+    LOAD_TASK(dict(task, labels="five-class", data_file="ecg_archive/binary_ecg_data.npz"))
+    assert calls[-1]["save_file"] == "binary_ecg_data.npz"
 
 
 # ---------------------------------------------------------------------------
