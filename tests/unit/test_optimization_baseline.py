@@ -2,6 +2,8 @@
 protocol, the objective against a direct scikit-learn computation, and the commands."""
 
 import argparse
+import re
+import warnings
 
 import numpy as np
 import optuna
@@ -130,6 +132,14 @@ class TestObjective:
         trial = optuna.trial.FixedTrial(KNN)
         baseline.objective(trial, **_kwargs(instances=45))
         assert trial.user_attrs["dataset_cv_pool_size"] == 45
+
+    def test_trial_times_are_utc_from_a_timezone_aware_clock(self, pool):
+        trial = optuna.trial.FixedTrial(KNN)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("error", message=".*utcnow", category=DeprecationWarning)
+            baseline.objective(trial, **_kwargs())
+        for key in ("trial_start_utc", "trial_end_utc"):
+            assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", trial.user_attrs[key])
 
 
 class TestCommands:

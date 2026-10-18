@@ -207,6 +207,7 @@ coupling the hyperparameters were tuned for, so the studies need re-tuning.
   0 folds and no fold metrics. No archived trial records using the original split.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
+  So do the trial start and end times of the optimisation objectives.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or
   downloading) the source CSV files first; the CSVs are only needed to build the cache.
 - [engineering] Trial metadata no longer records the host name, IP address, working
