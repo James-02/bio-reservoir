@@ -61,7 +61,11 @@ def drive_shares(reservoir, inputs: Iterable[np.ndarray]) -> dict[str, float]:
     (before noise and ``dde_scaling``); the recurrent term is split by observed variable.
     Each share is the summed absolute value of its term over oscillators and steps,
     divided by the sum over all terms. Keys: ``"input"`` and one per observed variable.
+    Only the abstract coupling acts through the drive.
     """
+    if getattr(reservoir, "coupling", "abstract") != "abstract":
+        raise ValueError("Drive shares need coupling='abstract'; with diffusive coupling the "
+                         "colonies interact through He, not through the drive.")
     node = reservoir.copy()
     n_nodes = node.states.shape[1]
     names = [STATE_NAMES[i] for i in node.output_indices]
