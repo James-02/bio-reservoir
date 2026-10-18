@@ -47,6 +47,8 @@ _SHARED = {
     "input_bias": False, "fixed_bias_scaling": 0.1, "signed": True,
     "interaction_diameters": 8.2, "output_variables": "IHe", "scaler_type": "sequence_zscore",
     "param_heterogeneity_cv": 0.0, "param_heterogeneity_seed": None,
+    # The v0.1 code path (see the v0.1 preset in training/run.py).
+    "geometry": "v0.1",
 }
 PRESETS = {
     "P2-distance": dict(

@@ -3,7 +3,9 @@ import time
 from typing import Any, Optional, Union, Dict, List, Callable, Sequence
 
 import numpy as np
+from scipy import sparse
 from reservoirpy.mat_gen import bernoulli, normal
+from reservoirpy.mat_gen import zeros as rpy_zeros
 from reservoirpy.node import Node
 from reservoirpy.type import Weights
 from reservoirpy.utils.random import noise, rand_generator
@@ -55,10 +57,24 @@ class BioReservoir(Node):
         diagnostics: bool = False,
         param_heterogeneity_cv: float = 0.0,
         param_heterogeneity_seed: Optional[int] = None,
+        geometry: str = "per_node",
+        couple_vars: Optional[Sequence[float]] = None,
         **kwargs,
     ):
+        """Genetic-oscillator reservoir node (one DDE oscillator per unit).
+
+        ``geometry`` sets how the recurrent term is built when several variables are
+        observed. ``"per_node"``: one ``units x units`` kernel over ``units``
+        oscillators, applied to every observed variable of an oscillator with the weights
+        ``couple_vars`` (default 1 each), so oscillator ``i`` is driven by
+        ``sum_j K_ij sum_v w_v x_vj``. ``"v0.1"``: the v0.1 construction, in which
+        ReservoirPy builds a kernel over ``units x n_observed`` points and only the first
+        ``units`` drives reach the oscillators (kept to reproduce v0.1).
+        """
         if units is None and not is_array(W):
             raise ValueError("'units' must be specified if 'W' is not a matrix.")
+        if geometry not in ("per_node", "v0.1"):
+            raise ValueError(f"geometry must be 'per_node' or 'v0.1', got {geometry!r}.")
 
         rng = rand_generator(seed)
         noise_kwargs = noise_kwargs or {}
@@ -95,6 +111,12 @@ class BioReservoir(Node):
                 )
             output_variables = _OUTPUT_VAR_PRESETS[output_variables]
         self.output_indices = np.array([var_index_map[v] for v in output_variables], dtype=np.int64)
+        self.geometry = geometry
+        if couple_vars is None:
+            couple_vars = np.ones(len(self.output_indices))
+        self.couple_vars = np.asarray(couple_vars, dtype=float).reshape(-1)
+        if len(self.couple_vars) != len(self.output_indices):
+            raise ValueError("couple_vars needs one weight per observed variable.")
         # Clamp aggregation window to at least 1
         self.rk4_substep_aggregation_window = max(1, int(rk4_substep_aggregation_window))
         output_dim = (len(self.output_indices) * units) if units is not None else None
@@ -139,7 +161,7 @@ class BioReservoir(Node):
             },
             forward=_forward,
             initializer=partial(
-                initialize,
+                initialize if geometry == "v0.1" else _initialize_per_node,
                 sr=sr,
                 input_scaling=input_scaling,
                 bias_scaling=bias_scaling,
@@ -332,8 +354,11 @@ class BioReservoir(Node):
           scalar A, I, Hi, He values per node.
         """
 
-        # Normalize input shape to 1D (units,) for the DDE solver.
-        x = np.asarray(x).reshape(self.units)
+        # Normalize input shape to 1D (units,) for the DDE solver. With the v0.1
+        # geometry ReservoirPy produces one drive per observed value; only the first
+        # `units` reach the oscillators (as in v0.1).
+        n_nodes = self.states.shape[1]
+        x = np.asarray(x).reshape(-1)[:n_nodes]
 
         # Scale the normalized reservoir drive by biological cell coupling strength.
         # This models how strongly the external AHL (He-like signal) influences each oscillator.
@@ -386,6 +411,61 @@ class BioReservoir(Node):
 
         # Call parent reset to properly set _state and _state_proxy
         super(BioReservoir, self).reset(to_state=to_state)
+
+
+def _initialize_per_node(
+    reservoir,
+    x=None,
+    y=None,
+    sr=None,
+    input_scaling=None,
+    bias_scaling=None,
+    input_connectivity=None,
+    rc_connectivity=None,
+    W_init=None,
+    Win_init=None,
+    bias_init=None,
+    input_bias=None,
+    seed=None,
+):
+    """ReservoirPy initializer with one coordinate per oscillator.
+
+    Builds the ``units x units`` kernel ``K``, the operator ``K (x) couple_vars`` from the
+    observed state (variables of oscillator j adjacent) to the ``units`` drives, and
+    ``Win`` and the bias with one row per oscillator.
+    """
+    if x is None:
+        return
+    reservoir.set_input_dim(x.shape[1])
+    dtype = reservoir.dtype
+    n = int(reservoir.hypers["units"])
+    K = W_init if is_array(W_init) else W_init(
+        n, n, sr=sr, connectivity=rc_connectivity, dtype=dtype, seed=seed)
+    if K.shape != (n, n):
+        raise ValueError(f"The recurrent kernel must be {n} x {n} (one row per oscillator), "
+                         f"got {K.shape}.")
+    if len(reservoir.couple_vars) == 1 and reservoir.couple_vars[0] == 1.0:
+        W = K  # identical to the v0.1 construction
+    else:
+        weights = sparse.csr_matrix(reservoir.couple_vars.reshape(1, -1))
+        W = sparse.kron(sparse.csr_matrix(K), weights, format="csr")
+
+    Win = Win_init if is_array(Win_init) else Win_init(
+        n, x.shape[1], input_scaling=input_scaling, connectivity=input_connectivity,
+        dtype=dtype, seed=seed)
+    if Win.shape != (n, x.shape[1]):
+        raise ValueError(f"Win must be {n} x {x.shape[1]}, got {Win.shape}.")
+    if input_bias:
+        bias = bias_init if is_array(bias_init) else bias_init(
+            n, 1, input_scaling=bias_scaling, connectivity=input_connectivity, dtype=dtype,
+            seed=seed)
+    else:
+        bias = rpy_zeros(n, 1, dtype=dtype)
+
+    reservoir.set_param("W", W.astype(dtype))
+    reservoir.set_param("Win", Win.astype(dtype))
+    reservoir.set_param("bias", bias.astype(dtype))
+    reservoir.set_param("internal_state", reservoir.zero_state())
 
 
 def _forward(reservoir: BioReservoir, x: np.ndarray) -> np.ndarray:

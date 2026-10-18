@@ -85,6 +85,15 @@ Each entry is marked **[science]** if it changes a reported number, or
   training part, so capped classes kept the cap plus their test beats (4,175 instead of
   4,015 per class at 5x). `cap_includes_test=False` (and the `v0.1` preset)
   keeps the `v0.1` rule; the loader logs the beats per class.
+- [science] With two observed variables (`output_variables="IHe"`) the reservoir has one
+  position per oscillator: oscillator j receives `sum_k K_jk (c_I I_k + c_He He_k)` from
+  the N x N signed distance kernel K, with weights `couple_vars` (default 1, 1). The `v0.1`
+  code built the kernel over 2N random points, so an oscillator's I and He coordinates
+  sat at different positions and only the first N of the 2N kernel rows drove an
+  oscillator. `geometry="v0.1"` (and the `v0.1` preset) keeps the `v0.1`
+  construction.
+- [engineering] The sequential solver (`parallel=False`) works when two variables are
+  observed; it failed with a broadcast error.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or

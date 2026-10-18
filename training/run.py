@@ -56,7 +56,7 @@ RESERVOIR_KEYS = {
         "cell_coupling", "noise_in", "noise_rc", "output_variables",
         "param_heterogeneity_cv", "param_heterogeneity_seed", "topology_type",
         "interaction_diameters", "fade_alpha", "sparsity", "signed", "p_excite",
-        "rc_connectivity",
+        "rc_connectivity", "geometry", "couple_vars",
     ),
     "esn": (
         "units", "esn_leak_rate", "esn_spectral_radius", "esn_activation", "input_scaling",
@@ -72,6 +72,7 @@ SCALAR_METRICS = ("f1", "f1_macro", "f1_weighted", "accuracy", "precision", "rec
 PRESETS: dict[str, dict[str, dict[str, Any]]] = {
     "v0.1": {
         "task": {"cap_includes_test": False},
+        "reservoir": {"geometry": "v0.1"},
         "readout": {"scale": False},
     },
 }
