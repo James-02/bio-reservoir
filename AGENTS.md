@@ -37,10 +37,11 @@ conventions and integrate with them rather than reinventing.
   (`reservoirs.py`), objectives, the CLI (`optimize.py`), and the deployment helpers
   (`deploy.py`, `collect.py`).
 - `utils/` — settings (`config.py`), preprocessing, analysis metrics, results,
-  logging, visualisation.
+  held-out draws, logging, visualisation.
 - `scripts/` — independent argparse CLIs for experiments, analysis, figures and
   housekeeping.
 - `tests/unit/` and `tests/integration/` — pytest suite.
+- `experiments/heldout/draws.json` — sealed held-out beat IDs (tracked).
 
 ## Workspace data layout (all gitignored)
 
@@ -116,6 +117,9 @@ ruff format .                        # format
 
 ## Hard rules (do not violate)
 
+- **Never tune on held-out beats.** The draws in `experiments/heldout/draws.json` are
+  never used for selection; draw 3 is evaluated once, for the confirmatory test.
+  Never change the beat IDs in that file.
 - **Never modify `archive/`.** It holds the frozen artefacts of a manuscript
   version (the `v0.1` code is archived on Zenodo, DOI 10.5281/zenodo.23436888).
   Write new results to `results/` and logs to `logs/`. Keep the scientific
