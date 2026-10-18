@@ -2,21 +2,20 @@
 
 import logging
 
-import pytest
 import numpy as np
+import pytest
 from scipy.integrate import solve_ivp
 
 from bioreservoir import dde
 from bioreservoir.dde import (
-    get_dde_params,
-    compute_decay_term,
-    solve_dde_rk4,
-    clear_prepared_cache,
-    generate_node_params,
-    log_dde_params,
     DEFAULT_DDE_PARAMS,
+    clear_prepared_cache,
+    compute_decay_term,
+    generate_node_params,
+    get_dde_params,
+    log_dde_params,
+    solve_dde_rk4,
 )
-
 
 # ---------------------------------------------------------------------------
 # Parameter helpers
@@ -171,7 +170,7 @@ KERNEL_PARAMS = ("CA", "CI", "del_", "alpha", "k1", "f", "gammaA", "gammaI", "b"
 
 def _model_rhs(y, delayed_hi, u, p):
     """The oscillator equations as implemented (Danino et al. 2010, input added to He)."""
-    A, I, Hi, He = y
+    A, I, Hi, He = y  # noqa: E741 (LuxI, as in the model equations)
     promoter = (p["del_"] + p["alpha"] * delayed_hi ** 2) / (1.0 + p["k1"] * delayed_hi ** 2)
     denom = 1.0 + p["f"] * (A + I)
     return np.array([

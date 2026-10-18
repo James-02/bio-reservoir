@@ -1,17 +1,17 @@
 """Unit tests for bioreservoir.topology weight-matrix builders."""
 
-import pytest
-import numpy as np
 from functools import partial
+
+import numpy as np
+import pytest
 from scipy.sparse import issparse
 
 from bioreservoir.topology import (
-    generate_distance_weights,
-    spectral_radius,
     distance_matrix,
+    generate_distance_weights,
     random_gaussian_weights,
+    spectral_radius,
 )
-
 
 # ---------------------------------------------------------------------------
 # spectral_radius

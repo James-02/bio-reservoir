@@ -421,7 +421,7 @@ class TestAugmentation:
         Y = np.array([0, 1])
         X_aug, Y_aug = augment_data(X, Y, 0.2, 3, rng=np.random.RandomState(1))
         assert len(X_aug) == 8
-        for x, y in zip(X_aug[2:], Y_aug[2:]):
+        for x, y in zip(X_aug[2:], Y_aug[2:], strict=True):
             source = X[int(y)]
             assert (x - source).std() / source.std() == pytest.approx(0.2, rel=0.05)
 

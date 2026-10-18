@@ -29,8 +29,11 @@ def _keep_global_state(monkeypatch):
 def saved(monkeypatch):
     """Record FoldArtifact.save calls instead of writing files."""
     calls = []
-    monkeypatch.setattr(FoldArtifact, "save",
-                        lambda self, results_dir=None, save_states=False: calls.append(self.fold_index))
+
+    def record(self, results_dir=None, save_states=False):
+        calls.append(self.fold_index)
+
+    monkeypatch.setattr(FoldArtifact, "save", record)
     return calls
 
 
@@ -97,8 +100,8 @@ class TestFolds:
     def test_folds_depend_on_the_seed(self):
         X, Y, _ = _dataset(n_per_class=20)
         a, b, c = (cv._iter_folds(X, Y, folds=4, seed=s) for s in (3, 3, 4))
-        assert all(np.array_equal(x.val_idx, y.val_idx) for x, y in zip(a, b))
-        assert not all(np.array_equal(x.val_idx, y.val_idx) for x, y in zip(a, c))
+        assert all(np.array_equal(x.val_idx, y.val_idx) for x, y in zip(a, b, strict=True))
+        assert not all(np.array_equal(x.val_idx, y.val_idx) for x, y in zip(a, c, strict=True))
 
     def test_one_fold_is_a_stratified_hold_out(self):
         X, Y, labels = _dataset(n_per_class=20)
@@ -225,7 +228,11 @@ class TestRunFold:
 
     def test_prediction_count_must_match_the_labels(self, fold_data, monkeypatch):
         real_predict = cv.predict
-        monkeypatch.setattr(cv, "predict", lambda readout, states: real_predict(readout, states)[:-1])
+
+        def predict_one_too_few(readout, states):
+            return real_predict(readout, states)[:-1]
+
+        monkeypatch.setattr(cv, "predict", predict_one_too_few)
         with pytest.raises(ValueError, match="length mismatch"):
             cv.run_fold(_reservoir(), _readout(), *fold_data, fold_index=0)
 
@@ -236,7 +243,7 @@ class TestCrossValidate:
         result, artifacts = cv.cross_validate(_reservoir(), _readout(), X, Y, folds=3, seed=5,
                                               return_artifacts=True)
         assert [a.fold_index for a in artifacts] == [0, 1, 2]
-        for art, fold in zip(artifacts, cv._iter_folds(X, Y, folds=3, seed=5)):
+        for art, fold in zip(artifacts, cv._iter_folds(X, Y, folds=3, seed=5), strict=True):
             np.testing.assert_array_equal(art.Y_train, Y[fold.train_idx])
             np.testing.assert_array_equal(art.Y_test, Y[fold.val_idx])
         assert result["accuracy"] == pytest.approx(np.mean([a.metrics.accuracy for a in artifacts]))
@@ -245,9 +252,12 @@ class TestCrossValidate:
         X, Y, _ = _dataset()
         runs = [cv.cross_validate(_reservoir(), _readout(), X, Y, folds=3, seed=0,
                                   return_artifacts=True)[1] for _ in range(2)]
-        for a, b in zip(*runs):
+        for a, b in zip(*runs, strict=True):
             np.testing.assert_array_equal(a.Y_pred, b.Y_pred)
 
+    # loky starts workers with fork followed immediately by exec, so the warning about
+    # forking a multi-threaded process (numba threads from earlier tests) does not apply.
+    @pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning")
     def test_worker_processes_give_the_same_predictions(self):
         from joblib.externals.loky import get_reusable_executor
 
@@ -259,7 +269,7 @@ class TestCrossValidate:
                                            fold_workers=2, **options)
         finally:
             get_reusable_executor().shutdown(wait=True)
-        for a, b in zip(local, workers):
+        for a, b in zip(local, workers, strict=True):
             np.testing.assert_array_equal(a.Y_pred, b.Y_pred)
 
     def test_unknown_backend_is_rejected(self):

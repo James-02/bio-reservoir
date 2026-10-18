@@ -3,8 +3,8 @@
 import logging
 from types import SimpleNamespace
 
-import pytest
 import numpy as np
+import pytest
 
 import bioreservoir.node as node_module
 from bioreservoir import BioReservoir

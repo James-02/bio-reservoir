@@ -5,8 +5,8 @@ import sys
 import time
 from types import SimpleNamespace
 
-import pytest
 import numpy as np
+import pytest
 from reservoirpy.nodes import Ridge, ScikitLearnNode
 from sklearn.linear_model import LinearRegression, LogisticRegression
 
@@ -19,7 +19,6 @@ from training.pipeline import (
     train,
 )
 from training.profiling import Profiler, ResourceMonitor, _merge_profiles
-
 
 # ---------------------------------------------------------------------------
 # _aggregate_states
@@ -138,12 +137,12 @@ class TestTrain:
         reservoir = _StubReservoir()
         out = train(reservoir, X, readout_aggregation="mean")
         assert reservoir.resets == [True, True, True]
-        for x, o in zip(X, out):
+        for x, o in zip(X, out, strict=True):
             np.testing.assert_allclose(o, np.hstack([x, 2 * x]).mean(axis=0, keepdims=True))
 
     def test_a_readout_window_overrides_the_aggregation(self, X):
         out = train(_StubReservoir(), X, readout_aggregation="mean", readout_window=3)
-        for x, o in zip(X, out):
+        for x, o in zip(X, out, strict=True):
             np.testing.assert_allclose(o, np.hstack([x, 2 * x])[-3:].mean(axis=0, keepdims=True))
 
     def test_profiling_does_not_change_the_states(self, X):
