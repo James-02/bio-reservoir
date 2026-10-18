@@ -21,6 +21,12 @@ Each entry is marked **[science]** if it changes a reported number, or
   and refuse to overwrite an existing run folder. `apply-best` writes a new run
   (`results/runs/<study>-best/`) instead of rewriting the source run's fold files.
   PyYAML (already installed with Optuna) is a declared dependency.
+- [engineering] The code passes ruff (pycodestyle errors, pyflakes, import order,
+  pyupgrade, bugbear) and the CI lint job is blocking, with ruff pinned to 0.15.0. Most of
+  the 695 findings were fixed automatically (annotations, import order); the rest by hand
+  (strict `zip`, exception chaining, unused variables, a mutable default argument).
+  Line length (E501) waits for a formatting-only change; `I` (LuxI) is allowed in the
+  solver.
 
 ### Added
 

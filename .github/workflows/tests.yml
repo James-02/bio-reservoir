@@ -28,13 +28,13 @@ jobs:
           python-version: "3.11"
 
       - name: Install ruff
-        run: pip install ruff
+        run: pip install ruff==0.15.0
 
-        # TODO: Remove `continue-on-error` (make blocking) after we fix existing issues
       - name: ruff check
-        continue-on-error: true
         run: ruff check --output-format=github .
 
+        # TODO: make blocking after a formatting-only change (`ruff format` would reformat
+        # most files), then turn E501 on in pyproject.toml.
       - name: ruff format (check only)
         continue-on-error: true
         run: ruff format --check .
