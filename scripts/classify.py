@@ -88,8 +88,6 @@ def _parse_args() -> argparse.Namespace:
                      help="Input noise standard deviation.")
     res.add_argument("--noise_rc", type=float, default=0.15,
                      help="Recurrent noise standard deviation.")
-    res.add_argument("--rk4_substep_aggregation_window", type=int, default=1,
-                     help="Sub-step aggregation window for state extraction.")
 
     # ---- Topology -----------------------------------------------------------
     topo = p.add_argument_group("topology")
@@ -212,7 +210,6 @@ def main() -> None:
         noise_rc=args.noise_rc,
         rk4_substeps=args.rk4_substeps,
         input_connectivity=1.0,
-        rk4_substep_aggregation_window=args.rk4_substep_aggregation_window,
         W=distance_matrix(
             spatial_dim=args.spatial_dim,
             interaction_diameters=args.interaction_diameters,

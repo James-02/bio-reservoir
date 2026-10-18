@@ -60,7 +60,6 @@ class BioReservoir(Node):
         parallel: bool = True,
         seed: Optional[int] = None,
         output_variables: Sequence[str] = ("A", "I", "Hi", "He"),
-        rk4_substep_aggregation_window: int = 1,
         diagnostics: bool = False,
         param_heterogeneity_cv: float = 0.0,
         param_heterogeneity_seed: Optional[int] = None,
@@ -134,8 +133,6 @@ class BioReservoir(Node):
         self.couple_vars = np.asarray(couple_vars, dtype=float).reshape(-1)
         if len(self.couple_vars) != len(self.output_indices):
             raise ValueError("couple_vars needs one weight per observed variable.")
-        # Clamp aggregation window to at least 1
-        self.rk4_substep_aggregation_window = max(1, int(rk4_substep_aggregation_window))
         output_dim = (len(self.output_indices) * units) if units is not None else None
 
         super(BioReservoir, self).__init__(
@@ -415,13 +412,8 @@ class BioReservoir(Node):
             **self.dde_kwargs,
         )
 
-        # Use the final step of the RK4 solver as the output for this timestep.
+        # The state at the end of the input step (the solver returns every substep).
         next_state = sol[-1]
-
-        # Defensive: ensure we keep a (units, 4) tensor in the history buffer.
-        if next_state.ndim == 3:
-            # If a future change returns a full trajectory here, collapse it.
-            next_state = next_state[-1]
 
         # Update internal history buffer for historical interpolation.
         self._update_history(next_state)
@@ -535,20 +527,8 @@ def _forward(reservoir: BioReservoir, x: np.ndarray) -> np.ndarray:
         final_input = _compute_input(reservoir, x)
         next_states = reservoir._step(final_input)
 
-    # next_states may be either (units, 4) or (time, units, 4) depending on solver
-    if next_states.ndim == 3:
-        # Aggregate over last K RK4 substeps within this single external timestep.
-        K = reservoir.rk4_substep_aggregation_window
-        K = min(K, next_states.shape[0])
-        window = next_states[-K:]              # (K, units, 4)
-        last_state = window.mean(axis=0)       # (units, 4)
-    else:
-        last_state = next_states               # (units, 4)
-
-    if last_state.ndim == 1:
-        last_state = last_state.reshape(1, -1)
-
-    selected = last_state[:, reservoir.output_indices]
+    # The observed variables at the end of the input step, oscillator by oscillator.
+    selected = next_states[:, reservoir.output_indices]  # (units, n_observed)
     return selected.reshape(1, -1)
 
 

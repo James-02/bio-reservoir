@@ -73,7 +73,6 @@ BASELINE: Dict[str, Any] = {
     "units":                    250,
     "warmup":                   50,        # P1-integration Phase 1 best (was 40)
     "rk4_substeps":             60,        # P1-integration Phase 1 best (was 44); at range ceiling — P2 will confirm
-    "rk4_substep_aggregation":  1,
     # --- Scaling  (P1-scaling Phase 1 best) ---
     # Note: P1-scaling best is substantially different from preliminary values.
     # P1-coupling confirms cell_coupling=8.862 in its own search.

@@ -51,7 +51,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
 # Parameters read by optimization.reservoirs.build_reservoir, per reservoir type.
 RESERVOIR_KEYS = {
     "bioreservoir": (
-        "units", "warmup", "rk4_substeps", "rk4_substep_aggregation", "input_scaling",
+        "units", "warmup", "rk4_substeps", "input_scaling",
         "input_connectivity", "input_bias", "bias_scaling", "rc_scaling", "dde_scaling",
         "cell_coupling", "noise_in", "noise_rc", "output_variables",
         "param_heterogeneity_cv", "param_heterogeneity_seed", "topology_type",
@@ -197,6 +197,11 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
         kind = str(params.get("reservoir_type", reservoir.get("type", "bioreservoir")))
         from optimization.reservoirs import normalize_reservoir_type
         kind = normalize_reservoir_type(kind)
+        ignored = sorted(set(reservoir.get("params") or {}) - set(RESERVOIR_KEYS[kind])
+                         - {"reservoir_type"})
+        if ignored:
+            logger.warning("Ignoring reservoir parameters the %s builder does not read: %s",
+                           kind, ", ".join(ignored))
         missing = [k for k in ("units",) if k not in params]
         if missing:
             raise ValueError(f"Reservoir parameters missing: {missing}")

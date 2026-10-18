@@ -3,6 +3,7 @@
 import argparse
 import importlib
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -19,7 +20,7 @@ BENCHMARKS = Path(__file__).resolve().parents[2] / "experiments" / "benchmarks"
 LOAD_TASK = run_module.load_task
 
 RESERVOIR = {
-    "units": 3, "warmup": 0, "rk4_substeps": 16, "rk4_substep_aggregation": 1,
+    "units": 3, "warmup": 0, "rk4_substeps": 16,
     "input_scaling": 1.0, "input_connectivity": 1.0, "input_bias": False, "bias_scaling": 0.0,
     "rc_scaling": 0.1, "dde_scaling": 0.01, "cell_coupling": 1.0, "noise_in": 0.0,
     "noise_rc": 0.0, "output_variables": "He", "topology_type": "distance",
@@ -69,10 +70,11 @@ def _predictions(run_dir):
 # ---------------------------------------------------------------------------
 
 class TestResolve:
-    def test_defaults_and_seeds_are_filled_in(self):
+    def test_defaults_and_seeds_are_filled_in(self, caplog):
         cfg = _config()
         cfg["reservoir"]["params"]["noise_rate"] = 0.3  # not a reservoir parameter
-        resolved = run_module.resolve(cfg)
+        with caplog.at_level(logging.WARNING, logger="training.run"):
+            resolved = run_module.resolve(cfg)
         assert resolved["task"] == {"labels": "five-class", "rows": 24, "balance_classes": True,
                                     "max_per_class": None, "cap_includes_test": True,
                                     "scaler": "sequence_zscore", "seed": 3}
@@ -80,6 +82,8 @@ class TestResolve:
         assert resolved["features"] == {"aggregation": "final", "window": 1}
         assert resolved["outputs"] == {"save_states": False}
         assert "noise_rate" not in resolved["reservoir"]["params"]
+        assert any("Ignoring reservoir parameters" in r.getMessage()
+                   and "noise_rate" in r.getMessage() for r in caplog.records)
         assert resolved["reservoir"]["type"] == "bioreservoir"
 
     def test_a_resolved_config_resolves_to_itself(self):

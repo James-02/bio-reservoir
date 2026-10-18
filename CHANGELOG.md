@@ -115,6 +115,11 @@ Each entry is marked **[science]** if it changes a reported number, or
   inputs equal to 0, but the beats reach the reservoir z-scored, where the padding is
   not 0: none of the 4,015 balanced or 109,446 unbalanced beats had a tail detected, so
   every `v0.1` result used the full mean and none changes.
+- [engineering] Removed the RK4 substep aggregation option
+  (`rk4_substep_aggregation_window`, `rk4_substep_aggregation` in study parameters and
+  `classify.py --rk4_substep_aggregation_window`): the node only ever received the state
+  at the end of each input step, so the option had no effect. Run configs log a
+  warning for reservoir parameters the builder does not read.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or

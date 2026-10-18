@@ -40,7 +40,7 @@ MODEL_UNITS = 20
 PIPELINE = {"units": 200, "instances": 600, "folds": 2}
 
 _SHARED = {
-    "reservoir_type": "bioreservoir", "rk4_substep_aggregation": 1, "bias_scaling": 0.1,
+    "reservoir_type": "bioreservoir", "bias_scaling": 0.1,
     "readout_aggregation": "signal_mean", "readout_window": 36, "noise_in": 0.01442,
     "noise_rc": 0.2397, "noise_rate": 0.2999, "noise_ratio": 0.2862, "preserve_split": False,
     "objective_average": "macro", "balance_classes": True, "max_per_class": None,

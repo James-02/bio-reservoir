@@ -357,7 +357,7 @@ class TestInputDrive:
 class TestForward:
     def test_output_lists_the_selected_variables_unit_by_unit(self, monkeypatch):
         state = np.arange(12.0).reshape(3, 4)
-        stub = SimpleNamespace(t=0, diagnostics=False, rk4_substep_aggregation_window=1,
+        stub = SimpleNamespace(t=0, diagnostics=False,
                                output_indices=np.array([1, 3]), _step=lambda x: state)
         monkeypatch.setattr(node_module, "_compute_input", lambda reservoir, x: x)
         out = node_module._forward(stub, np.zeros((1, 1)))

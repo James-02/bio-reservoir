@@ -20,7 +20,6 @@ reservoir:
     units: 1000
     warmup: 50
     rk4_substeps: 64
-    rk4_substep_aggregation: 1
     input_scaling: 0.0277
     input_connectivity: 0.5282
     input_bias: false
