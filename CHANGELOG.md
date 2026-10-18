@@ -97,6 +97,12 @@ Each entry is marked **[science]** if it changes a reported number, or
   tests) is 90-100% per module, up from 0-90%; the unused `classification.py` is not
   tested.
 
+### Removed
+
+- [engineering] `optimization/classification.py`, an unused older copy of the reservoir
+  objective in `optimization/training.py`. Nothing imported it; the optimisation
+  commands use `optimization/training.py`.
+
 ### Fixed
 
 Effect on the balanced headline (P2-distance trial 416 with the P4 random forest, the

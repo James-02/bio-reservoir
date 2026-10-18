@@ -80,7 +80,7 @@ from utils.preprocessing import (
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Dataset loading (mirrors optimization.classification._get_dataset)
+# Dataset loading (mirrors optimization.training._get_dataset)
 # ---------------------------------------------------------------------------
 
 _DATA_CACHE: dict[tuple, tuple[np.ndarray, ...]] = {}
@@ -97,7 +97,7 @@ def _get_dataset(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Load and cache the ECG dataset.
 
-    Unlike the classification module, noise augmentation is NOT applied here
+    Unlike ``optimization.training``, noise augmentation is NOT applied here
     because it will be applied per-fold inside the objective (matching the
     CV protocol used for reservoir training).
     """
@@ -270,7 +270,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     X = np.concatenate((X_train, X_test), axis=0)
     Y = np.concatenate((Y_train, Y_test), axis=0)
 
-    # Cap pool size to instances (matches classification.py behaviour).
+    # Cap pool size to instances (as the training objective does).
     if len(X) > instances:
         rng_cap = np.random.default_rng(seed)
         idx = rng_cap.permutation(len(X))[:instances]
