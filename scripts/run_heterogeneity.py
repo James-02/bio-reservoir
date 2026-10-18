@@ -263,7 +263,7 @@ def main() -> None:
                         help="Training-fold augmentation rate (v0.1: 0.2999).")
     parser.add_argument("--noise_ratio", type=float, default=NOISE_RATIO,
                         help="Training-fold augmentation ratio (v0.1: 0.2862).")
-    parser.add_argument("--preset", choices=sorted(PRESETS), default=None,
+    parser.add_argument("--preset", choices=["v0.1"], default=None,
                         help="Reservoir settings of a preset "
                              "(v0.1: the v0.1 code path).")
     parser.add_argument("--processes", type=int, default=5,
