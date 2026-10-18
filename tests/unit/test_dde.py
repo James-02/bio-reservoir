@@ -1,13 +1,19 @@
 """Unit tests for the bioreservoir.dde DDE solver."""
 
+import logging
+
 import pytest
 import numpy as np
+from scipy.integrate import solve_ivp
 
+from bioreservoir import dde
 from bioreservoir.dde import (
     get_dde_params,
     compute_decay_term,
     solve_dde_rk4,
     clear_prepared_cache,
+    generate_node_params,
+    log_dde_params,
     DEFAULT_DDE_PARAMS,
 )
 
@@ -152,3 +158,225 @@ class TestSolveDDERK4:
             f"Expected finer step to converge: |fine-vfine|={diff_fv:.2e} "
             f"should be < |coarse-fine|={diff_cf:.2e}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Numerical correctness: equations, integrator, delay lookup, parameter routing
+# ---------------------------------------------------------------------------
+
+# Order of the scalar parameters after the state arguments of the numba kernels.
+KERNEL_PARAMS = ("CA", "CI", "del_", "alpha", "k1", "f", "gammaA", "gammaI", "b", "k",
+                 "gammaH", "g", "D", "d", "mu", "decay")
+
+
+def _model_rhs(y, delayed_hi, u, p):
+    """The oscillator equations as implemented (Danino et al. 2010, input added to He)."""
+    A, I, Hi, He = y
+    promoter = (p["del_"] + p["alpha"] * delayed_hi ** 2) / (1.0 + p["k1"] * delayed_hi ** 2)
+    denom = 1.0 + p["f"] * (A + I)
+    return np.array([
+        p["CA"] * p["decay"] * promoter - p["gammaA"] * A / denom,
+        p["CI"] * p["decay"] * promoter - p["gammaI"] * I / denom,
+        p["b"] * I / (1.0 + p["k"] * I) - p["gammaH"] * A * Hi / (1.0 + p["g"] * A)
+        + p["D"] * (He + u - Hi),
+        -p["d"] / (1.0 - p["d"]) * p["D"] * (He - Hi) - p["mu"] * He,
+    ])
+
+
+def _one_step(history, u, substeps, parallel=False, **overrides):
+    times = np.linspace(0.0, 1.0, substeps + 1)
+    return solve_dde_rk4(history, times, u, parallel=parallel, **overrides)
+
+
+def _reference_step(y0, delayed_hi, u, params):
+    """Integrate one external step (t = 0..1) with SciPy's DOP853 at tight tolerance."""
+    sol = solve_ivp(lambda t, y: _model_rhs(y, delayed_hi, u, params), (0.0, 1.0), y0,
+                    method="DOP853", rtol=1e-12, atol=1e-14)
+    return sol.y[:, -1]
+
+
+@pytest.fixture
+def basal_history():
+    """Two nodes at start-up levels (as BioReservoir initialises them); delay 10 reads the
+    oldest of the 11 history entries."""
+    rng = np.random.default_rng(7)
+    return rng.uniform([0.10, 0.10, 0.01, 0.04], [0.20, 0.20, 0.03, 0.06], size=(11, 2, 4))
+
+
+class TestModelEquations:
+    def test_right_hand_side_matches_the_written_equations(self):
+        rng = np.random.default_rng(0)
+        params = get_dde_params()
+        y = rng.uniform(0.0, 2.0, size=(4, 50))
+        delayed = rng.uniform(0.0, 2.0, size=50)
+        u = rng.normal(0.0, 0.1, size=50)
+        got = dde._compute_derivatives(*y, delayed, u, *(params[k] for k in KERNEL_PARAMS))
+        expected = _model_rhs(y, delayed, u, params)
+        np.testing.assert_allclose(np.array(got), expected, rtol=1e-12, atol=1e-15)
+
+    def test_derived_decay_term_enters_the_promoter_terms(self):
+        params = get_dde_params(d=0.0)
+        assert params["decay"] == 1.0
+        params = get_dde_params(d=params["d0"])
+        y = np.array([0.3, 0.4, 0.2, 0.1])
+        dA, dI, _, _ = dde._compute_derivatives(*y, 0.5, 0.0,
+                                                *(params[k] for k in KERNEL_PARAMS))
+        assert dA == pytest.approx(-params["gammaA"] * 0.3 / (1.0 + params["f"] * 0.7))
+        assert dI == pytest.approx(-params["gammaI"] * 0.4 / (1.0 + params["f"] * 0.7))
+
+
+class TestIntegrator:
+    @pytest.mark.parametrize("parallel", [False, True])
+    def test_extracellular_signal_decays_exponentially_without_diffusion(self, parallel):
+        history = np.full((11, 3, 4), 0.2)
+        history[-1, :, 3] = [0.5, 1.0, 2.0]
+        out = _one_step(history, np.zeros(3), substeps=64, parallel=parallel, D=0.0)
+        mu = DEFAULT_DDE_PARAMS["mu"]
+        np.testing.assert_allclose(out[-1, :, 3], history[-1, :, 3] * np.exp(-mu), rtol=1e-10)
+        np.testing.assert_allclose(out[:, :, 3],
+                                   history[-1, :, 3] * np.exp(-mu * np.linspace(0, 1, 65))[:, None],
+                                   rtol=1e-10)
+
+    @pytest.mark.parametrize("parallel", [False, True])
+    def test_one_step_matches_a_high_accuracy_solver(self, basal_history, parallel):
+        u = np.array([0.02, -0.01])
+        params = get_dde_params()
+        out = _one_step(basal_history, u, substeps=64, parallel=parallel)
+        delayed = basal_history[0, :, 2]
+        for node in range(2):
+            expected = _reference_step(basal_history[-1, node], delayed[node], u[node], params)
+            np.testing.assert_allclose(out[-1, node], expected, rtol=1e-6, atol=1e-9)
+
+    def test_converges_at_fourth_order(self, basal_history):
+        u = np.array([0.02, -0.01])
+        params = get_dde_params()
+        expected = _reference_step(basal_history[-1, 0], basal_history[0, 0, 2], u[0], params)
+        errors = [np.abs(_one_step(basal_history, u, n)[-1, 0] - expected).max()
+                  for n in (32, 64, 128)]
+        orders = np.log2(np.array(errors[:-1]) / np.array(errors[1:]))
+        assert np.all((orders > 3.7) & (orders < 4.6)), orders
+
+    def test_trajectory_has_one_entry_per_substep(self, basal_history):
+        out = _one_step(basal_history, np.zeros(2), substeps=5)
+        assert out.shape == (6, 2, 4)
+        np.testing.assert_array_equal(out[0], basal_history[-1])
+
+
+class TestDelayLookup:
+    """The delayed Hi is read once per call from the history buffer (v0.1 behaviour)."""
+
+    @pytest.fixture
+    def captured(self, monkeypatch):
+        seen = {}
+
+        def spy(Y_init, Hi_low, Hi_high, times, input_vec, *params):
+            seen.update(Y_init=Y_init, Hi_low=Hi_low, Hi_high=Hi_high, times=times,
+                        input_vec=input_vec, params=params)
+            return np.zeros((len(times),) + Y_init.shape)
+
+        monkeypatch.setattr(dde, "_solve_sequential", spy)
+        return seen
+
+    @staticmethod
+    def _history():
+        history = np.zeros((11, 2, 4))
+        history[:, :, 2] = np.arange(11.0)[:, None]
+        return history
+
+    @pytest.mark.parametrize("delay, expected", [
+        (10, 0.0), (3, 7.0), (2.5, 7.5), (0.5, 9.5), (0, 10.0), (25, 0.0),
+    ])
+    def test_delayed_signal_is_interpolated_from_the_history(self, captured, delay, expected):
+        solve_dde_rk4(self._history(), np.linspace(0, 1, 3), np.zeros(2), parallel=False,
+                      delay=delay)
+        np.testing.assert_allclose(captured["Hi_low"], expected)
+        np.testing.assert_array_equal(captured["Hi_high"], captured["Hi_low"])
+
+    def test_kernel_receives_the_current_state_and_parameters_in_order(self, captured):
+        history = self._history()
+        solve_dde_rk4(history, np.linspace(0, 1, 3), np.array([0.1, 0.2]), parallel=False,
+                      D=3.0)
+        params = get_dde_params(D=3.0)
+        np.testing.assert_array_equal(captured["Y_init"], history[-1])
+        np.testing.assert_array_equal(captured["input_vec"], [0.1, 0.2])
+        assert captured["params"] == tuple(params[k] for k in KERNEL_PARAMS)
+
+
+class TestHeterogeneousSolver:
+    def test_zero_variability_reproduces_the_homogeneous_solver(self, basal_history):
+        node_params = generate_node_params(2, 0.0, get_dde_params(), seed=1)
+        u = np.array([0.02, -0.01])
+        het = solve_dde_rk4(basal_history, np.linspace(0, 1, 17), u, parallel=True,
+                            node_params=node_params)
+        hom = solve_dde_rk4(basal_history, np.linspace(0, 1, 17), u, parallel=True)
+        np.testing.assert_allclose(het, hom, rtol=1e-13, atol=1e-15)
+
+    def test_each_node_uses_its_own_parameters(self, basal_history):
+        node_params = generate_node_params(2, 0.4, get_dde_params(), seed=3)
+        u = np.array([0.02, -0.01])
+        times = np.linspace(0, 1, 17)
+        het = solve_dde_rk4(basal_history, times, u, parallel=True, node_params=node_params)
+        for node in range(2):
+            own = {k: node_params[node, i] for i, k in enumerate(dde._PARAM_ORDER)
+                   if k != "decay"}
+            alone = solve_dde_rk4(basal_history[:, [node]], times, u[[node]], parallel=True,
+                                  **own)
+            np.testing.assert_allclose(het[:, node], alone[:, 0], rtol=1e-12, atol=1e-15)
+
+
+class TestGenerateNodeParams:
+    def test_zero_variability_gives_the_nominal_parameters(self):
+        base = get_dde_params()
+        node_params = generate_node_params(5, 0.0, base, seed=0)
+        assert node_params.shape == (5, dde.N_NODE_PARAMS)
+        nominal = [base[k] for k in dde._PARAM_ORDER]
+        np.testing.assert_allclose(node_params, np.tile(nominal, (5, 1)))
+
+    def test_only_intracellular_kinetics_vary(self):
+        base = get_dde_params()
+        node_params = generate_node_params(200, 0.3, base, seed=0)
+        for i, name in enumerate(dde._PARAM_ORDER):
+            column = node_params[:, i]
+            if name in dde._VARY_SET:
+                assert column.std() > 0 and np.all(column > 0), name
+            else:
+                np.testing.assert_allclose(column, base[name])
+
+    def test_coefficient_of_variation_matches_the_request(self):
+        node_params = generate_node_params(20000, 0.25, get_dde_params(), seed=0)
+        factors = node_params[:, 0] / get_dde_params()["CA"]
+        assert factors.std() / factors.mean() == pytest.approx(0.25, rel=0.03)
+
+    def test_reproducible_with_a_seed(self):
+        base = get_dde_params()
+        first = generate_node_params(10, 0.2, base, seed=11)
+        np.testing.assert_array_equal(first, generate_node_params(10, 0.2, base, seed=11))
+        assert not np.array_equal(first, generate_node_params(10, 0.2, base, seed=12))
+
+
+class TestPreparedParameters:
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        clear_prepared_cache()
+        yield
+        clear_prepared_cache()
+
+    def test_prepared_values_follow_the_parameters(self):
+        prepared = dde._prepare_dde_params_cached(get_dde_params(D=3.5, delay=12))
+        assert prepared.D == 3.5 and prepared.delay == 12.0
+        assert prepared.decay == pytest.approx(compute_decay_term(0.7, 0.88))
+
+    def test_prepared_parameters_are_cached_until_cleared(self):
+        first = dde._prepare_dde_params_cached(get_dde_params())
+        assert dde._prepare_dde_params_cached(get_dde_params()) is first
+        assert dde._prepare_dde_params_cached(get_dde_params(mu=0.5)) is not first
+        clear_prepared_cache()
+        assert dde._prepare_dde_params_cached(get_dde_params()) is not first
+
+    def test_parameters_are_logged_only_at_debug_level(self, caplog):
+        with caplog.at_level(logging.INFO, logger="bioreservoir.dde"):
+            log_dde_params(get_dde_params())
+        assert not caplog.records
+        with caplog.at_level(logging.DEBUG, logger="bioreservoir.dde"):
+            log_dde_params(get_dde_params())
+        assert any("delay: 10.0" in r.getMessage() for r in caplog.records)
