@@ -69,7 +69,7 @@ class Metrics:
     recall : float
         Weighted recall.
     mcc : float
-        Matthews correlation coefficient (−1 to +1).
+        Matthews correlation coefficient (-1 to +1).
     kappa : float
         Cohen's kappa (inter-rater agreement).
     runtime : float

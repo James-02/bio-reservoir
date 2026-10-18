@@ -3,6 +3,19 @@
 Guidance for AI coding agents (and new human contributors) working in this
 repository. Keep this file short and factual — it is read every session.
 
+## Working together
+
+- Keep changes simple and standard: well-supported libraries, standard patterns,
+  NumPy-style docstrings. Prefer the conventions of numpy, reservoirpy, optuna and
+  scikit-learn over custom machinery.
+- Explain every non-trivial design or change to the maintainer in plain language and
+  agree it before implementing it.
+- Work on task branches with small Conventional Commits (`feat(component): ...`,
+  `fix(...)`, `test(...)`, `docs(...)`, `build(...)`, `ci(...)`, `chore(...)`).
+  Branches are reviewed and merged by PR; `v0.2` is tagged for the resubmission.
+- Record every change between `v0.1` and `v0.2` in `CHANGELOG.md`, marked
+  `[science]` (changes a reported number) or `[engineering]`.
+
 ## What this project is
 
 A reservoir computing framework built on coupled quorum-sensing genetic
@@ -16,14 +29,17 @@ conventions and integrate with them rather than reinventing.
 
 ## Repository layout
 
-- `bioreservoir/` — core library: DDE solver (`dde.py`), `BioReservoir` node
-  (`node.py`), topology generators (`topology.py`).
-- `training/` — cross-validation pipeline, classification helpers, profiling.
-- `utils/` — preprocessing (ECG loading/augmentation), analysis metrics,
-  logging, results, visualisation.
+- `bioreservoir/` — the model: DDE solver (`dde.py`), `BioReservoir` node
+  (`node.py`), topology generators (`topology.py`). Must be well tested, documented
+  and easy to read.
+- `training/` — cross-validation, training and evaluation, metrics, profiling.
 - `optimization/` — Optuna study registry (`studies.py`), reservoir builders
-  (`reservoirs.py`), objectives, and the CLI (`optimize.py`).
-- `scripts/` — standalone experiment/analysis scripts.
+  (`reservoirs.py`), objectives, the CLI (`optimize.py`), and the deployment helpers
+  (`deploy.py`, `collect.py`).
+- `utils/` — settings (`config.py`), preprocessing, analysis metrics, results,
+  logging, visualisation.
+- `scripts/` — independent argparse CLIs for experiments, analysis, figures and
+  housekeeping.
 - `tests/unit/` and `tests/integration/` — pytest suite.
 
 ## Workspace data layout (all gitignored)
@@ -33,18 +49,20 @@ All paths and settings come from `utils/config.py` (environment variable, then
 
 - `results/` — working outputs (`BIORESERVOIR_RESULTS_DIR`): `optuna/optuna-<study>.db`,
   `runs/<run>/fold-<k>.npz`, `metrics/`, `figures/<topic>/`.
-- `logs/` — log files only (`BIORESERVOIR_LOGS_DIR`), named
-  `<command>-<study>-<UTC time>.log`.
+- `logs/` — log files only (`BIORESERVOIR_LOGS_DIR`), one timestamped file per model
+  run (`<command>-<study>-<UTC time>.log`); all modules of that run log to it.
+  Analysis CLIs log to stdout unless given a log file.
 - `archive/<version>/` — **frozen** results behind a manuscript version, read-only:
   `optuna/`, `runs/`, `metrics/`, `MANIFEST.csv` (what each file is and which
-  manuscript item it supports) and `SHA256SUMS`
-  (`cd archive/v0.1 && sha256sum -c SHA256SUMS`). Tools only read it
+  manuscript item it supports) and `SHA256SUMS` (`sha256sum -c SHA256SUMS` inside the
+  version folder). Its location is `BIORESERVOIR_ARCHIVE_DIR` (default `archive/`); the
+  maintainers keep it in the private repository. Tools only read it
   (`--archive v0.1`, or an explicit path such as `--glob` / `--runs_dir`). Promote
   results from `results/` to a new `archive/<version>/` only when they are frozen
   for a manuscript version.
 - `data/` — input datasets.
-- Snapshots of earlier workspaces live outside the repository (`../backups/`);
-  planning notes live in the private repository.
+- `config.env` — local settings: paths, Kaggle credentials, deployment hosts.
+- Planning notes and the original `v0.1` files live in the private repository.
 
 ## Naming conventions
 
@@ -54,6 +72,12 @@ All paths and settings come from `utils/config.py` (environment variable, then
 - **Runs**: `<study>-best[-<variant>]` for re-runs of a study's best trial (the
   `rerun-best` default), e.g. `P4-readout-binary-best-full`; script-driven runs use a
   descriptive prefix (`ablation-<condition>`, `heterogeneity-cv<cv>-seed<seed>`).
+
+## Tests
+
+- Unit-test as much as possible: fast, no dataset, no network. Integration tests use
+  the real dataset (`data/`) and are skipped without it.
+- Every bug fix comes with a test that fails before the fix.
 
 ## Build, test, and lint commands
 
@@ -73,9 +97,11 @@ ruff format .                  # format
 
 - **Docstrings:** NumPy style (matches numpy/reservoirpy). Napoleon-compatible.
 - **Formatting/linting:** `ruff` (line length 100, target py39).
-- **Commits:** Conventional Commits (`feat:`, `fix:`, `chore:`, `ci:`,
-  `docs:`, `test:`). Versioning follows SemVer.
+- **Commits:** Conventional Commits with a component scope, e.g.
+  `feat(provenance): ...`. Versioning follows SemVer.
 - **Python support:** 3.9–3.12 (runtime deps are pinned; see `pyproject.toml`).
+- **Settings:** paths, secrets and host details only through `utils.config`
+  (environment, then `config.env`, then default).
 - Library code must not call `logging.basicConfig`; use
   `utils.logger.setup_logging` from CLIs/scripts only.
 
