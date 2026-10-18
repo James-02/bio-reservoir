@@ -24,6 +24,11 @@ Each entry is marked **[science]** if it changes a reported number, or
   repository. Host addresses, user, remote workspace, pip proxy and service come from
   `config.env`; hosts are referred to by label, and `--inventory` records each host's
   CPU, memory, OS and Python in `results/metrics/hosts.json`.
+- [engineering] `uv.lock` locks every dependency (`uv sync`). Python 3.10-3.12 is
+  supported (`requires-python = ">=3.10,<3.13"`); Python 3.9 (end of life) is no longer.
+  The scientific dependencies keep their `v0.1` versions; pillow 12.3.0, kagglehub 1.0.2,
+  pytest 9.1.1 and pytest-cov 7.1.0 are upgraded for security fixes that need Python
+  3.10, and the unused pyarrow pin is removed.
 
 ### Fixed
 
