@@ -141,6 +141,13 @@ Each entry is marked **[science]** if it changes a reported number, or
   rebuild each fold's nodes with a fold seed, but BioReservoir and the ESN reservoir
   cannot be rebuilt from their hyperparameters, so it silently copied them; the results
   do not change.
+- [engineering] `scripts/analysis/readout_tables.py` writes Tables S13-S15 (the best
+  trial of each classifier family in the Phase 4 readout studies) from the archived
+  databases; a snapshot test keeps them in step with the archive. The `v0.1` tables
+  had the right F1 values, but most hyperparameters outside the random forest rows came
+  from earlier databases (for example KNN k = 4 instead of 1 for the balanced study, and
+  a gradient boosting loss that five-class studies cannot use), and the MLP and
+  perceptron families were left out.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or

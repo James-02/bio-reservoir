@@ -3,6 +3,7 @@
 import importlib.util
 from pathlib import Path
 
+import optuna
 import pytest
 
 from training.run import PRESETS
@@ -12,7 +13,8 @@ V0_1 = PRESETS["v0.1"]["reservoir"]
 
 
 def _load(name):
-    spec = importlib.util.spec_from_file_location(f"script_{name}", SCRIPTS / f"{name}.py")
+    spec = importlib.util.spec_from_file_location(f"script_{name.replace('/', '_')}",
+                                                  SCRIPTS / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -102,3 +104,48 @@ class TestAblationScript:
         assert calls["node"]["geometry"] == "v0.1"
         assert calls["node"]["delay_scheme"] == "frozen"
         assert calls["W"]["normalize_after_masks"] is False
+
+
+class TestReadoutTables:
+    """Tables S13-S15 are generated from the Phase 4 study databases."""
+
+    @staticmethod
+    def _study():
+        from optuna.distributions import CategoricalDistribution, IntDistribution
+
+        distributions = {"classifier": CategoricalDistribution(["RF", "KNN"]),
+                         "rf_n_estimators": IntDistribution(150, 350),
+                         "rf_criterion": CategoricalDistribution(["entropy", "log_loss"]),
+                         "knn_n_neighbors": IntDistribution(1, 25)}
+        study = optuna.create_study(direction="maximize")
+        for value, params in [
+            (0.80, {"classifier": "RF", "rf_n_estimators": 200, "rf_criterion": "entropy"}),
+            (0.90, {"classifier": "RF", "rf_n_estimators": 300, "rf_criterion": "log_loss"}),
+            (0.85, {"classifier": "KNN", "knn_n_neighbors": 3}),
+            (0.90, {"classifier": "RF", "rf_n_estimators": 250, "rf_criterion": "entropy"}),
+        ]:
+            study.add_trial(optuna.trial.create_trial(
+                params=params, value=value,
+                distributions={k: distributions[k] for k in params}))
+        return study
+
+    def test_rows_are_the_best_trial_of_each_family(self):
+        tables = _load("analysis/readout_tables")
+        rows = tables.best_per_family(self._study())
+        assert [(r["classifier"], r["f1"], r["trial"]) for r in rows] == [
+            ("RF", 0.90, 1), ("KNN", 0.85, 2)]
+        assert rows[0]["params"] == {"rf_n_estimators": 300, "rf_criterion": "log_loss"}
+
+    def test_rows_are_written_as_latex(self):
+        tables = _load("analysis/readout_tables")
+        lines = tables.latex_rows(tables.best_per_family(self._study()))
+        assert lines[0].strip() == (r"Random Forest & \textbf{0.900} & "
+                                    r"$n_{\mathrm{est}} = 300$, criterion = log\_loss \\")
+        assert lines[1].strip() == r"KNN & 0.850 & $k = 3$ \\"
+
+    @pytest.mark.parametrize("value, text", [
+        (326, "326"), (8150.3, "8150"), (62000.0, r"6.2 \times 10^{4}"), (0.0571, "0.0571"),
+        (1e-5, "10^{-5}"), (2.66, "2.66"), ("log_loss", r"log\_loss"), (True, "True"),
+    ])
+    def test_numbers_are_formatted_for_the_tables(self, value, text):
+        assert _load("analysis/readout_tables")._number(value) == text
