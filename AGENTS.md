@@ -15,16 +15,28 @@ repository. Keep this file short and factual — it is read every session.
   Branches are reviewed and merged by PR; releases are tagged `vMAJOR.MINOR`.
 - Record every change in `CHANGELOG.md` under `[Unreleased]`, marked
   `[science]` (changes a reported number) or `[engineering]`.
-- Write for a reader who has only this repository and the paper. Code, comments,
-  docstrings, tests, configs, commit messages and the CHANGELOG describe what the code
-  does and why, in standard terms; they do not refer to internal plans, meetings,
-  pilot studies, review rounds, private documents or private tracking numbers. Cite the
-  paper, a release (`v0.1`) or a public issue or PR where a reference helps.
-- Call the design of the first version of the paper `v0.1`, not the submitted,
-  published, original or legacy design. A setting kept only to reproduce `v0.1` is
-  named or described as `v0.1` (the `v0.1` preset, `geometry="v0.1"`) and is removed
-  before `v1.0`; a `v0.1` behaviour that is a valid alternative keeps a descriptive
-  name (`delay_scheme="frozen"`).
+
+## Writing code and documentation
+
+Write for the people who use and extend the framework: they have this repository, its
+documentation and the paper.
+
+- Describe what the code does and why, in standard scientific and software terms.
+  Where a reference helps, cite the paper (equation, figure or table), a release
+  (`v0.1`), a public issue or pull request, or the literature.
+- Name options after what they do (`delay_scheme="frozen"`, `decay_mode="gaussian"`).
+  Behaviour kept only to reproduce an earlier release is named after that release (the
+  `v0.1` preset, `geometry="v0.1"`) and is removed in the next major version.
+- Comments state what the code cannot show: the reason for a choice, a unit, an
+  invariant or a source. History belongs in commit messages and the CHANGELOG.
+- Docstrings follow the NumPy style and give units, valid ranges and, for model code,
+  the equation implemented.
+- Test names and docstrings state the behaviour they check; a test for a fixed bug
+  describes the correct behaviour.
+- Commit messages, pull requests and CHANGELOG entries say what changed and whether
+  reported numbers change.
+- The README, examples and configs show how to install, run and reproduce results;
+  keep examples runnable.
 
 ## What this project is
 
@@ -150,7 +162,6 @@ ruff format .                        # format
 
 ## Conventions
 
-- **Docstrings:** NumPy style (matches numpy/reservoirpy). Napoleon-compatible.
 - **Formatting/linting:** `ruff` (line length 100, target py310).
 - **Commits:** Conventional Commits with a component scope, e.g.
   `feat(provenance): ...`. Versioning follows SemVer.

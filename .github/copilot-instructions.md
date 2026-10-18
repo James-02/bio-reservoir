@@ -12,10 +12,10 @@ Key reminders (see `AGENTS.md` for detail):
 - **Never modify `archive/`** (frozen results of released versions), never tune on the
   held-out draws, or change the pinned scientific dependency versions; new results go to
   `results/`, logs to `logs/`.
-- Write for a reader who has only this repository and the paper: no references to
-  internal plans, meetings, pilot studies, review rounds or private tracking numbers.
-- Call the design of the first version of the paper `v0.1`; settings kept only to
-  reproduce it are named or described as `v0.1` and are removed before `v1.0`.
+- Write for the people who use and extend the framework: describe what the code does
+  and why, and cite the paper, releases, public issues or PRs, or the literature.
+- Name options after what they do; behaviour kept only to reproduce an earlier release
+  is named after that release (`v0.1`) and is removed in the next major version.
 - **No infrastructure details** (hostnames, IPs, user names, remote paths, proxies,
   systemd units, credentials) in tracked files; they belong in `config.env`.
 - Every bug fix comes with a test that fails before the fix; record changes in

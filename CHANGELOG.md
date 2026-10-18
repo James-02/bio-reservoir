@@ -27,10 +27,9 @@ Each entry is marked **[science]** if it changes a reported number, or
   (strict `zip`, exception chaining, unused variables, a mutable default argument).
   Line length (E501) waits for a formatting-only change; `I` (LuxI) is allowed in the
   solver.
-- [engineering] Comments, docstrings, tests, configs and documentation describe the code
-  in terms a reader of the repository and the paper can follow, without references to
-  internal project documents or tracking numbers, and call the design of the first
-  version of the paper `v0.1`; `AGENTS.md` states this as a convention.
+- [engineering] Comments, docstrings, tests, configs and documentation describe what the
+  code does and why, and call the design of the first version of the paper `v0.1`;
+  `AGENTS.md` describes how to write code and documentation.
   The held-out draws are described as evaluated during model development (draws 1 and 2)
   or as the final test set, not yet evaluated (draw 3); their beat IDs are unchanged.
 
