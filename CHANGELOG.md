@@ -125,6 +125,13 @@ Each entry is marked **[science]** if it changes a reported number, or
   had mean sqrt(1 + cv^2), so every varied rate was biased upwards (4.4% at cv 0.3, 11.8%
   at 0.5). `param_heterogeneity_mean_preserving=False` (and the `v0.1` preset)
   keeps the `v0.1` draws.
+- [science] The heterogeneity sweep (`scripts/run_heterogeneity.py`) no longer augments
+  the training folds by default (`v0.1` used rates 0.2999 and 0.2862 there, unlike the
+  headline runs), and each grid seed now sets the reservoir array as well as the
+  parameter draws, so the spread at CV = 0 is the spread between reservoirs; in `v0.1`
+  the five CV = 0 runs were the same reservoir and gave identical predictions.
+  `--fixed_array`, `--noise_rate`, `--noise_ratio` and `--preset v0.1`
+  reproduce the `v0.1` sweep.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or
