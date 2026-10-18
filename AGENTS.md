@@ -107,7 +107,7 @@ All paths and settings come from `utils/config.py` (environment variable, then
   host; skipped unless run with `pytest -m benchmark`). The benchmarks
   (`tests/integration/test_benchmarks.py`) run the configs in
   `experiments/benchmarks/v0.1/` and compare them fold by fold with the archived runs
-  (binary-full by mean F1: its archived folds cannot be rebuilt).
+  (binary-full reads the `v0.1` binary file, `data/ecg_archive/binary_ecg_data.npz`).
 - Unit-test as much as possible: fast, no dataset, no network. Integration tests use
   the real dataset (`data/`) and are skipped without it.
 - The archive tests (`tests/integration/test_archive.py`) check the frozen `v0.1`
