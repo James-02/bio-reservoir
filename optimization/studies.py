@@ -537,7 +537,8 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
         "optimize": {
             # Aggregation strategy for collapsing reservoir state → feature vector.
             # "final"       = last timestep only
-            # "signal_mean" = mean over ECG signal region (non-zero-padded)
+            # "signal_mean" = mean over all timesteps (meant to skip the zero padding, but
+            #                 the z-scored beats have none to detect)
             # "last_N"      = mean over last readout_window timesteps (Phase 1 winner)
             "readout_aggregation": {
                 "type": "categorical",

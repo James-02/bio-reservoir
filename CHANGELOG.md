@@ -110,6 +110,11 @@ Each entry is marked **[science]** if it changes a reported number, or
   `v0.1` order.
 - [engineering] The distance kernel option is `decay_mode="gaussian"`
   (`exp(-(d/l)^2)`); `"exp"`, its `v0.1` name, still works.
+- [engineering] The `signal_mean` readout aggregation is an alias of `mean`, the mean
+  over all 187 steps. It was meant to skip each beat's zero-padded tail, detected as
+  inputs equal to 0, but the beats reach the reservoir z-scored, where the padding is
+  not 0: none of the 4,015 balanced or 109,446 unbalanced beats had a tail detected, so
+  every `v0.1` result used the full mean and none changes.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or
