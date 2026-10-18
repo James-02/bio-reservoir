@@ -177,3 +177,11 @@ def test_cli_marks_shows_and_diffs_runs(registry, capsys):
 def test_cli_rejects_unknown_runs(registry):
     with pytest.raises(SystemExit, match="unknown run"):
         provenance.main(["diff", "run-a", "run-x"])
+
+
+def test_cli_records_the_manuscript_items_a_run_backs(registry, capsys):
+    provenance.main(["mark", "run-a", "ok", "--uses", "Table 2, balanced"])
+    provenance.main(["mark", "run-a", "ok", "--uses", "Figure 3"])
+    provenance.main(["list", "--used"])
+    assert capsys.readouterr().out.splitlines() == [
+        'run-a  ok  {"f1": 0.8}  uses: Table 2, balanced; Figure 3']
