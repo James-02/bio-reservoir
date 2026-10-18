@@ -1,7 +1,7 @@
 """Runtime environment metadata collection.
 
 Collected once per worker process and cached for the lifetime of that
-process.  Used by both the training (classification.py) and readout
+process.  Used by both the training (training.py) and readout
 (readout.py) objectives to stamp every Optuna trial with full
 provenance information.
 

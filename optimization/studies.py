@@ -2,7 +2,7 @@
 
 Each study is a self-contained description of which parameters to optimise
 (with Optuna suggest specs) and which to hold fixed.  The objective function
-in classification.py reads the active study config and dispatches suggest
+in training.py reads the active study config and dispatches suggest
 calls accordingly — there is no commented-out code in the objective.
 
 Structure
@@ -932,7 +932,7 @@ STUDY_REGISTRY: dict[str, dict[str, Any]] = {
     # Single-fold: this study exists only to show the trend of F1 increasing
     # with max_per_class, not to produce headline metrics.
     # The existing P3-imbalance-weighted study used weighted F1 due to a code bug
-    # (readout.py defaulted to weighted; classification.py used weighted
+    # (readout.py defaulted to weighted; the training objective used weighted
     # before BASELINE["objective_average"] was added).
     # -----------------------------------------------------------------------
     "P3-imbalance-1fold": {
@@ -1149,7 +1149,7 @@ STUDY_REGISTRY: dict[str, dict[str, Any]] = {
     # stratified CV protocol, per-fold standardisation and macro-F1 objective
     # as the reservoir readout studies (P4-readout-*). No augmentation: the
     # archived B1-B3 trials all ran (and record) noise_rate = noise_ratio = 0.
-    # Handled by optimization/baseline.py, not classification.py.
+    # Handled by optimization/baseline.py, not optimization/training.py.
     #
     # Run via:
     #   python -m optimization.optimize research --type baseline \
