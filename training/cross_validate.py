@@ -209,6 +209,7 @@ def run_fold(
     readout_window: int = 1,
     primary_average: str = "weighted",
     profile: bool = False,
+    labels: np.ndarray | None = None,
 ) -> FoldArtifact:
     """Execute a single CV fold: train → fit → validate → predict → metrics.
 
@@ -240,6 +241,9 @@ def run_fold(
     profile : bool
         Enable per-phase timing.  Results are stored in the returned
         artefact's ``profiling`` field (not persisted to disk).
+    labels : np.ndarray, optional
+        Classes the averaged metrics run over (see
+        :func:`~utils.analysis.evaluate_performance`); every class by default.
 
     Returns
     -------
@@ -287,7 +291,7 @@ def run_fold(
 
     runtime = round(time.perf_counter() - start_time, 4)
     fold_metrics: Metrics = evaluate_performance(
-        Y_val, Y_pred, runtime, primary_average=primary_average
+        Y_val, Y_pred, runtime, primary_average=primary_average, labels=labels
     )
     selected = getattr(getattr(readout, "_fitted_sklearn", None), "best_params_", None)
 
