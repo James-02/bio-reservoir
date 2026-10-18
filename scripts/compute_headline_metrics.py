@@ -128,8 +128,8 @@ def run_task(task, runs_dir=RUNS_DIR):
     # ── Per-fold aggregate metrics ──
     fold_f1s = [f1_score(r["y_true"], r["y_pred"], average="macro") for r in results]
     fold_accs = [accuracy_score(r["y_true"], r["y_pred"]) for r in results]
-    print(f"\n  Per-fold F1:  mean={np.mean(fold_f1s):.4f}  std={np.std(fold_f1s):.4f}")
-    print(f"  Per-fold Acc: mean={np.mean(fold_accs):.4f}  std={np.std(fold_accs):.4f}")
+    print(f"\n  Per-fold F1:  mean={np.mean(fold_f1s):.4f}  std={np.std(fold_f1s, ddof=1):.4f}")
+    print(f"  Per-fold Acc: mean={np.mean(fold_accs):.4f}  std={np.std(fold_accs, ddof=1):.4f}")
     for i, f1 in enumerate(fold_f1s):
         print(f"    Fold {i}: F1={f1:.4f}  Acc={fold_accs[i]:.4f}")
 
@@ -149,16 +149,16 @@ def run_task(task, runs_dir=RUNS_DIR):
         sups = [r["report"][cls]["support"] for r in results]
 
         class_data[cls] = {
-            "precision_mean": np.mean(precs), "precision_std": np.std(precs),
-            "recall_mean": np.mean(recs), "recall_std": np.std(recs),
-            "f1_mean": np.mean(f1s), "f1_std": np.std(f1s),
+            "precision_mean": np.mean(precs), "precision_std": np.std(precs, ddof=1),
+            "recall_mean": np.mean(recs), "recall_std": np.std(recs, ddof=1),
+            "f1_mean": np.mean(f1s), "f1_std": np.std(f1s, ddof=1),
             "support": int(np.mean(sups)),
         }
 
         print(f"  {cls:<8} "
-              f"{np.mean(precs):.3f} ± {np.std(precs):.3f}    "
-              f"{np.mean(recs):.3f} ± {np.std(recs):.3f}    "
-              f"{np.mean(f1s):.3f} ± {np.std(f1s):.3f}    "
+              f"{np.mean(precs):.3f} ± {np.std(precs, ddof=1):.3f}    "
+              f"{np.mean(recs):.3f} ± {np.std(recs, ddof=1):.3f}    "
+              f"{np.mean(f1s):.3f} ± {np.std(f1s, ddof=1):.3f}    "
               f"{int(np.mean(sups)):>6}")
 
     # ── LaTeX table rows ──
@@ -189,7 +189,7 @@ def run_task(task, runs_dir=RUNS_DIR):
         "mcc": mcc,
         "kappa": kappa,
         "fold_f1_mean": np.mean(fold_f1s),
-        "fold_f1_std": np.std(fold_f1s),
+        "fold_f1_std": np.std(fold_f1s, ddof=1),
         "class_data": class_data,
     }
 

@@ -11,6 +11,7 @@ from utils.analysis import (
     compute_mean_metrics,
     count_labels,
     measure_dataset_deviation,
+    sample_sd,
     _is_class_key,
 )
 
@@ -157,11 +158,17 @@ class TestComputeClassDicts:
         d2 = {"0": {"p": 0.6, "r": 0.8}, "1": {"p": 0.7, "r": 0.9}}
         result = compute_class_dicts([d1, d2])
         assert result["0"]["p_mean"] == pytest.approx(0.7)
-        assert result["0"]["p_std"] == pytest.approx(0.1)
+        assert result["0"]["p_std"] == pytest.approx(np.std([0.8, 0.6], ddof=1))
         assert result["1"]["r_mean"] == pytest.approx(0.8)
 
     def test_empty_input(self):
         assert compute_class_dicts([]) == {}
+
+
+def test_sample_sd():
+    assert sample_sd([0.8, 0.6, 0.7]) == pytest.approx(0.1)
+    assert sample_sd([0.5]) == 0.0
+    assert np.isnan(sample_sd([]))
 
 
 # ---------------------------------------------------------------------------

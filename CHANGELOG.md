@@ -69,6 +69,10 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Fixed
 
+- [science] Standard deviations over folds or seeds are sample SDs (ddof = 1)
+  everywhere: Optuna trial attributes (`metric_f1_std`, fold timings), per-class SDs,
+  run metrics, the headline-metrics and fold-analysis scripts and the heterogeneity
+  figure. SDs over five folds were population SDs and are now 1.118 times larger.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or

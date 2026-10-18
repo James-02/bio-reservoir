@@ -24,7 +24,7 @@ from sklearn.neural_network import MLPClassifier
 
 
 from utils import config
-from utils.analysis import compute_class_dicts, compute_mean_dicts, evaluate_performance
+from utils.analysis import compute_class_dicts, compute_mean_dicts, evaluate_performance, sample_sd
 from utils.results import FoldArtifact
 from optimization.base import (
     DEFAULT_SEED,
@@ -597,7 +597,7 @@ def objective(trial, **kwargs):
     # Store aggregate metrics
     trial.set_user_attr("metric_primary_average", objective_average)
     trial.set_user_attr("metric_f1",        mean_f1)
-    trial.set_user_attr("metric_f1_std",    float(np.std(f1s, ddof=0)))
+    trial.set_user_attr("metric_f1_std",    sample_sd(f1s))
     trial.set_user_attr("metric_f1_macro",  float(np.mean([m.get("macro avg", {}).get("f1-score", float("nan")) for m in fold_class_metrics])))
     trial.set_user_attr("metric_f1_weighted", float(np.mean([m.get("weighted avg", {}).get("f1-score", float("nan")) for m in fold_class_metrics])))
     trial.set_user_attr("metric_accuracy",  float(np.mean(accuracies)))
@@ -616,13 +616,13 @@ def objective(trial, **kwargs):
     trial.set_user_attr("profile_fit_readout_mean_s",
                         round(float(np.mean(fold_fit_times)), 6))
     trial.set_user_attr("profile_fit_readout_std_s",
-                        round(float(np.std(fold_fit_times, ddof=0)), 6))
+                        round(sample_sd(fold_fit_times), 6))
     trial.set_user_attr("profile_fit_readout_total_s",
                         round(float(np.sum(fold_fit_times)), 6))
     trial.set_user_attr("profile_predict_mean_s",
                         round(float(np.mean(fold_predict_times)), 6))
     trial.set_user_attr("profile_predict_std_s",
-                        round(float(np.std(fold_predict_times, ddof=0)), 6))
+                        round(sample_sd(fold_predict_times), 6))
     trial.set_user_attr("profile_predict_total_s",
                         round(float(np.sum(fold_predict_times)), 6))
 

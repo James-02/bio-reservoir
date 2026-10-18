@@ -189,6 +189,7 @@ class TestAverageFoldArtifacts:
         assert result["profiling"] == _merge_profiles(profiles)
         runtimes = result["fold_runtimes"]
         assert (runtimes["mean_s"], runtimes["min_s"], runtimes["max_s"]) == (3.0, 2.0, 4.0)
+        assert runtimes["std_s"] == round(np.std([2.0, 4.0], ddof=1), 4)
         assert runtimes["per_fold"] == [2.0, 4.0]
 
 

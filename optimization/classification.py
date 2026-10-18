@@ -58,7 +58,7 @@ from optimization.base import (
 from optimization.environment import get_environment
 from optimization.reservoirs import build_reservoir
 from optimization.studies import BASELINE, get_study, list_studies
-from utils.analysis import compute_class_dicts
+from utils.analysis import compute_class_dicts, sample_sd
 
 logger = logging.getLogger(__name__)
 
@@ -376,7 +376,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     _fold_f1s = [fd.get("f1", float("nan")) for fd in _folds_data]
 
     trial.set_user_attr("metric_f1",        metrics.get("f1",        float("nan")))
-    trial.set_user_attr("metric_f1_std",    float(np.std(_fold_f1s, ddof=0)) if _fold_f1s else float("nan"))
+    trial.set_user_attr("metric_f1_std",    sample_sd(_fold_f1s))
     trial.set_user_attr("metric_f1_macro",  metrics.get("f1_macro",  float("nan")))
     trial.set_user_attr("metric_f1_weighted", metrics.get("f1_weighted", float("nan")))
     trial.set_user_attr("metric_accuracy",  metrics.get("accuracy",  float("nan")))

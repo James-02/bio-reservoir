@@ -1351,7 +1351,7 @@ def plot_heterogeneity_robustness(
 
     cv_levels = sorted(by_cv)
     means = [np.mean(by_cv[cv]) for cv in cv_levels]
-    stds  = [np.std(by_cv[cv])  for cv in cv_levels]
+    stds  = [np.std(by_cv[cv], ddof=1)  for cv in cv_levels]
 
     # ---- evenly-spaced x positions (avoids label overlap) ----
     x_pos = np.arange(len(cv_levels))

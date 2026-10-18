@@ -196,7 +196,7 @@ def _average_fold_artifacts(
         runtimes = [fa.metrics.runtime for fa in fold_artifacts]
         n = len(runtimes)
         mean_rt = sum(runtimes) / n
-        std_rt  = math.sqrt(sum((t - mean_rt) ** 2 for t in runtimes) / n) if n > 1 else 0.0
+        std_rt  = math.sqrt(sum((t - mean_rt) ** 2 for t in runtimes) / (n - 1)) if n > 1 else 0.0
         result["fold_runtimes"] = {
             "mean_s":   round(mean_rt, 4),
             "std_s":    round(std_rt,  4),

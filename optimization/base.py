@@ -464,7 +464,7 @@ def _print_fold_table(row, df_cols) -> None:
             vals = [folds_data[fi].get(m, float("nan")) for fi in sorted(folds_data)]
             arr = _np.array(vals)
             mean_line += f" \u2502 {_np.nanmean(arr):>{col_w}.4f}"
-            std_line  += f" \u2502 {_np.nanstd(arr, ddof=0):>{col_w}.4f}"
+            std_line  += f" \u2502 {_np.nanstd(arr, ddof=1):>{col_w}.4f}"
         print(mean_line)
         print(std_line)
     print(bar)
@@ -566,10 +566,10 @@ def _print_class_table(row, df_cols) -> None:
                 arr = _np.array(vals_arr)
                 if m == "support":
                     mean_line += f" \u2502 {_np.nanmean(arr):>{col_w}.0f}"
-                    std_line  += f" \u2502 {_np.nanstd(arr, ddof=0):>{col_w}.0f}"
+                    std_line  += f" \u2502 {_np.nanstd(arr, ddof=1):>{col_w}.0f}"
                 else:
                     mean_line += f" \u2502 {_np.nanmean(arr):>{col_w}.4f}"
-                    std_line  += f" \u2502 {_np.nanstd(arr, ddof=0):>{col_w}.4f}"
+                    std_line  += f" \u2502 {_np.nanstd(arr, ddof=1):>{col_w}.4f}"
             print(mean_line)
             print(std_line)
         print(bar)

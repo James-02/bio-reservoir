@@ -258,7 +258,7 @@ class TestMergeProfiles:
             {"fit": {"total_s": 3.0, "calls": 2, "mean_s": 1.5}},
         ]
         merged = _merge_profiles(profiles)
-        assert merged["fit"] == {"total_s": 4.0, "mean_s": 2.0, "std_s": 1.0,
+        assert merged["fit"] == {"total_s": 4.0, "mean_s": 2.0, "std_s": round(np.sqrt(2.0), 6),
                                  "calls_total": 4, "calls_per_fold": 2.0, "n_folds": 2}
         # A section missing from a fold is still averaged over every fold.
         assert merged["run"]["mean_s"] == 2.0 and merged["run"]["n_folds"] == 2

@@ -108,7 +108,7 @@ def _merge_profiles(profiles: List[Optional[Dict[str, Any]]]) -> Dict[str, Any]:
 
     * ``total_s``       — wall time in this section across **all folds** combined.
     * ``mean_s``        — per-fold average (``total_s / n_folds``).
-    * ``std_s``         — population std of per-fold totals (0.0 for 1 fold).
+    * ``std_s``         — sample SD of per-fold totals (0.0 for 1 fold).
     * ``calls_total``   — total invocation count across all folds.
     * ``calls_per_fold``— average calls per fold (= N_instances for inner sections).
     * ``n_folds``       — number of folds merged.
@@ -138,7 +138,7 @@ def _merge_profiles(profiles: List[Optional[Dict[str, Any]]]) -> Dict[str, Any]:
         calls_total  = sum(calls)
         mean_s       = total_s / n_folds
         std_s        = math.sqrt(
-            sum((t - mean_s) ** 2 for t in totals) / n_folds
+            sum((t - mean_s) ** 2 for t in totals) / (n_folds - 1)
         ) if n_folds > 1 else 0.0
         result[section] = {
             "total_s":        round(total_s, 6),
