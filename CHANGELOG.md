@@ -241,6 +241,10 @@ coupling the hyperparameters were tuned for, so the studies need re-tuning.
 - [engineering] A reservoir trial on the original train/test split (`--preserve_split`)
   is recorded as one fold (`metric_n_folds`, `fold_0_*`, per-class means); it recorded
   0 folds and no fold metrics. No archived trial records using the original split.
+- [engineering] `scripts/analysis/analyse_fold_results.py` shows MCC and kappa in its
+  per-fold table and plots. It asked for RMSE and R2, which fold files no longer store, so
+  the table showed columns of zeros and `--plots class` (and `--plots` alone) failed with
+  a KeyError.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
   So do the trial start and end times of the optimisation objectives.

@@ -91,8 +91,8 @@ def _fmt(v: Any, decimals: int = 4) -> str:
 # Console tables
 # ---------------------------------------------------------------------------
 
-_SCALAR_KEYS = ["f1", "accuracy", "precision", "recall", "rmse", "r2_score", "runtime"]
-_SCALAR_HEADERS = ["fold", "F1", "Accuracy", "Precision", "Recall", "RMSE", "R²", "Runtime(s)"]
+_SCALAR_KEYS = ["f1", "accuracy", "precision", "recall", "mcc", "kappa", "runtime"]
+_SCALAR_HEADERS = ["fold", "F1", "Accuracy", "Precision", "Recall", "MCC", "Kappa", "Runtime(s)"]
 _SCALAR_COL_W = [5] + [10] * len(_SCALAR_KEYS)
 
 
@@ -217,7 +217,7 @@ def _run_plots(
         )
         plot_metrics_across_folds(
             [a.metrics for a in artifacts],
-            metric_names=["f1", "accuracy", "precision", "recall", "rmse"],
+            metric_names=["f1", "accuracy", "precision", "recall", "mcc"],
             show=show,
             filename=_fig_out(trial_name, "metrics-across-folds.png"),
         )
