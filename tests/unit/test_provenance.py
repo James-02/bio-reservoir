@@ -5,7 +5,7 @@ import getpass
 import json
 import re
 import socket
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pytest
@@ -14,7 +14,7 @@ import optimization.environment as env_mod
 from utils import config, provenance
 
 CLEAN = {"commit": "a" * 40, "describe": "v0.1-10-gaaaaaaa", "dirty": False}
-START = datetime(2026, 10, 21, 9, 0, 0, tzinfo=timezone.utc)
+START = datetime(2026, 10, 21, 9, 0, 0, tzinfo=UTC)
 END = START + timedelta(seconds=90)
 SPEC = {"preset": "P2-distance", "units": 20, "folds": 2}
 

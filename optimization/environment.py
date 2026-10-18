@@ -70,7 +70,7 @@ def _collect_environment() -> dict[str, Any]:
             return fallback
 
     os_release = _os_release()
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     env: dict[str, Any] = {}
     env["timestamp_utc"]     = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     env["python_version"]    = _sys.version.split()[0]

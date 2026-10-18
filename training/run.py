@@ -34,7 +34,7 @@ import hashlib
 import json
 import logging
 import resource
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -578,7 +578,7 @@ def execute(cfg: dict[str, Any], *, out: str | Path | None = None, processes: in
                          "pass --final-test to evaluate it.")
     git = provenance.git_info()
     citable = provenance.require_clean(git, allow_dirty)
-    started = datetime.now(timezone.utc)
+    started = datetime.now(UTC)
     run_dir = Path(out) if out else (
         settings.runs_dir() / f"{cfg['name']}-{started:%Y%m%dT%H%M%SZ}")
     if run_dir.exists() and any(run_dir.iterdir()):
@@ -638,7 +638,7 @@ def execute(cfg: dict[str, Any], *, out: str | Path | None = None, processes: in
                         metrics["mean"]["f1"], metrics["sd"]["f1"], metrics["n_folds"],
                         metrics["mean"]["accuracy"])
 
-    ended = datetime.now(timezone.utc)
+    ended = datetime.now(UTC)
     outputs = sorted(p for p in run_dir.rglob("*") if p.is_file())
     seeds = sorted({int(cfg["seed"]), int(cfg["task"]["seed"]), int(cfg["cv"]["seed"]),
                     int(cfg["reservoir"].get("seed", cfg["seed"]))})

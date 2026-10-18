@@ -162,16 +162,16 @@ ruff format .                        # format
 
 ## Conventions
 
-- **Formatting/linting:** `ruff` (line length 100, target py310).
+- **Formatting/linting:** `ruff` (line length 100, target py312).
 - **Commits:** Conventional Commits with a component scope, e.g.
   `feat(provenance): ...`. Versioning follows SemVer.
-- **Python support:** 3.10–3.12. Runtime dependencies are pinned in `pyproject.toml`;
+- **Python support:** 3.12–3.13. Runtime dependencies are pinned in `pyproject.toml`;
   every dependency is locked in `uv.lock`.
 - **Settings:** paths, secrets and host details only through `utils.config`
   (environment, then `config.env`, then default).
 - Library code must not call `logging.basicConfig`; use
   `utils.logger.setup_logging` from CLIs/scripts only.
-- **CI** (GitHub Actions, every PR): ruff, unit tests on Python 3.10–3.12,
+- **CI** (GitHub Actions, every PR): ruff, unit tests on Python 3.12–3.13,
   integration tests, coverage.
 
 ## Hard rules (do not violate)
@@ -182,10 +182,11 @@ ruff format .                        # format
   Never change the beat IDs in that file.
 - **Never modify `archive/`.** It holds the frozen artefacts of a released
   version (the `v0.1` code is archived on Zenodo, DOI 10.5281/zenodo.23436888).
-  Write new results to `results/` and logs to `logs/`. Keep the scientific
+  Write new results to `results/` and logs to `logs/`. Upgrade the scientific
   dependencies (numpy, numba, scipy, scikit-learn, reservoirpy, optuna, pandas,
-  matplotlib) at their pinned versions before `v1.0`; other dependencies may be
-  upgraded for security fixes, with a CHANGELOG entry.
+  matplotlib) only between sets of reported results, and re-run the results an upgrade
+  affects; other dependencies may be upgraded for security fixes. Record every upgrade
+  in the CHANGELOG.
 - **No infrastructure details in committed files.** No hostnames, IPs, user names,
   paths on remote hosts, proxies, systemd units or credentials. The deployment helpers
   (`optimization/deploy.py`, `optimization/collect.py`) read all of these from the

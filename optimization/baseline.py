@@ -237,7 +237,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     """
     trial.set_user_attr(
         "trial_start_utc",
-        datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
     monitor = ResourceMonitor(interval=0.5).start()
     _trial_t0 = _time.perf_counter()
@@ -452,7 +452,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
 
     trial.set_user_attr(
         "trial_end_utc",
-        datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
 
     return mean_f1
