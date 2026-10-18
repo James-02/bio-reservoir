@@ -1,7 +1,21 @@
 import numpy as np
+import pandas as pd
 import pytest
 
-from utils.preprocessing import dataset_sha256, ensure_kaggle_heartbeat_files, load_ecg_data
+from utils.preprocessing import (
+    _balance_classes,
+    _limit_instances,
+    _one_hot_encode,
+    _reshape_data,
+    _sequence_minmax,
+    _shuffle_dataset,
+    _train_test_split_balanced_test,
+    augment_data,
+    dataset_sha256,
+    ensure_kaggle_heartbeat_files,
+    load_ecg_data,
+    standardize_data,
+)
 
 
 def _flatten_onehot_labels(Y):
@@ -328,3 +342,174 @@ def test_dataset_sha256_depends_on_the_arrays_not_the_file(tmp_path):
     plain, compressed, changed = (dataset_sha256(tmp_path / f"{name}.npz")
                                   for name in ("plain", "compressed", "changed"))
     assert plain == compressed != changed
+
+
+# ---------------------------------------------------------------------------
+# Scaling, augmentation, balancing and splitting helpers (synthetic data)
+# ---------------------------------------------------------------------------
+
+def _sequences(n=6, steps=50, seed=0):
+    return np.random.default_rng(seed).normal(2.0, 3.0, size=(n, steps, 1))
+
+
+class TestScaling:
+    def test_sequence_zscore_standardises_each_sequence(self):
+        X = _sequences()
+        X[0] = 5.0
+        train, test = standardize_data(X, X[:2], scaler_type="sequence_zscore")
+        np.testing.assert_allclose(train[1:].mean(axis=1), 0.0, atol=1e-12)
+        np.testing.assert_allclose(train[1:].std(axis=1), 1.0)
+        np.testing.assert_array_equal(train[0], 0.0)
+        np.testing.assert_array_equal(test, train[:2])
+
+    @pytest.mark.parametrize("scaler, low, high", [("sequence_minmax", 0.0, 1.0),
+                                                   ("sequence_minmax_pos", 0.1, 0.9)])
+    def test_sequence_minmax_maps_each_sequence_to_its_range(self, scaler, low, high):
+        X = _sequences()
+        X[0] = 5.0
+        train, _ = standardize_data(X, X, scaler_type=scaler)
+        np.testing.assert_allclose(train[1:].min(axis=1), low)
+        np.testing.assert_allclose(train[1:].max(axis=1), high)
+        np.testing.assert_array_equal(train[0], low)
+
+    def test_none_returns_the_data_unchanged(self):
+        X = _sequences()
+        train, test = standardize_data(X, X[:2], scaler_type="none")
+        np.testing.assert_array_equal(train, X)
+        np.testing.assert_array_equal(test, X[:2])
+
+    @pytest.mark.parametrize("scaler", ["minmax", "standard"])
+    def test_global_scalers_use_training_statistics_only(self, scaler):
+        X_train, X_test = _sequences(seed=1), 10.0 * _sequences(seed=2)
+        train, test = standardize_data(X_train, X_test, scaler_type=scaler)
+        flat = X_train[..., 0]
+        if scaler == "minmax":
+            low, high = flat.min(axis=0), flat.max(axis=0)
+            expected = (X_test[..., 0] - low) / (high - low)
+        else:
+            expected = (X_test[..., 0] - flat.mean(axis=0)) / flat.std(axis=0)
+        assert train.shape == X_train.shape and test.shape == X_test.shape
+        np.testing.assert_allclose(test[..., 0], expected)
+
+    def test_invalid_scalers_are_rejected(self):
+        with pytest.raises(ValueError, match="scaler_type"):
+            standardize_data(_sequences(), _sequences(), scaler_type="robust")
+        with pytest.raises(ValueError, match="a < b"):
+            _sequence_minmax(_sequences(), 1.0, 1.0)
+
+
+class TestAugmentation:
+    @pytest.mark.parametrize("rate, ratio", [(0.0, 0.5), (0.1, 0.0)])
+    def test_no_noise_returns_the_inputs(self, rate, ratio):
+        X, Y = _sequences(), np.zeros(6)
+        X_out, Y_out = augment_data(X, Y, rate, ratio)
+        assert X_out is X and Y_out is Y
+
+    def test_each_class_grows_in_proportion(self):
+        X = _sequences(n=10)
+        Y = np.eye(3)[[0] * 6 + [1] * 4][:, None, :]  # class 2 is absent
+        X_aug, Y_aug = augment_data(X, Y, 0.1, 0.5, rng=np.random.RandomState(0))
+        assert len(X_aug) == len(Y_aug) == 10 + 3 + 2
+        np.testing.assert_array_equal(X_aug[:10], X)
+        np.testing.assert_array_equal(Y_aug[:10], Y)
+        assert Y_aug.shape[1:] == (1, 3)
+        assert np.bincount(np.argmax(Y_aug[10:, 0], axis=1), minlength=3).tolist() == [3, 2, 0]
+
+    def test_noise_is_scaled_to_each_sequence(self):
+        t = np.linspace(0.0, 20 * np.pi, 5000)
+        X = np.stack([np.sin(t), 4.0 * np.cos(t)])[..., None]
+        Y = np.array([0, 1])
+        X_aug, Y_aug = augment_data(X, Y, 0.2, 3, rng=np.random.RandomState(1))
+        assert len(X_aug) == 8
+        for x, y in zip(X_aug[2:], Y_aug[2:]):
+            source = X[int(y)]
+            assert (x - source).std() / source.std() == pytest.approx(0.2, rel=0.05)
+
+
+class TestBalancing:
+    LABELS = np.array([0] * 8 + [1] * 3 + [2] * 5)
+
+    def test_default_balances_to_the_smallest_class(self):
+        X, Y = _balance_classes(np.arange(16), self.LABELS, rng=np.random.RandomState(0))
+        assert np.bincount(Y).tolist() == [3, 3, 3]
+        assert len(set(X.tolist())) == 9
+        np.testing.assert_array_equal(self.LABELS[X], Y)
+
+    def test_a_cap_keeps_smaller_classes_whole(self):
+        _, Y = _balance_classes(np.arange(16), self.LABELS, max_per_class=4,
+                                rng=np.random.RandomState(0))
+        assert np.bincount(Y).tolist() == [4, 3, 4]
+
+    def test_seeded_selection_is_reproducible(self):
+        a = _balance_classes(np.arange(16), self.LABELS, rng=np.random.RandomState(5))[0]
+        b = _balance_classes(np.arange(16), self.LABELS, rng=np.random.RandomState(5))[0]
+        np.testing.assert_array_equal(a, b)
+
+
+class TestBalancedTestSplit:
+    def test_each_class_gives_the_same_number_of_test_samples(self):
+        labels = np.array([0] * 40 + [1] * 10 + [2] * 25)
+        X_tr, Y_tr, X_te, Y_te = _train_test_split_balanced_test(
+            np.arange(75), labels, test_size=0.2, shuffle=True, rng=np.random.RandomState(0))
+        assert np.bincount(Y_te).tolist() == [2, 2, 2]
+        assert sorted(np.concatenate([X_tr, X_te]).tolist()) == list(range(75))
+        np.testing.assert_array_equal(labels[X_tr], Y_tr)
+        np.testing.assert_array_equal(labels[X_te], Y_te)
+
+    def test_too_small_a_test_fraction_is_rejected(self):
+        with pytest.raises(ValueError, match="test_size too small"):
+            _train_test_split_balanced_test(np.arange(10), np.array([0] * 5 + [1] * 5),
+                                            test_size=0.1, shuffle=False)
+
+
+class TestSmallHelpers:
+    def test_limit_instances(self):
+        X, Y = np.arange(10), np.arange(10) % 2
+        assert _limit_instances(X, Y, None)[0] is X
+        assert _limit_instances(X, Y, 10)[0] is X
+        X_l, Y_l = _limit_instances(X, Y, 4, rng=np.random.RandomState(0))
+        assert len(set(X_l.tolist())) == 4
+        np.testing.assert_array_equal(Y_l, X_l % 2)
+
+    def test_shuffle_keeps_pairs(self):
+        X = np.arange(10)
+        X_s, Y_s = _shuffle_dataset(X, 10 * X, np.random.default_rng(0))
+        np.testing.assert_array_equal(Y_s, 10 * X_s)
+        assert sorted(X_s.tolist()) == list(range(10))
+
+    def test_reshape_and_one_hot(self):
+        X_r, Y_r = _reshape_data(np.arange(6.0).reshape(2, 3), np.eye(2)[[1, 0]])
+        assert X_r[0].shape == (3, 1) and Y_r[0].shape == (1, 2)
+        np.testing.assert_array_equal(X_r[1][:, 0], [3.0, 4.0, 5.0])
+        np.testing.assert_array_equal(_one_hot_encode(np.array([2.0, 0.0]), 3),
+                                      [[0, 0, 1], [1, 0, 0]])
+
+
+def _write_heartbeat_csv(path, labels, seed):
+    rng = np.random.default_rng(seed)
+    rows = np.column_stack([rng.uniform(size=(len(labels), 187)), labels])
+    pd.DataFrame(rows).to_csv(path, header=False, index=False)
+
+
+class TestPreservedSplit:
+    @pytest.fixture
+    def ecg_dir(self, tmp_path):
+        _write_heartbeat_csv(tmp_path / "mitbih_train.csv", np.repeat(np.arange(5), 6), seed=1)
+        _write_heartbeat_csv(tmp_path / "mitbih_test.csv", np.repeat(np.arange(5), 2), seed=2)
+        return tmp_path
+
+    def test_the_source_test_file_becomes_the_test_set(self, ecg_dir):
+        X_tr, _, X_te, _ = load_ecg_data(rows=None, preserve_split=True, data_dir=str(ecg_dir),
+                                         standardize=False, balance_classes=False, seed=0)
+        source = pd.read_csv(ecg_dir / "mitbih_test.csv", header=None).values[:, :-1]
+        assert len(X_tr) == 30 and len(X_te) == 10
+        assert sorted(map(tuple, X_te[:, :, 0])) == sorted(map(tuple, source))
+        assert not (ecg_dir / "ecg_data.npz").exists()
+
+    def test_binary_labels_merge_the_arrhythmia_classes(self, ecg_dir):
+        _, Y_tr, _, Y_te = load_ecg_data(rows=None, preserve_split=True, binary=True,
+                                         data_dir=str(ecg_dir), standardize=False,
+                                         balance_classes=False, seed=0)
+        assert Y_te.shape[1:] == (1, 2)
+        assert np.bincount(np.argmax(Y_te[:, 0], axis=1)).tolist() == [2, 8]
+        assert np.bincount(np.argmax(Y_tr[:, 0], axis=1)).tolist() == [6, 24]
