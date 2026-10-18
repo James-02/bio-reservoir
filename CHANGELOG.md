@@ -193,6 +193,9 @@ coupling the hyperparameters were tuned for, so the studies need re-tuning.
   studies ran on a 96-thread host and have 480 trials each), and fewer trials than
   processes ran none. Without `processes` the study runs in one process instead of
   failing.
+- [engineering] Readout studies optimise macro F1 unless `--primary_average` says
+  otherwise; they defaulted to weighted F1, unlike the reservoir and baseline studies.
+  Every archived readout study was run with macro F1.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or

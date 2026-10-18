@@ -503,7 +503,7 @@ def objective(trial, **kwargs):
     _trial_t0 = _time.perf_counter()
 
     classifier_name = trial.suggest_categorical('classifier', kwargs['classifiers'])
-    objective_average = str(kwargs.get("objective_average", "weighted"))
+    objective_average = str(kwargs.get("objective_average", "macro"))
 
     artifacts = FoldArtifact.load_trial(kwargs['trial_name'])
     f1s: List[float] = []
