@@ -1,7 +1,9 @@
 """Unit tests for the bioreservoir.dde DDE solver."""
 
+import itertools
 import logging
 
+import numba
 import numpy as np
 import pytest
 from scipy.integrate import solve_ivp
@@ -532,3 +534,224 @@ class TestDelayResolution:
     def test_unknown_scheme_is_rejected(self):
         with pytest.raises(ValueError, match="delay_scheme"):
             _run_node(2.0, 16, (), delay_scheme="cubic")
+
+
+# ---------------------------------------------------------------------------
+# The substep kernel, compiled and as plain Python
+# ---------------------------------------------------------------------------
+
+KERNELS = ("python", "sequential", "parallel")
+
+# No LuxI production of AHL and no AiiA degradation of it, and He constant: Hi relaxes
+# linearly towards He + u, so the solver's Hi has a closed form.
+LINEAR_AHL = {"b": 0.0, "gammaH": 0.0, "d": 0.0, "mu": 0.0}
+
+
+def _python(func):
+    """The plain-Python version of a numba function (the function itself without the JIT)."""
+    return getattr(func, "py_func", func)
+
+
+def _start(delay, substeps, n_nodes=3, seed=0):
+    """Start-up states and their Hi history at substep resolution."""
+    rng = np.random.default_rng(seed)
+    history = rng.uniform([0.10, 0.10, 0.01, 0.04], [0.20, 0.20, 0.03, 0.06],
+                          size=(12, n_nodes, 4))
+    ring, pos = dde.substep_history(history, delay, substeps)
+    return history[-1].copy(), ring, pos
+
+
+def _advance(kernel, monkeypatch, state, ring, pos, inputs, substeps, **kwargs):
+    """Step ``solve_dde_substep`` through ``inputs`` (one row per input step).
+
+    ``kernel="python"`` runs the kernel and its ring lookup as plain Python, which is what
+    coverage measures; "sequential" and "parallel" run the compiled kernels.
+    """
+    with monkeypatch.context() as patch:
+        if kernel == "python":
+            patch.setattr(dde, "_solve_substep_sequential", dde._substep_kernel)
+            patch.setattr(dde, "_ring_value", _python(dde._ring_value))
+        for u in inputs:
+            state, pos = dde.solve_dde_substep(state, ring, pos, np.asarray(u, dtype=float),
+                                               substeps, parallel=kernel == "parallel",
+                                               **kwargs)
+    return state, pos
+
+
+def _rk4_factor(rate, dt):
+    """RK4's factor per step for dx/dt = -rate x."""
+    z = -rate * dt
+    return 1.0 + z + z ** 2 / 2.0 + z ** 3 / 6.0 + z ** 4 / 24.0
+
+
+def _promoter(params, hi):
+    """AiiA production for the (delayed) Hi."""
+    return (params["CA"] * params["decay"] * (params["del_"] + params["alpha"] * hi ** 2)
+            / (1.0 + params["k1"] * hi ** 2))
+
+
+class TestSubstepKernel:
+    """The delay-resolving RK4 kernel, compiled (sequential, parallel) and as plain Python.
+
+    Lags are in substeps: 0 is the ODE; 1 reads the current entry at the end of a substep;
+    2.9 keeps fewer entries than a step writes, so the ring wraps within a step; 20.8 is
+    interpolated; 32 is a whole number of substeps. RK4 needs about 16 substeps per input
+    step to be stable for the default kinetics; with fewer, rounding differences grow.
+    """
+
+    @pytest.mark.parametrize("substeps", [16, 25])
+    @pytest.mark.parametrize("lag", [0.0, 1.0, 2.9, 20.8, 32.0])
+    def test_compiled_kernels_match_the_python_kernel(self, monkeypatch, substeps, lag):
+        delay = lag / substeps
+        node_params = generate_node_params(3, 0.3, get_dde_params(delay=delay), seed=5)
+        inputs = np.random.default_rng(1).normal(0.0, 0.02, size=(5, 3))
+        results = {}
+        for kernel in KERNELS:
+            state, ring, pos = _start(delay, substeps)
+            state, pos = _advance(kernel, monkeypatch, state, ring, pos, inputs, substeps,
+                                  node_params=node_params, delay=delay)
+            results[kernel] = state, ring, pos
+        state, ring, pos = results["python"]
+        for kernel in ("sequential", "parallel"):  # fastmath may reorder: rounding only
+            np.testing.assert_allclose(results[kernel][0], state, rtol=1e-12, atol=1e-12)
+            np.testing.assert_allclose(results[kernel][1], ring, rtol=1e-12, atol=1e-12)
+            assert results[kernel][2] == pos
+
+    @pytest.mark.parametrize("kernel", KERNELS)
+    @pytest.mark.parametrize("lag, steps", [(0.0, 2), (1.0, 2), (2.9, 2), (20.8, 1), (20.8, 2)])
+    def test_the_ring_holds_hi_after_every_substep(self, monkeypatch, kernel, lag, steps):
+        substeps = 16
+        delay = lag / substeps
+        state, ring, pos = _start(delay, substeps)
+        before, length = ring.copy(), ring.shape[1]
+        u = np.array([0.02, -0.01, 0.0])
+        end, end_pos = _advance(kernel, monkeypatch, state, ring, pos, [u] * steps, substeps,
+                                delay=delay, **LINEAR_AHL)
+        target = state[:, 3] + u
+        written = steps * substeps
+        factors = _rk4_factor(DEFAULT_DDE_PARAMS["D"], 1.0 / substeps) ** np.arange(1, written + 1)
+        hi = target[:, None] + (state[:, 2] - target)[:, None] * factors
+        assert end_pos == (pos + written) % length
+        np.testing.assert_allclose(end[:, 2], hi[:, -1], rtol=1e-12)
+        np.testing.assert_array_equal(end[:, 3], state[:, 3])
+        for back in range(length):  # newest entry first
+            entry = ring[:, (end_pos - back) % length]
+            if back < written:
+                np.testing.assert_allclose(entry, hi[:, written - 1 - back], rtol=1e-12)
+            else:  # not overwritten yet: the stored history
+                np.testing.assert_array_equal(entry, before[:, (pos + written - back) % length])
+
+    @pytest.mark.parametrize("kernel", KERNELS)
+    @pytest.mark.parametrize("delay", [1.0, 1.3, 2.0])
+    def test_each_stage_reads_hi_one_delay_before_its_own_time(self, monkeypatch, kernel, delay):
+        # Without AiiA decay (gammaA = 0) dA/dt is the production for the delayed Hi alone, so
+        # a substep from t adds dt/6 (P(t - delay) + 4 P(t + dt/2 - delay) + P(t + dt - delay)).
+        # A delay of at least one input step reads only the stored history in the first step.
+        substeps = 16
+        params = get_dde_params(gammaA=0.0, delay=delay, **LINEAR_AHL)
+        state, ring, pos = _start(delay, substeps)
+        times = (np.arange(ring.shape[1]) - pos) / substeps
+        stored = ring.copy()
+
+        def production(t):
+            return _promoter(params, np.array([np.interp(t - delay, times, row) for row in stored]))
+
+        dt = 1.0 / substeps
+        expected = state[:, 0] + sum(
+            dt / 6.0 * (production(t) + 4.0 * production(t + dt / 2.0) + production(t + dt))
+            for t in np.arange(substeps) * dt)
+        end, _ = _advance(kernel, monkeypatch, state, ring, pos, [np.zeros(3)], substeps,
+                          gammaA=0.0, delay=delay, **LINEAR_AHL)
+        np.testing.assert_allclose(end[:, 0], expected, rtol=1e-12)
+
+    @pytest.mark.parametrize("kernel", KERNELS)
+    def test_a_zero_delay_gives_each_stage_its_own_hi(self, monkeypatch, kernel):
+        substeps = 16
+        params = get_dde_params(gammaA=0.0, delay=0.0, **LINEAR_AHL)
+        state, ring, pos = _start(0.0, substeps)
+        u = np.array([0.02, -0.01, 0.0])
+        target, dt, rate = state[:, 3] + u, 1.0 / substeps, params["D"]
+        a, hi = state[:, 0].copy(), state[:, 2].copy()
+        for _ in range(substeps):
+            hi2 = hi + 0.5 * dt * rate * (target - hi)
+            hi3 = hi + 0.5 * dt * rate * (target - hi2)
+            hi4 = hi + dt * rate * (target - hi3)
+            a = a + dt / 6.0 * (_promoter(params, hi) + 2.0 * _promoter(params, hi2)
+                                + 2.0 * _promoter(params, hi3) + _promoter(params, hi4))
+            hi = hi + dt / 6.0 * rate * ((target - hi) + 2.0 * (target - hi2)
+                                         + 2.0 * (target - hi3) + (target - hi4))
+        end, _ = _advance(kernel, monkeypatch, state, ring, pos, [u], substeps,
+                          gammaA=0.0, delay=0.0, **LINEAR_AHL)
+        np.testing.assert_allclose(end[:, 0], a, rtol=1e-12)
+        np.testing.assert_allclose(end[:, 2], hi, rtol=1e-12)
+
+    @pytest.mark.parametrize("kernel", KERNELS)
+    def test_each_node_uses_its_own_rates_input_and_history(self, monkeypatch, kernel):
+        substeps, delay = 16, 1.3
+        node_params = generate_node_params(3, 0.4, get_dde_params(delay=delay), seed=2)
+        inputs = np.random.default_rng(3).normal(0.0, 0.02, size=(3, 3))
+        state, ring, pos = _start(delay, substeps)
+        together, _ = _advance(kernel, monkeypatch, state, ring.copy(), pos, inputs, substeps,
+                               node_params=node_params, delay=delay)
+        for node in range(3):
+            alone, _ = _advance(kernel, monkeypatch, state[[node]], ring[[node]], pos,
+                                inputs[:, [node]], substeps, node_params=node_params[[node]],
+                                delay=delay)
+            np.testing.assert_allclose(alone[0], together[node], rtol=1e-13, atol=1e-16)
+
+    def test_parallel_results_do_not_depend_on_the_number_of_threads(self, monkeypatch):
+        substeps, delay, n_nodes = 16, 1.3, 16
+        node_params = generate_node_params(n_nodes, 0.3, get_dde_params(delay=delay), seed=4)
+        inputs = np.random.default_rng(5).normal(0.0, 0.02, size=(3, n_nodes))
+        threads, runs = numba.get_num_threads(), []
+        for n in (1, threads):
+            numba.set_num_threads(n)
+            try:
+                state, ring, pos = _start(delay, substeps, n_nodes=n_nodes)
+                runs.append(_advance("parallel", monkeypatch, state, ring, pos, inputs,
+                                     substeps, node_params=node_params, delay=delay)[0])
+            finally:
+                numba.set_num_threads(threads)
+        np.testing.assert_array_equal(runs[0], runs[1])
+
+    def test_the_state_is_copied_and_the_ring_updated_in_place(self):
+        state, ring, pos = _start(2.0, 16)
+        start = state.copy()
+        new_state, new_pos = dde.solve_dde_substep(state, ring, pos, np.zeros(3), 16, delay=2.0)
+        np.testing.assert_array_equal(state, start)
+        assert new_state is not state and new_pos == (pos + 16) % ring.shape[1]
+        np.testing.assert_array_equal(ring[:, new_pos], new_state[:, 2])
+
+    def test_ring_lookups_wrap_around_and_interpolate(self):
+        ring = np.arange(10.0, 20.0).reshape(2, 5) ** 2
+        length = ring.shape[1]
+        cases = ([(back, 0.0) for back in range(length)]
+                 + [(back, frac) for back in range(length - 1) for frac in (0.25, 0.5)])
+        for lookup in (dde._ring_value, _python(dde._ring_value)):
+            for node, pos, (back, frac) in itertools.product(range(2), range(length), cases):
+                expected = ((1.0 - frac) * ring[node, (pos - back) % length]
+                            + frac * ring[node, (pos - back - 1) % length])
+                got = lookup(ring, node, pos, length, back, frac)
+                assert got == pytest.approx(expected, rel=1e-14)
+
+    def test_lags_at_the_start_middle_and_end_of_a_substep(self):
+        assert dde.substep_delay_lags(0.0, 16) is None
+        assert dde.substep_delay_lags(2.0, 4) == (8.0, 7.5, 7.0)
+
+
+class TestSubstepHistory:
+    def test_hi_is_interpolated_to_the_substep_times(self):
+        history = np.zeros((4, 2, 4))
+        history[:, :, 2] = (2.0 + 0.5 * np.arange(-3.0, 1.0))[:, None] * [1.0, 3.0]
+        ring, pos = dde.substep_history(history, delay=1.3, substeps=4)
+        assert ring.shape == (2, 7) and pos == 6 and ring.flags.c_contiguous
+        times = (np.arange(7) - pos) / 4
+        np.testing.assert_allclose(ring, (2.0 + 0.5 * times) * np.array([[1.0], [3.0]]),
+                                   rtol=1e-14)
+
+    @pytest.mark.parametrize("entries", [1, 5])
+    def test_a_zero_delay_keeps_only_the_current_hi(self, entries):
+        history = np.random.default_rng(0).uniform(size=(entries, 3, 4))
+        ring, pos = dde.substep_history(history, delay=0.0, substeps=8)
+        assert ring.shape == (3, 1) and pos == 0
+        np.testing.assert_array_equal(ring[:, 0], history[-1, :, 2])

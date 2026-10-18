@@ -108,7 +108,8 @@ coupling the hyperparameters were tuned for, so the studies need re-tuning.
   differential equation. The `v0.1` solver read the delayed Hi once per input step and
   held it for all the substeps: more substeps did not reduce that error, and the
   "no delay" ablation was not delay-free. `delay_scheme="frozen"` (and the
-  `v0.1` preset) keeps the `v0.1` solver.
+  `v0.1` preset) keeps the `v0.1` solver. The unit tests run the new kernel compiled and
+  as plain Python, and check it against closed-form solutions.
 - [science] The distance kernel is normalised after the random signs and sparsity, so
   its spectral radius is 1 as stated. The `v0.1` code normalised first, which left the
   headline topology (P2-distance trial 416) at 0.43; the new order is the old matrix
