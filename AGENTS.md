@@ -32,7 +32,8 @@ conventions and integrate with them rather than reinventing.
 - `bioreservoir/` — the model: DDE solver (`dde.py`), `BioReservoir` node
   (`node.py`), topology generators (`topology.py`). Must be well tested, documented
   and easy to read.
-- `training/` — cross-validation, training and evaluation, metrics, profiling.
+- `training/` — cross-validation, training and evaluation, metrics, profiling, and the
+  run framework (`run.py`: config → run folder → registry; `compare.py`).
 - `optimization/` — Optuna study registry (`studies.py`), reservoir builders
   (`reservoirs.py`), objectives, the CLI (`optimize.py`), and the deployment helpers
   (`deploy.py`, `collect.py`).
@@ -43,6 +44,7 @@ conventions and integrate with them rather than reinventing.
 - `tests/unit/` and `tests/integration/` — pytest suite; `tests/regression_reference.py`
   builds the `v0.1` reference outputs for the regression tests.
 - `experiments/heldout/draws.json` — sealed held-out beat IDs (tracked).
+- `experiments/benchmarks/v0.1/` — run configs of the `v0.1` headline runs.
 
 ## Workspace data layout (all gitignored)
 
@@ -83,6 +85,11 @@ All paths and settings come from `utils/config.py` (environment variable, then
   CPU, RAM). Optuna trials store this as `env_*` attributes; other runs write a
   `manifest.json` (`utils/provenance.py`).
 - New results go to `results/`; only frozen results move to `archive/<version>/`.
+- Run classification experiments from a config: `python -m training.run run <config>`
+  writes `results/runs/<name>-<UTC time>/` (resolved config, metrics, folds, figures,
+  log, manifest) and a registry line; `optimize rerun-best` and `apply-best` use the same
+  runner. Compare runs with `python -m training.run compare`, and mark the runs behind
+  manuscript items with `python -m utils.provenance mark <run> ok --uses "<item>"`.
 - Metrics are stored in human-readable form; arrays (predictions, states) as `.npz`.
 - Check behaviour before and after every change with the regression tests, and
   explain any change in a reported number. Use figures to check that the model
@@ -92,7 +99,9 @@ All paths and settings come from `utils/config.py` (environment variable, then
 
 - Three tiers: `tests/unit/` (fast, every PR), `tests/integration/` (real dataset), and
   benchmarks marked `@pytest.mark.benchmark` (full-size headline reruns on a capable
-  host; skipped unless run with `pytest -m benchmark`).
+  host; skipped unless run with `pytest -m benchmark`). The benchmarks
+  (`tests/integration/test_benchmarks.py`) run the configs in
+  `experiments/benchmarks/v0.1/` and compare them fold by fold with the archived runs.
 - Unit-test as much as possible: fast, no dataset, no network. Integration tests use
   the real dataset (`data/`) and are skipped without it.
 - The archive tests (`tests/integration/test_archive.py`) check the frozen `v0.1`
