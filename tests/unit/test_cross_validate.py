@@ -48,7 +48,8 @@ def _dataset(n_per_class=12, steps=8, seed=0):
 
 
 def _reservoir():
-    # Fewer than about 16 substeps per input step is unstable for the default kinetics.
+    # RK4 needs about 16 substeps per input step for the default kinetics; with 8 or fewer
+    # the states are wrong or diverge.
     return BioReservoir(units=3, warmup=0, rk4_substeps=16, seed=1, input_dim=1,
                         output_variables="He", parallel=False)
 
