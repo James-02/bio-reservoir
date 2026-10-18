@@ -20,6 +20,11 @@ repository. Keep this file short and factual — it is read every session.
   does and why, in standard terms; they do not refer to internal plans, meetings,
   pilot studies, review rounds, private documents or private tracking numbers. Cite the
   paper, a release (`v0.1`) or a public issue or PR where a reference helps.
+- Call the design of the first version of the paper `v0.1`, not the submitted,
+  published, original or legacy design. A setting kept only to reproduce `v0.1` is
+  named or described as `v0.1` (the `v0.1` preset, `geometry="v0.1"`) and is removed
+  before `v1.0`; a `v0.1` behaviour that is a valid alternative keeps a descriptive
+  name (`delay_scheme="frozen"`).
 
 ## What this project is
 

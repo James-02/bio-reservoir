@@ -29,7 +29,8 @@ Each entry is marked **[science]** if it changes a reported number, or
   solver.
 - [engineering] Comments, docstrings, tests, configs and documentation describe the code
   in terms a reader of the repository and the paper can follow, without references to
-  internal project documents or tracking numbers; `AGENTS.md` states this as a convention.
+  internal project documents or tracking numbers, and call the design of the first
+  version of the paper `v0.1`; `AGENTS.md` states this as a convention.
   The held-out draws are described as evaluated during model development (draws 1 and 2)
   or as the final test set, not yet evaluated (draw 3); their beat IDs are unchanged.
 
