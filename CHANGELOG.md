@@ -135,6 +135,12 @@ Each entry is marked **[science]** if it changes a reported number, or
 - [engineering] The ablation script defaults to no augmentation, as the v0.1
   ablations were run, logs the augmentation, and accepts `--preset v0.1` to
   build the reservoir as the `v0.1` code did.
+- [engineering] Every cross-validation fold runs a copy of the run's reservoir (same
+  weights, warm-up state and noise generator state) and fits its own copy of the
+  readout: one reservoir per run, folds differing only in their data. The code meant to
+  rebuild each fold's nodes with a fold seed, but BioReservoir and the ESN reservoir
+  cannot be rebuilt from their hyperparameters, so it silently copied them; the results
+  do not change.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or

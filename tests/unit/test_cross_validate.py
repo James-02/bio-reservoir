@@ -139,28 +139,46 @@ class TestFoldData:
         np.testing.assert_array_equal(again[0], X_tr)
 
 
-class TestNewNodeLike:
-    def test_rebuilds_the_node_with_the_fold_seed(self):
-        class Seeded:
-            def __init__(self, size=1, seed=None):
-                self.hypers = {"size": size}
-                self.seed = seed
+class TestFoldNodes:
+    """v0.1 meant to rebuild each fold's nodes from their hyperparameters with a fold
+    seed, but BioReservoir and the ESN reservoir cannot be rebuilt that way (their
+    hyperparameters include ones their constructors do not take), so it silently copied
+    them: every fold used the same reservoir. That is now the rule for every node."""
 
-            def copy(self):
-                raise AssertionError("the node should be rebuilt, not copied")
+    class Seeded:
+        """A node that could be rebuilt from its hyperparameters with another seed."""
 
-        node = cv._new_node_like(Seeded(size=3, seed=1), seed=7)
-        assert node.hypers == {"size": 3} and node.seed == 7
+        def __init__(self, size=1, seed=None):
+            self.hypers = {"size": size}
+            self.seed = seed
 
-    def test_falls_back_to_a_copy_when_rebuilding_fails(self):
-        class Unbuildable:
-            def __init__(self, seed=None):
-                self.hypers = {"unknown": 1}
+        def copy(self):
+            return type(self)(**self.hypers, seed=self.seed)
 
-            def copy(self):
-                return "copy"
+    def test_every_fold_runs_the_template_nodes(self, monkeypatch):
+        seen = []
 
-        assert cv._new_node_like(Unbuildable(), seed=7) == "copy"
+        def spy(reservoir, readout, *data, fold_index, **kwargs):
+            seen.append((reservoir.seed, readout.seed))
+            return _artifact(fold_index, [0, 0, 1, 1])
+
+        monkeypatch.setattr(cv, "run_fold", spy)
+        X, Y, _ = _dataset()
+        cv.cross_validate(self.Seeded(size=3, seed=1), self.Seeded(seed=2), X, Y, folds=3,
+                          seed=5)
+        assert seen == [(1, 2)] * 3
+
+    def test_bioreservoir_cannot_be_rebuilt_from_its_hyperparameters(self):
+        node = _reservoir()
+        with pytest.raises(TypeError):
+            type(node)(**node.hypers)
+
+    def test_folds_share_the_reservoir_and_start_from_its_warm_up(self, fold_data):
+        template = _reservoir()
+        arts = [cv.run_fold(template, _readout(), *fold_data, fold_index=i, save_states=True)
+                for i in range(2)]
+        np.testing.assert_array_equal(arts[0].train_states, arts[1].train_states)
+        assert not template.is_initialized
 
 
 def _artifact(fold_index, predicted, runtime=1.0, profiling=None):
