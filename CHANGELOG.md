@@ -202,6 +202,9 @@ coupling the hyperparameters were tuned for, so the studies need re-tuning.
   per-class table shows. The objectives averaged the folds with a helper that keeps the
   class rows only, so no trial (archived or new) had them; the reported metrics are
   stored separately and are unaffected.
+- [engineering] A reservoir trial on the original train/test split (`--preserve_split`)
+  is recorded as one fold (`metric_n_folds`, `fold_0_*`, per-class means); it recorded
+  0 folds and no fold metrics. No archived trial records using the original split.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or

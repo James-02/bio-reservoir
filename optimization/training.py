@@ -397,7 +397,8 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     # =========================================================================
     # 7. Store output metrics
     # =========================================================================
-    _folds_data = metrics.get("folds", [])
+    # The original train/test split (preserve_split) is one fold.
+    _folds_data = metrics.get("folds") or [{"fold_index": 0, **metrics}]
     _fold_f1s = [fd.get("f1", float("nan")) for fd in _folds_data]
 
     trial.set_user_attr("metric_f1",        metrics.get("f1",        float("nan")))

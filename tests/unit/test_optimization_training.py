@@ -153,6 +153,17 @@ class TestObjective:
         with pytest.raises(ValueError, match="folds=1"):
             _objective(preserve_split=True)
 
+    def test_the_original_split_is_recorded_as_one_fold(self, workspace):
+        """A trial on the original split used to record 0 folds and no fold metrics."""
+        _, loads = workspace
+        trial, value = _objective(dict(STUDY, folds=1), preserve_split=True)
+        attrs = trial.user_attrs
+        assert loads[-1]["preserve_split"] is True
+        assert (attrs["metric_n_folds"], attrs["dataset_cv_pool_size"]) == (1, 40)
+        assert attrs["fold_0_f1"] == value and attrs["metric_f1_std"] == 0.0
+        assert attrs["metric_macro_f1"] == pytest.approx(attrs["metric_f1_macro"])
+        assert "metric_class_1_f1_mean" in attrs
+
 
 class TestCommands:
     @staticmethod
