@@ -118,9 +118,9 @@ class TestObjective:
         assert (attrs["study_name"], attrs["job_id"], attrs["trial_name"]) == (
             "P4-test", 3, saved_states)
         assert np.asarray(attrs["metric_confusion_matrix"]).sum() == 36
-        assert {"metric_class_0_f1_mean", "metric_class_1_f1_std",
-                "profile_fit_readout_mean_s", "profile_predict_total_s", "trial_start_utc",
-                "trial_end_utc"} <= set(attrs)
+        assert {"metric_class_0_f1_mean", "metric_class_1_f1_std", "metric_macro_f1",
+                "metric_weighted_recall", "profile_fit_readout_mean_s",
+                "profile_predict_total_s", "trial_start_utc", "trial_end_utc"} <= set(attrs)
         assert any(key.startswith("env_") for key in attrs)
 
     def test_folds_without_states_are_refused(self, saved_states):
