@@ -27,6 +27,10 @@ class TestGetEnvironment:
                     "cpu_count_logical", "git_commit", "git_dirty", "machine_label"):
             assert key in env
 
+    def test_timestamp_is_utc_to_the_second(self, fresh):
+        stamp = get_environment()["timestamp_utc"]
+        assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", stamp)
+
     def test_records_dependency_versions(self, fresh):
         env = get_environment()
         for pkg in ("numpy", "reservoirpy", "optuna", "numba"):

@@ -77,6 +77,10 @@ All paths and settings come from `utils/config.py` (environment variable, then
 
 - Unit-test as much as possible: fast, no dataset, no network. Integration tests use
   the real dataset (`data/`) and are skipped without it.
+- The archive tests (`tests/integration/test_archive.py`) check the frozen `v0.1`
+  archive (`BIORESERVOIR_ARCHIVE_DIR`); they are skipped where it is absent, including CI.
+- CI combines the coverage of the unit and integration tests in one report; at least 80%
+  of the lines a PR changes must be covered.
 - Every bug fix comes with a test that fails before the fix.
 
 ## Build, test, and lint commands
@@ -106,6 +110,8 @@ ruff format .                        # format
   (environment, then `config.env`, then default).
 - Library code must not call `logging.basicConfig`; use
   `utils.logger.setup_logging` from CLIs/scripts only.
+- **CI** (GitHub Actions, every PR): ruff, unit tests on Python 3.10–3.12,
+  integration tests, coverage.
 
 ## Hard rules (do not violate)
 

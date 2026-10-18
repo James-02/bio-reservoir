@@ -29,9 +29,14 @@ Each entry is marked **[science]** if it changes a reported number, or
   The scientific dependencies keep their `v0.1` versions; pillow 12.3.0, kagglehub 1.0.2,
   pytest 9.1.1 and pytest-cov 7.1.0 are upgraded for security fixes that need Python
   3.10, and the unused pyarrow pin is removed.
+- [engineering] CI installs from the lock, runs the integration tests on the real dataset
+  (Kaggle secrets), and requires 80% coverage of changed lines, measured on the unit and
+  integration tests together.
 
 ### Fixed
 
+- [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
+  (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] Trial metadata no longer records the host name, IP address, working
   directory, or script, output and interpreter paths, and the platform string keeps only
   the OS, numeric kernel release and architecture. Trials now record the full git SHA, a
