@@ -40,7 +40,8 @@ conventions and integrate with them rather than reinventing.
   held-out draws, logging, visualisation.
 - `scripts/` — independent argparse CLIs for experiments, analysis, figures and
   housekeeping.
-- `tests/unit/` and `tests/integration/` — pytest suite.
+- `tests/unit/` and `tests/integration/` — pytest suite; `tests/regression_reference.py`
+  builds the `v0.1` reference outputs for the regression tests.
 - `experiments/heldout/draws.json` — sealed held-out beat IDs (tracked).
 
 ## Workspace data layout (all gitignored)
@@ -77,12 +78,22 @@ All paths and settings come from `utils/config.py` (environment variable, then
 
 ## Tests
 
+- Three tiers: `tests/unit/` (fast, every PR), `tests/integration/` (real dataset), and
+  benchmarks marked `@pytest.mark.benchmark` (full-size headline reruns on a capable
+  host; skipped unless run with `pytest -m benchmark`).
 - Unit-test as much as possible: fast, no dataset, no network. Integration tests use
   the real dataset (`data/`) and are skipped without it.
 - The archive tests (`tests/integration/test_archive.py`) check the frozen `v0.1`
   archive (`BIORESERVOIR_ARCHIVE_DIR`); they are skipped where it is absent, including CI.
 - CI combines the coverage of the unit and integration tests in one report; at least 80%
   of the lines a PR changes must be covered.
+- Model regression test (`tests/unit/test_model_regression.py`): with fixed synthetic
+  beats, the reservoir (solver, node, topology, noise, state aggregation) reproduces the
+  `v0.1` outputs. It does not cover data, cross-validation, readouts or metrics.
+- Pipeline regression test (`tests/integration/test_pipeline_regression.py`): a small
+  real-data cross-validation run stays within 0.02 macro-F1 of `v0.1`.
+- Regenerate the regression references (`tests/regression_reference.py`) only for an
+  intended change, with a `[science]` CHANGELOG entry.
 - Every bug fix comes with a test that fails before the fix.
 
 ## Build, test, and lint commands
