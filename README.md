@@ -81,7 +81,7 @@ The code defaults include the fixes listed in the [CHANGELOG](CHANGELOG.md) (one
 - **optimization/** — Optuna hyperparameter studies, study registry, and CLI commands for running/evaluating studies.
 - **utils/** — Preprocessing (ECG loading, augmentation, scaling), analysis metrics, visualisation, and result management.
 - **scripts/** — Standalone experiment scripts and analysis helpers.
-- **experiments/** — Run configs (`benchmarks/v0.1/`: the headline runs as submitted) and the sealed held-out draws.
+- **experiments/** — Run configs (`benchmarks/v0.1/`: the `v0.1` headline runs) and the held-out beat draws.
 - **data/ecg/** — MIT-BIH arrhythmia dataset files.
 - **results/** — Working outputs (gitignored): Optuna studies, fold runs, metrics and figures; see [Results Layout](#results-layout).
 - **logs/** — Log files from studies and experiment scripts (gitignored).
@@ -178,9 +178,9 @@ Paths and settings come from [utils/config.py](utils/config.py). Each setting is
 | `results/metrics/` | | Derived metric tables and statistics |
 | `results/figures/<topic>/` | | Figures |
 | `logs/` | `BIORESERVOIR_LOGS_DIR` | Log files, `<command>-<study>-<UTC time>.log` |
-| `archive/<version>/` | `BIORESERVOIR_ARCHIVE_DIR` (root) | Frozen results of a manuscript version |
+| `archive/<version>/` | `BIORESERVOIR_ARCHIVE_DIR` (root) | Frozen results of a released version |
 
-An archive has the same `optuna/`, `runs/` and `metrics/` folders, plus `MANIFEST.csv` (what each file supports in the manuscript) and `SHA256SUMS`. Archives are read-only and are not part of the repository; new outputs always go to `results/` and `logs/`. To inspect an archived study or run:
+An archive has the same `optuna/`, `runs/` and `metrics/` folders, plus `MANIFEST.csv` (what each file supports in the paper) and `SHA256SUMS`. Archives are read-only and are not part of the repository; new outputs always go to `results/` and `logs/`. To inspect an archived study or run:
 
 ```bash
 python -m optimization.optimize evaluate --type training --study P2-distance --archive v0.1

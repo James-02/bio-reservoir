@@ -12,9 +12,19 @@ repository. Keep this file short and factual — it is read every session.
   agree it before implementing it.
 - Work on task branches with small Conventional Commits (`feat(component): ...`,
   `fix(...)`, `test(...)`, `docs(...)`, `build(...)`, `ci(...)`, `chore(...)`).
-  Branches are reviewed and merged by PR; `v0.2` is tagged for the resubmission.
-- Record every change between `v0.1` and `v0.2` in `CHANGELOG.md`, marked
+  Branches are reviewed and merged by PR; releases are tagged `vMAJOR.MINOR`.
+- Record every change in `CHANGELOG.md` under `[Unreleased]`, marked
   `[science]` (changes a reported number) or `[engineering]`.
+- Write for a reader who has only this repository and the paper. Code, comments,
+  docstrings, tests, configs, commit messages and the CHANGELOG describe what the code
+  does and why, in standard terms; they do not refer to internal plans, meetings,
+  pilot studies, review rounds, private documents or private tracking numbers. Cite the
+  paper, a release (`v0.1`) or a public issue or PR where a reference helps.
+- Call the design of the first version of the paper `v0.1`, not the submitted,
+  published, original or legacy design. A setting kept only to reproduce `v0.1` is
+  named or described as `v0.1` (the `v0.1` preset, `geometry="v0.1"`) and is removed
+  before `v1.0`; a `v0.1` behaviour that is a valid alternative keeps a descriptive
+  name (`delay_scheme="frozen"`).
 
 ## What this project is
 
@@ -43,7 +53,7 @@ conventions and integrate with them rather than reinventing.
   housekeeping.
 - `tests/unit/` and `tests/integration/` — pytest suite; `tests/regression_reference.py`
   builds the `v0.1` reference outputs for the regression tests.
-- `experiments/heldout/draws.json` — sealed held-out beat IDs (tracked).
+- `experiments/heldout/draws.json` — held-out beat IDs (tracked; never edited).
 - `experiments/benchmarks/v0.1/` — run configs of the `v0.1` headline runs.
 
 ## Workspace data layout (all gitignored)
@@ -56,18 +66,16 @@ All paths and settings come from `utils/config.py` (environment variable, then
 - `logs/` — log files only (`BIORESERVOIR_LOGS_DIR`), one timestamped file per model
   run (`<command>-<study>-<UTC time>.log`); all modules of that run log to it.
   Analysis CLIs log to stdout unless given a log file.
-- `archive/<version>/` — **frozen** results behind a manuscript version, read-only:
+- `archive/<version>/` — **frozen** results behind a released version, read-only:
   `optuna/`, `runs/`, `metrics/`, `MANIFEST.csv` (what each file is and which
-  manuscript item it supports) and `SHA256SUMS` (`sha256sum -c SHA256SUMS` inside the
-  version folder). Its location is `BIORESERVOIR_ARCHIVE_DIR` (default `archive/`); the
-  maintainers keep it in the private repository. Tools only read it
-  (`--archive v0.1`, or an explicit path such as `--glob` / `--runs_dir`). Promote
-  results from `results/` to a new `archive/<version>/` only when they are frozen
-  for a manuscript version.
+  paper item it supports) and `SHA256SUMS` (`sha256sum -c SHA256SUMS` inside the
+  version folder). Its location is `BIORESERVOIR_ARCHIVE_DIR` (default `archive/`).
+  Tools only read it (`--archive v0.1`, or an explicit path such as `--glob` /
+  `--runs_dir`). Promote results from `results/` to a new `archive/<version>/` only
+  when they are frozen for a release.
 - `data/` — raw datasets and the preprocessed caches (`BIORESERVOIR_DATA_DIR`); build
   them with `python -m utils.preprocessing`.
 - `config.env` — local settings: paths, Kaggle credentials, deployment hosts.
-- Planning notes and the original `v0.1` files live in the private repository.
 
 ## Naming conventions
 
@@ -89,7 +97,7 @@ All paths and settings come from `utils/config.py` (environment variable, then
   writes `results/runs/<name>-<UTC time>/` (resolved config, metrics, folds, figures,
   log, manifest) and a registry line; `optimize rerun-best` and `apply-best` use the same
   runner. Compare runs with `python -m training.run compare`, and mark the runs behind
-  manuscript items with `python -m utils.provenance mark <run> ok --uses "<item>"`.
+  paper items with `python -m utils.provenance mark <run> ok --uses "<item>"`.
 - Metrics are stored in human-readable form; arrays (predictions, states) as `.npz`.
 - Code defaults are the corrected behaviour. `preset: v0.1` in a run config (and
   `--preset v0.1` in the ablation and heterogeneity scripts) restores the
@@ -157,9 +165,9 @@ ruff format .                        # format
 ## Hard rules (do not violate)
 
 - **Never tune on held-out beats.** The draws in `experiments/heldout/draws.json` are
-  never used for selection; draw 3 is evaluated once, for the confirmatory test.
-  Never change the beat IDs in that file.
-- **Never modify `archive/`.** It holds the frozen artefacts of a manuscript
+  never used for selection; draw 3 is the final test set and is evaluated once, at the
+  end. Never change the beat IDs in that file.
+- **Never modify `archive/`.** It holds the frozen artefacts of a released
   version (the `v0.1` code is archived on Zenodo, DOI 10.5281/zenodo.23436888).
   Write new results to `results/` and logs to `logs/`. Keep the scientific
   dependencies (numpy, numba, scipy, scikit-learn, reservoirpy, optuna, pandas,

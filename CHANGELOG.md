@@ -5,7 +5,7 @@ Notable changes to this project. The format follows
 Each entry is marked **[science]** if it changes a reported number, or
 **[engineering]** if it does not.
 
-## [Unreleased] (v0.2)
+## [Unreleased]
 
 ### Changed
 
@@ -27,6 +27,12 @@ Each entry is marked **[science]** if it changes a reported number, or
   (strict `zip`, exception chaining, unused variables, a mutable default argument).
   Line length (E501) waits for a formatting-only change; `I` (LuxI) is allowed in the
   solver.
+- [engineering] Comments, docstrings, tests, configs and documentation describe the code
+  in terms a reader of the repository and the paper can follow, without references to
+  internal project documents or tracking numbers, and call the design of the first
+  version of the paper `v0.1`; `AGENTS.md` states this as a convention.
+  The held-out draws are described as evaluated during model development (draws 1 and 2)
+  or as the final test set, not yet evaluated (draw 3); their beat IDs are unchanged.
 
 ### Added
 
@@ -52,9 +58,10 @@ Each entry is marked **[science]** if it changes a reported number, or
   `tests/integration/test_dataset.py` checks the datasets and the `v0.1` CV pools against
   the `v0.1` checksums.
 - [engineering] Held-out beat draws: `python -m utils.heldout --write` draws balanced sets
-  of beats that no `v0.1` optimisation phase used and records their beat IDs and checksums
-  in `experiments/heldout/draws.json`; `--check` rebuilds and verifies them. Draws 1-2
-  were consulted in the revision pilots; draw 3 is sealed for the confirmatory evaluation.
+  of beats that no `v0.1` optimisation study used and records their beat IDs and checksums
+  in `experiments/heldout/draws.json`; `--check` rebuilds and verifies them. Draws 1 and 2
+  have been evaluated during model development; draw 3 is kept for the final evaluation
+  and has not been evaluated.
 - [engineering] Run manifests (code version, data and lock-file checksums, environment)
   and an append-only run registry (`registry.jsonl`, `python -m utils.provenance`).
 - [engineering] Unit tests of the current behaviour of the model, training and
@@ -68,7 +75,7 @@ Each entry is marked **[science]** if it changes a reported number, or
   folder per run (config, metrics with sample SDs, folds with test-beat positions,
   figures, log, manifest) and the registry; `compare` reports per-fold metrics,
   prediction agreement and a paired bootstrap CI between two runs, including archived
-  ones. The registry records the manuscript items a run backs (`mark --uses`,
+  ones. The registry records the paper items a run backs (`mark --uses`,
   `list --used`). Configs of the `v0.1` headline runs (`experiments/benchmarks/v0.1/`)
   are checked against the archived models and pools, and rerun in full as benchmarks
   (`pytest -m benchmark`).
@@ -229,6 +236,7 @@ coupling the hyperparameters were tuned for, so the studies need re-tuning.
   the OS, numeric kernel release and architecture. Trials now record the full git SHA, a
   dirty flag, the OS name and version, and an optional machine label from `config.env`.
 
-## [0.1] (manuscript submission)
+## [0.1] - 2026-09-24
 
-- Code archived on Zenodo: https://doi.org/10.5281/zenodo.23436888
+- The code behind the first version of the paper, archived on Zenodo:
+  https://doi.org/10.5281/zenodo.23436888

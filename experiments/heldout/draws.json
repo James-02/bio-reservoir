@@ -1,5 +1,5 @@
 {
- "description": "Held-out beats unused by every v0.1 optimisation phase (utils/heldout.py)",
+ "description": "Held-out beats unused by every v0.1 optimisation study (utils/heldout.py)",
  "dataset": {
   "path": "data/ecg/ecg_data.npz",
   "content_sha256": "cd3ece0610daa08a9b5a9424496428104c98c423eb444e0b1474019ce12fe098",
@@ -19,7 +19,7 @@
  "draws": {
   "1": {
    "seed": 6338,
-   "status": "consulted during the revision pilots",
+   "status": "evaluated during model development",
    "counts": {
     "N": 803,
     "S": 803,
@@ -32,7 +32,7 @@
   },
   "2": {
    "seed": 6339,
-   "status": "consulted during the revision pilots",
+   "status": "evaluated during model development",
    "counts": {
     "N": 803,
     "S": 803,
@@ -45,7 +45,7 @@
   },
   "3": {
    "seed": 6340,
-   "status": "sealed: confirmatory, not evaluated",
+   "status": "final test set, not yet evaluated",
    "counts": {
     "N": 370,
     "S": 370,

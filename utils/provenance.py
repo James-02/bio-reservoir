@@ -1,4 +1,4 @@
-"""Run manifests and the append-only run registry (revision plan, section 7).
+"""Run manifests and the append-only run registry.
 
 Every citable run writes ``manifest.json`` into its run folder and appends one line to
 ``registry.jsonl`` at the repository root.  Runs from a working tree with uncommitted
@@ -177,7 +177,7 @@ def mark(run_id: str, status: str, *, by: str | None = None, note: str = "",
          uses: str | None = None, registry: Path = REGISTRY_FILE) -> None:
     """Append a status change (runs are flagged, never deleted).
 
-    *uses* names a manuscript item the run backs, e.g. "Table 2, balanced"; items
+    *uses* names a paper item the run backs, e.g. "Table 2, balanced"; items
     accumulate over successive marks.
     """
     if status not in STATUSES:
@@ -240,7 +240,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     p_list = sub.add_parser("list", help="List runs.")
     p_list.add_argument("--exp")
     p_list.add_argument("--status", choices=STATUSES)
-    p_list.add_argument("--used", action="store_true", help="Only runs that back manuscript items.")
+    p_list.add_argument("--used", action="store_true", help="Only runs that back paper items.")
     sub.add_parser("show", help="Show one run.").add_argument("run_id")
     p_diff = sub.add_parser("diff", help="Compare two runs.")
     p_diff.add_argument("run_a")
@@ -250,7 +250,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     p_mark.add_argument("status", choices=STATUSES)
     p_mark.add_argument("--by")
     p_mark.add_argument("--note", default="")
-    p_mark.add_argument("--uses", help="Manuscript item this run backs.")
+    p_mark.add_argument("--uses", help="Paper item (table, figure) this run backs.")
     args = parser.parse_args(argv)
 
     runs = load_registry()

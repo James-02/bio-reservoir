@@ -1,7 +1,7 @@
 # A v0.1 headline run, resolved from the archived study databases with
 # python -m training.run resolve (see the source fields). Reference: the archived run.
 name: v0.1-unbalanced
-description: 'Unbalanced five-class headline as submitted (main text 0.911): the P3-imbalance
+description: 'Unbalanced five-class headline of v0.1 (paper: 0.911): the P3-imbalance
   trial 1 reservoir (5x capped pool of 16,107 beats) with the P4-readout-unbalanced
   random forest.'
 seed: 6337
