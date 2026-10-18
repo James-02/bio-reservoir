@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from typing import Any
 
 import numpy as np
+from scipy import sparse
 
 STATE_NAMES = ("A", "I", "Hi", "He")
 
@@ -51,3 +52,36 @@ def drive_and_state_ranges(reservoir, inputs: Iterable[np.ndarray],
                                             (totals["negative"] / count).tolist(),
                                             strict=True)),
     }
+
+
+def drive_shares(reservoir, inputs: Iterable[np.ndarray]) -> dict[str, float]:
+    """Share of each term in the drive that reaches the oscillators, over ``inputs``.
+
+    The drive of oscillator i at step t is ``Win u_t + bias + rc_scaling * W r_{t-1}``
+    (before noise and ``dde_scaling``); the recurrent term is split by observed variable.
+    Each share is the summed absolute value of its term over oscillators and steps,
+    divided by the sum over all terms. Keys: ``"input"`` and one per observed variable.
+    """
+    node = reservoir.copy()
+    n_nodes = node.states.shape[1]
+    names = [STATE_NAMES[i] for i in node.output_indices]
+    n_obs = len(names)
+    sums = np.zeros(1 + n_obs)
+    for x in inputs:
+        x = np.asarray(x, dtype=float)
+        outputs = node.run(x, reset=True)
+        warm = node._warmup_states[-1][:, node.output_indices].reshape(1, -1)
+        previous = np.vstack([warm, outputs[:-1]])
+        W = node.W[:n_nodes]
+        Win, bias = (_dense(m[:n_nodes]) for m in (node.Win, node.bias))
+        inp = x @ Win.T + bias.T
+        sums[0] += np.abs(inp).sum()
+        for v in range(n_obs):
+            rec = node.rc_scaling * (W[:, v::n_obs] @ previous[:, v::n_obs].T)
+            sums[1 + v] += np.abs(np.asarray(rec)).sum()
+    total = sums.sum() or 1.0
+    return dict(zip(["input", *names], (sums / total).tolist(), strict=True))
+
+
+def _dense(matrix) -> np.ndarray:
+    return matrix.toarray() if sparse.issparse(matrix) else np.asarray(matrix)

@@ -154,6 +154,10 @@ Each entry is marked **[science]** if it changes a reported number, or
   headline reservoir (10 beats per class), |x_t| reaches 8.5e-3 (above 5e-3 in 0.1% of
   oscillator-steps) and the AHL levels Hi and He go negative (down to -0.35) in 1.2% of
   oscillator-steps.
+- [engineering] `bioreservoir.diagnostics.drive_shares` (also in
+  `scripts/analysis/drive_bounds.py`) splits the drive into the input term and the
+  coupling through each observed variable. For the `v0.1` balanced headline reservoir the
+  coupling through LuxI (I) makes up 98.8% of the drive, the input 1.2% and He 0.009%.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or

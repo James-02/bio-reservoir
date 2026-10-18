@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Drive and state ranges of a run config's reservoir over beats from its pool (B15).
+"""Drive and state ranges of a run config's reservoir over beats from its pool.
 
 Builds the reservoir of a run config, runs a few beats of each class from the config's
 beat pool, and reports how often the drive x_t exceeds the bound stated in the model
-description (5e-3 by default) and how low the states go.
+description (5e-3 by default), how low the states go, and the share of the drive that
+comes from the input and from each coupled variable.
 
 Usage
 -----
@@ -18,7 +19,7 @@ import json
 
 import numpy as np
 
-from bioreservoir.diagnostics import drive_and_state_ranges
+from bioreservoir.diagnostics import drive_and_state_ranges, drive_shares
 from optimization.reservoirs import build_reservoir
 from training import run
 
@@ -46,7 +47,7 @@ def main() -> None:
     params = dict(cfg["reservoir"]["params"], reservoir_type="bioreservoir")
     node, _ = build_reservoir(params, seed=cfg["reservoir"]["seed"])
     summary = drive_and_state_ranges(node, X[idx], bound=args.bound)
-    summary.update(config=args.config, beats=len(idx))
+    summary.update(config=args.config, beats=len(idx), drive_shares=drive_shares(node, X[idx]))
     if args.json:
         with open(args.json, "w") as f:
             json.dump(summary, f, indent=1)
@@ -58,6 +59,8 @@ def main() -> None:
         print(f"  {name:2s} min {summary['state_min'][name]:+.3g}  max "
               f"{summary['state_max'][name]:.3g}  negative in "
               f"{100 * summary['state_negative_fraction'][name]:.1f}%")
+    print("  drive shares: " + ", ".join(f"{name} {share:.3g}"
+                                        for name, share in summary["drive_shares"].items()))
 
 
 if __name__ == "__main__":
