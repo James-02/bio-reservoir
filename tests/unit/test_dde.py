@@ -379,3 +379,123 @@ class TestPreparedParameters:
         with caplog.at_level(logging.DEBUG, logger="bioreservoir.dde"):
             log_dde_params(get_dde_params())
         assert any("delay: 10.0" in r.getMessage() for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Delay resolution inside an input step
+# ---------------------------------------------------------------------------
+
+def _dde_reference(y0, hi_history, delay, inputs, params):
+    """Method of steps with DOP853 for one oscillator.
+
+    The history of Hi before t = 0 is linear between the stored points at
+    t = -(H-1), ..., 0; the input is constant within each unit step. ``delay = 0`` is the
+    ordinary differential equation (the promoter reads the current Hi).
+    """
+    t_hist = np.arange(-(len(hi_history) - 1), 1.0)
+    segments = []
+
+    def delayed(t, y):
+        if delay == 0:
+            return y[2]
+        s = t - delay
+        if s <= 0:
+            return np.interp(s, t_hist, hi_history)
+        for a, b, sol in segments:
+            if a <= s <= b:
+                return sol.sol(s)[2]
+        raise AssertionError(f"no solution stored at t = {s}")
+
+    y = np.asarray(y0, dtype=float)
+    for step, u in enumerate(inputs):
+        sol = solve_ivp(lambda t, y, u=u: _model_rhs(y, delayed(t, y), u, params),
+                        (step, step + 1), y, method="DOP853", rtol=1e-12, atol=1e-14,
+                        dense_output=True)
+        segments.append((step, step + 1, sol))
+        y = sol.y[:, -1]
+    return y
+
+
+def _run_node(delay, substeps, inputs, units=2, parallel=False, **options):
+    """Step a BioReservoir (no warm-up, unit coupling) through ``inputs``.
+
+    Returns the start state, the stored Hi history and the state after the last step.
+    """
+    from bioreservoir import BioReservoir
+
+    node = BioReservoir(units=units, warmup=0, rk4_substeps=substeps, seed=3, input_dim=1,
+                        output_variables="He", parallel=parallel, cell_coupling=1.0,
+                        dde_kwargs={"delay": delay}, **options)
+    y0, hi_history = node.states[-1].copy(), node.states[:, :, 2].copy()
+    for u in inputs:
+        node._step(np.full(units, u))
+    return y0, hi_history, node.states[-1].copy()
+
+
+class TestDelayResolution:
+    """The delayed Hi follows the solution within an input step."""
+
+    INPUTS = (0.02, -0.01, 0.015, 0.0)
+
+    @staticmethod
+    def _errors(delay, inputs, units):
+        """Relative error at the end of ``inputs`` for 32, 64 and 128 substeps."""
+        params = get_dde_params(delay=delay)
+        errors, expected = [], None
+        for substeps in (32, 64, 128):
+            y0, hist, end = _run_node(delay, substeps, inputs, units=units)
+            if expected is None:
+                expected = np.array([_dde_reference(y0[i], hist[:, i], delay, inputs, params)
+                                     for i in range(units)])
+            errors.append(np.abs(end - expected).max() / np.abs(expected).max())
+        return np.array(errors), np.log2(np.array(errors[:-1]) / np.array(errors[1:]))
+
+    def test_zero_delay_is_the_ordinary_differential_equation(self):
+        # RK4 on the ODE: fourth order. The frozen v0.1 scheme held Hi at its value at the
+        # start of the step instead, an error of order one that substeps do not reduce.
+        errors, orders = self._errors(0, self.INPUTS[:1], units=2)
+        assert np.all(orders > 3.5), (errors, orders)
+        assert errors[-1] < 1e-7, errors
+
+    @pytest.mark.parametrize("delay", [2.0, 1.5, 1.3])
+    def test_delayed_solution_converges_at_second_order(self, delay):
+        # 1.3 input steps is not a whole number of substeps: the lags are interpolated, and
+        # the kinks of the stored history fall between substeps, so the error ratio varies
+        # from one refinement to the next; the order over the whole range is still two.
+        errors, orders = self._errors(delay, self.INPUTS, units=1)
+        assert np.all(orders > 1.5), (errors, orders)
+        assert np.log2(errors[0] / errors[-1]) / 2 > 1.8, errors
+        assert errors[-1] < 2e-5, errors
+
+    def test_lags_between_substeps_are_interpolated(self):
+        assert dde.substep_delay_lags(1.3, 64) == pytest.approx((83.2, 82.7, 82.2))
+        ring = np.array([[10.0, 11.0, 12.0, 13.0, 14.0]])  # entry 4 is the current one
+        assert dde._ring_value(ring, 0, 4, 5, 1, 0.25) == pytest.approx(12.75)
+        ring = np.array([[14.0, 15.0, 11.0, 12.0, 13.0]])  # current entry 1, older ones wrap
+        assert dde._ring_value(ring, 0, 1, 5, 3, 0.5) == pytest.approx(11.5)
+
+    def test_zero_variability_matches_the_homogeneous_solver(self):
+        _, _, homogeneous = _run_node(2.0, 16, self.INPUTS, parallel=True)
+        _, _, heterogeneous = _run_node(2.0, 16, self.INPUTS, parallel=True,
+                                        param_heterogeneity_cv=1e-300)
+        np.testing.assert_allclose(heterogeneous, homogeneous, rtol=1e-12)
+
+    def test_frozen_scheme_is_the_v0_1_solver(self):
+        from bioreservoir import BioReservoir
+
+        node = BioReservoir(units=3, warmup=0, rk4_substeps=16, seed=3, input_dim=1,
+                            output_variables="He", parallel=False, cell_coupling=1.0,
+                            delay_scheme="frozen")
+        history = node.states.copy()
+        out = node._step(np.full(3, 0.02))
+        expected = solve_dde_rk4(history, node.rk4_timespan, np.full(3, 0.02),
+                                 parallel=False, **node.dde_kwargs)[-1]
+        np.testing.assert_array_equal(out, expected)
+
+    def test_delay_below_one_substep_is_rejected(self):
+        with pytest.raises(ValueError, match="substep"):
+            _run_node(0.01, 16, ())
+
+    def test_unknown_scheme_is_rejected(self):
+        with pytest.raises(ValueError, match="delay_scheme"):
+            _run_node(2.0, 16, (), delay_scheme="cubic")

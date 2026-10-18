@@ -13,7 +13,14 @@ from reservoirpy.nodes.reservoirs.base import initialize, initialize_feedback
 from reservoirpy.utils.validation import is_array
 from reservoirpy.activationsfunc import identity
 
-from bioreservoir.dde import get_dde_params, log_dde_params, solve_dde_rk4, generate_node_params
+from bioreservoir.dde import (
+    generate_node_params,
+    get_dde_params,
+    log_dde_params,
+    solve_dde_rk4,
+    solve_dde_substep,
+    substep_history,
+)
 from bioreservoir.topology import distance_matrix
 
 import logging
@@ -59,6 +66,7 @@ class BioReservoir(Node):
         param_heterogeneity_seed: Optional[int] = None,
         geometry: str = "per_node",
         couple_vars: Optional[Sequence[float]] = None,
+        delay_scheme: str = "substep",
         **kwargs,
     ):
         """Genetic-oscillator reservoir node (one DDE oscillator per unit).
@@ -70,11 +78,19 @@ class BioReservoir(Node):
         ``sum_j K_ij sum_v w_v x_vj``. ``"v0.1"``: the v0.1 construction, in which
         ReservoirPy builds a kernel over ``units x n_observed`` points and only the first
         ``units`` drives reach the oscillators (kept to reproduce v0.1).
+
+        ``delay_scheme`` sets how the delayed Hi is read within an input step.
+        ``"substep"``: at every RK4 stage, from the Hi history at substep resolution
+        (a delay of 0 is the ordinary differential equation). ``"frozen"``: once per input
+        step, held for all its substeps (v0.1).
         """
         if units is None and not is_array(W):
             raise ValueError("'units' must be specified if 'W' is not a matrix.")
         if geometry not in ("per_node", "v0.1"):
             raise ValueError(f"geometry must be 'per_node' or 'v0.1', got {geometry!r}.")
+        if delay_scheme not in ("substep", "frozen"):
+            raise ValueError(
+                f"delay_scheme must be 'substep' or 'frozen', got {delay_scheme!r}.")
 
         rng = rand_generator(seed)
         noise_kwargs = noise_kwargs or {}
@@ -112,6 +128,7 @@ class BioReservoir(Node):
             output_variables = _OUTPUT_VAR_PRESETS[output_variables]
         self.output_indices = np.array([var_index_map[v] for v in output_variables], dtype=np.int64)
         self.geometry = geometry
+        self.delay_scheme = delay_scheme
         if couple_vars is None:
             couple_vars = np.ones(len(self.output_indices))
         self.couple_vars = np.asarray(couple_vars, dtype=float).reshape(-1)
@@ -212,6 +229,15 @@ class BioReservoir(Node):
         else:
             self.node_params = None
 
+        # Per-node parameter table for the substep solver, and the Hi history at
+        # substep resolution (the frozen v0.1 scheme reads the per-step history only).
+        n_nodes = self.states.shape[1]
+        self._param_table = (self.node_params if self.node_params is not None
+                             else generate_node_params(n_nodes, 0.0, self.dde_kwargs, seed=0))
+        if self.delay_scheme == "substep":
+            self._ring, self._ring_pos = substep_history(
+                self.states, self.dde_kwargs["delay"], self.rk4_substeps)
+
         logger.info(
             "Initialized BioReservoir(units=%s, warmup=%s, rk4_substeps=%s, output_variables=%s)",
             self.units,
@@ -227,6 +253,8 @@ class BioReservoir(Node):
             logger.debug("------------------------------------")
         self._warmup_nodes()
         self._warmup_states = self.states.copy()
+        self._warmup_ring = ((self._ring.copy(), self._ring_pos)
+                             if self.delay_scheme == "substep" else None)
         self.t = 0
 
         # Diagnostics are optional and can be expensive (extra allocations/copies).
@@ -360,6 +388,20 @@ class BioReservoir(Node):
         n_nodes = self.states.shape[1]
         x = np.asarray(x).reshape(-1)[:n_nodes]
 
+        if self.delay_scheme == "substep":
+            next_state, self._ring_pos = solve_dde_substep(
+                self.states[-1],
+                self._ring,
+                self._ring_pos,
+                x * self.cell_coupling,
+                self.rk4_substeps,
+                parallel=self.parallel,
+                node_params=self._param_table,
+                **self.dde_kwargs,
+            )
+            self._update_history(next_state)
+            return next_state
+
         # Scale the normalized reservoir drive by biological cell coupling strength.
         # This models how strongly the external AHL (He-like signal) influences each oscillator.
         # input_effect = self.cell_coupling * x
@@ -385,6 +427,13 @@ class BioReservoir(Node):
         self._update_history(next_state)
         return next_state
 
+    def _restore_warmup(self) -> None:
+        """Return the state and delay histories to their values after warm-up."""
+        self.states = self._warmup_states.copy()
+        if getattr(self, "_warmup_ring", None) is not None:
+            self._ring = self._warmup_ring[0].copy()
+            self._ring_pos = self._warmup_ring[1]
+
     def reset(self, to_state: np.ndarray = None) -> "BioReservoir":
         """Reset the reservoir to warmup state or a specified state."""
         # Clear per-timestep timing lists so each run's stats are independent.
@@ -396,7 +445,7 @@ class BioReservoir(Node):
             # 'to_state' will be None if the current state is None (first timestep)
             if to_state is None:
                 # Reset internal history to warmup states
-                self.states = self._warmup_states.copy()
+                self._restore_warmup()
                 # Project full 4-variable state through output_indices so that
                 # the Node state shape matches the current output_dim
                 last_full = self._warmup_states[-1]                 # (units, 4)
@@ -406,7 +455,7 @@ class BioReservoir(Node):
                 if self.is_initialized and not np.array_equal(to_state, self._state):
                     # State is changing - reset our internal history buffer to warmup states
                     self.t = 0
-                    self.states = self._warmup_states.copy()
+                    self._restore_warmup()
                 # else: state unchanged, don't reset history (to_state == current_state)
 
         # Call parent reset to properly set _state and _state_proxy

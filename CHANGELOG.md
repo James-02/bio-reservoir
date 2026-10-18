@@ -94,6 +94,14 @@ Each entry is marked **[science]** if it changes a reported number, or
   construction.
 - [engineering] The sequential solver (`parallel=False`) works when two variables are
   observed; it failed with a broadcast error.
+- [science] The delayed Hi in the promoter term follows the solution within an input
+  step. Hi is kept at every RK4 substep and each stage reads Hi(t + c h - delay), linear
+  between substeps when the delay is not a whole number of substeps, so the solver
+  converges at second order to the delay equation, and a delay of 0 is the ordinary
+  differential equation. The `v0.1` solver read the delayed Hi once per input step and
+  held it for all the substeps: more substeps did not reduce that error, and the
+  "no delay" ablation was not delay-free. `delay_scheme="frozen"` (and the
+  `v0.1` preset) keeps the `v0.1` solver.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or

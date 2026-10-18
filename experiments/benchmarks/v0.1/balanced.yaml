@@ -40,6 +40,7 @@ reservoir:
     signed: true
     p_excite: 0.8354274565239865
     geometry: v0.1
+    delay_scheme: frozen
   source:
     study: P2-distance
     trial: 416
