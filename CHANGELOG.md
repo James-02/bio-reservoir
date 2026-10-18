@@ -132,6 +132,9 @@ Each entry is marked **[science]** if it changes a reported number, or
   the five CV = 0 runs were the same reservoir and gave identical predictions.
   `--fixed_array`, `--noise_rate`, `--noise_ratio` and `--preset v0.1`
   reproduce the `v0.1` sweep.
+- [engineering] The ablation script defaults to no augmentation, as the v0.1
+  ablations were run, logs the augmentation, and accepts `--preset v0.1` to
+  build the reservoir as the `v0.1` code did.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or

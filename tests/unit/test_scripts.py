@@ -73,3 +73,32 @@ class TestHeterogeneityScript:
         assert calls["node"]["geometry"] == "v0.1"
         assert calls["node"]["delay_scheme"] == "frozen"
         assert calls["W"]["normalize_after_masks"] is False
+
+
+class TestAblationScript:
+    """The v0.1 ablation script augmented the training folds unless told not to; the
+    v0.1 ablations were run without augmentation."""
+
+    def test_training_folds_are_not_augmented_by_default(self):
+        ablation = _load("run_ablation")
+        assert ablation.NOISE_RATE == 0.0 and ablation.NOISE_RATIO == 0.0
+
+    @pytest.mark.parametrize("condition, rc_scaling, dde_kwargs", [
+        ("full", None, {}), ("no-coupling", 0.0, {}), ("no-delay", None, {"delay": 0}),
+    ])
+    def test_conditions_and_preset_reach_the_reservoir(self, capture, condition, rc_scaling,
+                                                       dde_kwargs):
+        ablation = _load("run_ablation")
+        calls = capture(ablation)
+        ablation._build_reservoir(condition, seed=7)
+        expected = ablation.RESERVOIR_PARAMS["rc_scaling"] if rc_scaling is None else rc_scaling
+        assert calls["node"]["rc_scaling"] == expected
+        assert calls["node"]["dde_kwargs"] == dde_kwargs
+        assert calls["node"]["geometry"] == "per_node"
+        assert calls["node"]["delay_scheme"] == "substep"
+        assert calls["W"]["normalize_after_masks"] is True
+
+        ablation._build_reservoir(condition, seed=7, overrides=V0_1)
+        assert calls["node"]["geometry"] == "v0.1"
+        assert calls["node"]["delay_scheme"] == "frozen"
+        assert calls["W"]["normalize_after_masks"] is False
