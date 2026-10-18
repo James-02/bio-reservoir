@@ -239,7 +239,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
 
     trial.set_user_attr(
         "trial_start_utc",
-        datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
     monitor = ResourceMonitor(interval=0.5).start()
 
@@ -397,7 +397,8 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     # =========================================================================
     # 7. Store output metrics
     # =========================================================================
-    _folds_data = metrics.get("folds", [])
+    # The original train/test split (preserve_split) is one fold.
+    _folds_data = metrics.get("folds") or [{"fold_index": 0, **metrics}]
     _fold_f1s = [fd.get("f1", float("nan")) for fd in _folds_data]
 
     trial.set_user_attr("metric_f1",        metrics.get("f1",        float("nan")))
@@ -471,7 +472,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
 
     trial.set_user_attr(
         "trial_end_utc",
-        datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
     return float(metrics["f1"])
 

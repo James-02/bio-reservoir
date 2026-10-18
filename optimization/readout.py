@@ -497,7 +497,7 @@ def objective(trial, **kwargs):
 
     trial.set_user_attr(
         "trial_start_utc",
-        datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
     monitor = ResourceMonitor(interval=0.5).start()
     _trial_t0 = _time.perf_counter()
@@ -650,7 +650,7 @@ def objective(trial, **kwargs):
 
     trial.set_user_attr(
         "trial_end_utc",
-        datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
 
     return mean_f1

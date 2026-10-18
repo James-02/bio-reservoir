@@ -66,6 +66,14 @@ Each entry is marked **[science]** if it changes a reported number, or
   `list --used`). Configs of the `v0.1` headline runs (`experiments/benchmarks/v0.1/`)
   are checked against the archived models and pools, and rerun in full as benchmarks
   (`pytest -m benchmark`).
+- [engineering] Tests of the optimisation package: the study runner, evaluation report
+  and plots, the readout, baseline and reservoir objectives (checked fold by fold against
+  direct scikit-learn computations), their commands, the command line and the
+  deployment and collection helpers; integration tests for a reservoir trial through the
+  study runner, pruned and failed trials, cross-validation, and the archived B1-B3 best
+  trials reproduced fold by fold. Line coverage of `optimization/` (unit and integration
+  tests) is 90-100% per module, up from 0-90%; the unused `classification.py` is not
+  tested.
 
 ### Fixed
 
@@ -202,8 +210,12 @@ coupling the hyperparameters were tuned for, so the studies need re-tuning.
   per-class table shows. The objectives averaged the folds with a helper that keeps the
   class rows only, so no trial (archived or new) had them; the reported metrics are
   stored separately and are unaffected.
+- [engineering] A reservoir trial on the original train/test split (`--preserve_split`)
+  is recorded as one fold (`metric_n_folds`, `fold_0_*`, per-class means); it recorded
+  0 folds and no fold metrics. No archived trial records using the original split.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
+  So do the trial start and end times of the optimisation objectives.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or
   downloading) the source CSV files first; the CSVs are only needed to build the cache.
 - [engineering] Trial metadata no longer records the host name, IP address, working
