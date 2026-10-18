@@ -120,6 +120,26 @@ def test_run_names_match_fold_files():
             assert z["trial_name"].item().decode() == run.name
 
 
+@pytest.mark.parametrize("study_name", ["B1-balanced", "B2-unbalanced", "B3-binary"])
+def test_baseline_registry_entries_match_the_archived_trials(study_name):
+    """The registry runs the no-reservoir baselines as the archived trials ran."""
+    entry = STUDY_REGISTRY[study_name]
+    fixed = entry["fixed"]
+    expected = {
+        "dataset_instances": entry["instances"], "dataset_binary": entry["binary"],
+        "dataset_balance_classes": fixed["balance_classes"],
+        "dataset_max_per_class": str(fixed["max_per_class"]),
+        "dataset_scaler": fixed["scaler_type"], "dataset_noise_rate": fixed["noise_rate"],
+        "dataset_noise_ratio": fixed["noise_ratio"],
+        "metric_primary_average": fixed["objective_average"], "metric_n_folds": entry["folds"],
+    }
+    path = ARCHIVE / "optuna" / f"optuna-{study_name}.db"
+    study = optuna.load_study(study_name=study_name, storage=f"sqlite:///{path}")
+    for trial in study.get_trials(deepcopy=False,
+                                  states=[optuna.trial.TrialState.COMPLETE]):
+        assert {key: trial.user_attrs[key] for key in expected} == expected, trial.number
+
+
 @pytest.mark.parametrize("study_name", sorted(
     name for name in STUDIES if STUDY_REGISTRY.get(name, {}).get("type") != "baseline"
     and name in STUDY_REGISTRY))

@@ -1145,8 +1145,9 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     # No-reservoir baseline: classifiers trained directly on the raw z-scored
     # 187-dimensional ECG feature vectors, bypassing the reservoir entirely.
     # Uses the same classifier families, hyperparameter ranges, 5-fold
-    # stratified CV protocol, per-fold augmentation/standardisation, and
-    # macro-F1 objective as the reservoir readout studies (P4-readout-*).
+    # stratified CV protocol, per-fold standardisation and macro-F1 objective
+    # as the reservoir readout studies (P4-readout-*). No augmentation: the
+    # archived B1-B3 trials all ran (and record) noise_rate = noise_ratio = 0.
     # Handled by optimization/baseline.py, not classification.py.
     #
     # Run via:
@@ -1156,9 +1157,9 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
     "B1-balanced": {
         "description": (
             "No-reservoir baseline: classifiers on raw z-scored 187-d ECG vectors. "
-            "Same classifier families, hyperparameter ranges, 5-fold CV protocol, "
-            "per-fold augmentation, and macro-F1 objective as the reservoir readout "
-            "studies. Provides direct evidence of the reservoir's contribution."
+            "Same classifier families, hyperparameter ranges, 5-fold CV protocol "
+            "and macro-F1 objective as the reservoir readout studies, without "
+            "augmentation. Provides direct evidence of the reservoir's contribution."
         ),
         "type":      "baseline",
         "sampler":   "tpe",
@@ -1172,8 +1173,8 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
             "balance_classes":   True,
             "max_per_class":     None,
             "scaler_type":       "sequence_zscore",
-            "noise_rate":        BASELINE["noise_rate"],
-            "noise_ratio":       BASELINE["noise_ratio"],
+            "noise_rate":        0.0,
+            "noise_ratio":       0.0,
         },
     },
 
@@ -1201,8 +1202,8 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
             "balance_classes":   True,
             "max_per_class":     4015,
             "scaler_type":       "sequence_zscore",
-            "noise_rate":        BASELINE["noise_rate"],
-            "noise_ratio":       BASELINE["noise_ratio"],
+            "noise_rate":        0.0,
+            "noise_ratio":       0.0,
         },
     },
 
@@ -1233,8 +1234,8 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
             "balance_classes":   True,
             "max_per_class":     None,
             "scaler_type":       "sequence_zscore",
-            "noise_rate":        BASELINE["noise_rate"],
-            "noise_ratio":       BASELINE["noise_ratio"],
+            "noise_rate":        0.0,
+            "noise_ratio":       0.0,
         },
     },
 }

@@ -1,5 +1,6 @@
 """Unit tests for optimization.studies registry helpers."""
 
+import argparse
 import re
 
 import pytest
@@ -70,6 +71,30 @@ class TestBaseline:
     def test_baseline_has_core_keys(self):
         for key in ("reservoir_type", "units", "topology_type"):
             assert key in BASELINE
+
+
+class TestBaselineStudies:
+    """The archived B1-B3 trials all ran without augmentation; the registry said
+    otherwise, so ``optimize research --type baseline`` augmented the training folds."""
+
+    @pytest.mark.parametrize("name", ["B1-balanced", "B2-unbalanced", "B3-binary"])
+    def test_baseline_studies_run_without_augmentation(self, name, tmp_path, monkeypatch):
+        from optimization import baseline
+
+        monkeypatch.setenv("BIORESERVOIR_RESULTS_DIR", str(tmp_path))
+        calls = []
+        monkeypatch.setattr(baseline, "research",
+                            lambda study, trials, objective, **kwargs: calls.append(kwargs))
+        baseline.cmd_research(argparse.Namespace(
+            study_name=name, study=None, storage=None, seed=6337, classifiers=["KNN"],
+            job_id=0, processes=1, trials=None, instances=None, binary=False,
+            max_per_class=None, noise_rate=None, noise_ratio=None, folds=None,
+            primary_average=None))
+        (kwargs,) = calls
+        assert (kwargs["noise_rate"], kwargs["noise_ratio"]) == (0.0, 0.0)
+        study = STUDY_REGISTRY[name]
+        assert (kwargs["instances"], kwargs["binary"], kwargs["max_per_class"]) == (
+            study["instances"], study["binary"], study["fixed"]["max_per_class"])
 
 
 class TestListStudies:

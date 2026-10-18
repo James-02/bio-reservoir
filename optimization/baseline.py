@@ -16,8 +16,9 @@ The objective mirrors ``optimization.readout.objective`` as closely as
 possible for comparability:
 
 * Same classifier families and hyperparameter ranges (via ``choose_classifier``).
-* Same 5-fold stratified CV protocol with fold-level augmentation and
-  standardisation (matching ``training.cross_validate._prepare_fold_data``).
+* Same 5-fold stratified CV protocol with fold-level standardisation (matching
+  ``training.cross_validate._prepare_fold_data``); training folds are augmented only
+  when ``noise_rate`` and ``noise_ratio`` are set, and the B1-B3 studies set neither.
 * Same macro-F1 optimisation target and per-fold / per-class metrics storage.
 * Same Optuna infrastructure (TPE sampler, SQLite storage, ``research()``).
 
@@ -515,8 +516,8 @@ def cmd_research(args: argparse.Namespace) -> None:
         "balance_classes": bool(sfixed.get("balance_classes", True)),
         "max_per_class": max_per_class,
         "scaler_type": str(sfixed.get("scaler_type", "sequence_zscore")),
-        "noise_rate": float(_cli_or("noise_rate", None, "noise_rate", 0.2999)),
-        "noise_ratio": float(_cli_or("noise_ratio", None, "noise_ratio", 0.2862)),
+        "noise_rate": float(_cli_or("noise_rate", None, "noise_rate", 0.0)),
+        "noise_ratio": float(_cli_or("noise_ratio", None, "noise_ratio", 0.0)),
         "folds": int(_cli_or("folds", "folds", None, 5)),
         "objective_average": str(
             _cli_or("primary_average", None, "objective_average", "macro")

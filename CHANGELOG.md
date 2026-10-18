@@ -183,6 +183,11 @@ coupling the hyperparameters were tuned for, so the studies need re-tuning.
   with warm-up 50 instead of 40, coupling 8.862 instead of 16.28 and augmentation
   0.2999/0.2862 instead of 0.0825/0.2348, for example); the Phase 2-4 and ESN studies
   resolved correctly.
+- [engineering] The no-reservoir baseline studies B1-B3 run without augmentation, as
+  every archived B1-B3 trial ran (and records). Their registry entries named the
+  BASELINE augmentation (0.2999/0.2862), so `optimize research --type baseline`
+  augmented the training folds unless told otherwise; the reported baselines are
+  unchanged.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or
