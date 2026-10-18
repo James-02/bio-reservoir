@@ -1,7 +1,7 @@
 # A v0.1 headline run, resolved from the archived study databases with
 # python -m training.run resolve (see the source fields). Reference: the archived run.
 name: v0.1-esn
-description: 'ESN comparator as submitted (main text 0.896): the ESN-balanced trial
+description: 'ESN comparator of v0.1 (paper: 0.896): the ESN-balanced trial
   239 reservoir with the ESN-readout ridge classifier.'
 seed: 6337
 task:

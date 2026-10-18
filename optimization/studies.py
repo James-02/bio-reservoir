@@ -98,9 +98,9 @@ BASELINE: dict[str, Any] = {
     "preserve_split":           False,     # True = keep original Kachuee train/test split
     # --- Metric semantics ---
     # Primary optimization/reporting average used for f1/precision/recall.
-    # Submission default: macro treats each rhythm class equally and is the
-    # most defensible headline metric across balanced, unbalanced, and binary
-    # tasks. Weighted averages are still stored for every run.
+    # Macro treats each rhythm class equally and is the most defensible headline
+    # metric across balanced, unbalanced, and binary tasks. Weighted averages are
+    # still stored for every run.
     "objective_average":        "macro",
     # --- Dataset class balance ---
     "balance_classes":          True,

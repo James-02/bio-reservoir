@@ -1,4 +1,4 @@
-"""Run a classification task from a config file (revision plan, section 16.4).
+"""Run a classification task from a config file.
 
     python -m training.run run CONFIG.yaml [--processes N] [--out DIR] [--allow-dirty]
     python -m training.run resolve CONFIG.yaml

@@ -10,9 +10,9 @@ BioReservoir
     ``warmup``, ``input_scaling``, ``dde_scaling``, etc.
 
 distance_matrix
-    Topology generator: 2-D spatial layout with exponential distance-decay
+    Topology generator: 2-D spatial layout with Gaussian distance-decay
     weights and configurable sparsity / spectral normalisation.
-    This is the biologically motivated topology used in all paper results.
+    This is the topology used for every result in the paper.
 
 random_gaussian_weights
     Gaussian sparse recurrent weight matrix for the ESN ablation baseline

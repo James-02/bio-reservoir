@@ -1,7 +1,7 @@
 # A v0.1 headline run, resolved from the archived study databases with
 # python -m training.run resolve (see the source fields). Reference: the archived run.
 name: v0.1-balanced
-description: 'Balanced five-class headline as submitted (main text 0.892): the P2-distance
+description: 'Balanced five-class headline of v0.1 (paper: 0.892): the P2-distance
   trial 416 reservoir on the balanced 4,015-beat pool with the P4-readout-balanced
   random forest.'
 seed: 6337

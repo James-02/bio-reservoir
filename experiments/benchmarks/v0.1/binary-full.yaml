@@ -6,7 +6,7 @@
 # now writes all 109,446 beats, which gives a different pool, so the task names that file
 # (data_file, data_sha256).
 name: v0.1-binary-full
-description: 'Binary headline as submitted (main text 0.961): the P2-distance trial
+description: 'Binary headline of v0.1 (paper: 0.961): the P2-distance trial
   416 reservoir on the full balanced binary pool (37,714 beats) with the P4-readout-binary
   random forest.'
 seed: 6337
