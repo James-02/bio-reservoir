@@ -148,6 +148,12 @@ Each entry is marked **[science]** if it changes a reported number, or
   from earlier databases (for example KNN k = 4 instead of 1 for the balanced study, and
   a gradient boosting loss that five-class studies cannot use), and the MLP and
   perceptron families were left out.
+- [engineering] `bioreservoir.diagnostics.drive_and_state_ranges` and
+  `scripts/analysis/drive_bounds.py` report how often the drive x_t exceeds the bound in
+  the model description (5e-3) and how low the states go. For the `v0.1` balanced
+  headline reservoir (10 beats per class), |x_t| reaches 8.5e-3 (above 5e-3 in 0.1% of
+  oscillator-steps) and the AHL levels Hi and He go negative (down to -0.35) in 1.2% of
+  oscillator-steps.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or
