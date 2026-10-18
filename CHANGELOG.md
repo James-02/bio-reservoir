@@ -69,6 +69,13 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Fixed
 
+Effect on the balanced headline (P2-distance trial 416 with the P4 random forest, the
+`v0.1` hyperparameters, no re-tuning): with every fix, macro F1 is 0.8660 instead of
+0.8915 (paired difference -0.026, 95% CI -0.035 to -0.017). One fix at a time: one
+position per oscillator -0.015, spectral radius on the final matrix -0.016, substep
+delay -0.003 (not significant), scaled readout features -0.003. The first two change the
+coupling the hyperparameters were tuned for, so the studies need re-tuning.
+
 - [science] Standard deviations over folds or seeds are sample SDs (ddof = 1)
   everywhere: Optuna trial attributes (`metric_f1_std`, fold timings), per-class SDs,
   run metrics, the headline-metrics and fold-analysis scripts and the heterogeneity
