@@ -41,6 +41,7 @@ reservoir:
     p_excite: 0.8354
     geometry: v0.1
     delay_scheme: frozen
+    normalize_after_masks: false
   source:
     study: P3-imbalance
     trial: 1

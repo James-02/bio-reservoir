@@ -39,7 +39,7 @@ def generate_distance_weights(
     *,
     spatial_dim: int = 2,
     length_scale: float = 0.1,
-    decay_mode: str = "exp",
+    decay_mode: str = "gaussian",
     decay_power: float = 2.0,
     include_self: bool = False,
     normalize: str = "spectral",
@@ -52,8 +52,14 @@ def generate_distance_weights(
     signed: bool = False,
     p_excite: float = 0.5,
     heterogeneous_gain: bool = False,
+    normalize_after_masks: bool = True,
 ) -> Tuple[np.ndarray | csr_matrix, np.ndarray]:
     """Generate a distance-decay weight matrix and node coordinates.
+
+    The normalisation (``normalize``) applies to the final matrix, after the random
+    signs, gains and sparsity, so ``"spectral"`` gives a spectral radius of 1 (rows of
+    absolute weights summing to 1 for ``"row"``). ``normalize_after_masks=False`` is the
+    v0.1 order: normalise first, then apply the masks, which shrinks the radius.
 
     Returns
     -------
@@ -74,7 +80,7 @@ def generate_distance_weights(
 
     scaled = (D / max(length_scale, 1e-12)) ** decay_power
 
-    if decay_mode == "exp":
+    if decay_mode in ("gaussian", "exp"):  # "exp" is the v0.1 name of this kernel
         W = np.exp(-scaled)
     elif decay_mode == "inv":
         W = 1.0 / (1.0 + scaled)
@@ -92,19 +98,8 @@ def generate_distance_weights(
         mask_geo = D <= cutoff_radius
         W *= mask_geo.astype(W.dtype)
 
-    if normalize == "spectral":
-        # Computing spectral radius via eigendecomposition is expensive.
-        # Allow callers to pass in a precomputed value when reusing the same
-        # topology configuration repeatedly (e.g., Optuna trials).
-        sr = float(sr) if sr is not None else spectral_radius(W)
-        if sr > 0:
-            W /= sr
-    elif normalize == "row":
-        row_sums = W.sum(axis=1, keepdims=True)
-        row_sums[row_sums == 0] = 1.0
-        W /= row_sums
-    elif normalize != "none":
-        raise ValueError(f"Unknown normalize option '{normalize}'.")
+    if not normalize_after_masks:
+        W = _normalise(W, normalize, sr, absolute_rows=False)
 
     # Optional sign diversity: multiply by random sign matrix.
     # This preserves locality and distance-based magnitudes but introduces
@@ -125,6 +120,9 @@ def generate_distance_weights(
         mask = rng.rand(*W.shape) < sparsity
         W *= mask
 
+    if normalize_after_masks:
+        W = _normalise(W, normalize, sr, absolute_rows=True)
+
     # Convert to sparse if we introduced any structural sparsity (either via
     # geometric cutoff or random sparsity). This keeps matrix-vector products
     # efficient in large reservoirs.
@@ -135,6 +133,25 @@ def generate_distance_weights(
         W *= gain
 
     return W, coords
+
+
+def _normalise(W: np.ndarray, normalize: str, sr: Optional[float], *,
+               absolute_rows: bool) -> np.ndarray:
+    """Divide ``W`` by its spectral radius (or the given ``sr``) or by its row sums."""
+    if normalize == "spectral":
+        # Computing spectral radius via eigendecomposition is expensive.
+        # Allow callers to pass in a precomputed value when reusing the same
+        # topology configuration repeatedly (e.g., Optuna trials).
+        sr = float(sr) if sr is not None else spectral_radius(W)
+        if sr > 0:
+            W /= sr
+    elif normalize == "row":
+        row_sums = (np.abs(W) if absolute_rows else W).sum(axis=1, keepdims=True)
+        row_sums[row_sums == 0] = 1.0
+        W /= row_sums
+    elif normalize != "none":
+        raise ValueError(f"Unknown normalize option '{normalize}'.")
+    return W
 
 
 def random_gaussian_weights(
@@ -232,7 +249,7 @@ def distance_matrix(
     *,
     spatial_dim: int = 2,
     length_scale: float = 0.2,
-    decay_mode: str = "exp",
+    decay_mode: str = "gaussian",
     decay_power: float = 2.0,
     include_self: bool = False,
     normalize: str = "spectral",
@@ -252,6 +269,7 @@ def distance_matrix(
     signed: bool = True,
     p_excite: float = 0.5,
     heterogeneous_gain: bool = False,
+    normalize_after_masks: bool = True,
     **kwargs,
 ) -> np.ndarray | csr_matrix | partial:
     """ReservoirPy-compatible initializer for distance-based recurrent weights.
@@ -271,14 +289,20 @@ def distance_matrix(
         Dimensionality of the space where nodes are placed (e.g., 2 for a plane).
     length_scale : float, default=0.2
         Characteristic length controlling interaction decay. Smaller is more local.
-    decay_mode : {'exp', 'inv'}, default='exp'
-        Decay function type. 'exp' is Gaussian-like, 'inv' has a heavier tail.
+    decay_mode : {'gaussian', 'inv'}, default='gaussian'
+        Decay with distance d: 'gaussian' is ``exp(-(d / length_scale) ** decay_power)``,
+        a Gaussian for the default power 2 ('exp' is accepted as its v0.1 name); 'inv' is
+        ``1 / (1 + (d / length_scale) ** decay_power)``, with a heavier tail.
     decay_power : float, default=2.0
         Exponent on the scaled distance, e.g., 2.0 for squared distance.
     include_self : bool, default=False
         If True, allows self-connections (non-zero diagonal).
     normalize : {'spectral', 'row', 'none'}, default='spectral'
-        Normalization applied to the raw weight matrix.
+        Normalization applied to the final weight matrix (see
+        :func:`generate_distance_weights`).
+    normalize_after_masks : bool, default=True
+        False normalises before the signs and sparsity (v0.1), so the spectral radius of
+        the result is below 1.
     jitter : float, default=0.0
         Standard deviation of Gaussian noise added to distances for heterogeneity.
     sparsity : float, default=1.0
@@ -316,6 +340,7 @@ def distance_matrix(
             signed=signed,
             p_excite=p_excite,
             heterogeneous_gain=heterogeneous_gain,
+            normalize_after_masks=normalize_after_masks,
         )
 
     if m != n:
@@ -373,6 +398,7 @@ def distance_matrix(
         signed=signed,
         p_excite=p_excite,
         heterogeneous_gain=heterogeneous_gain,
+        normalize_after_masks=normalize_after_masks,
     )
 
     if return_coords:

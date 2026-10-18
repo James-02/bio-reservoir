@@ -46,6 +46,7 @@ def _build_bioreservoir_topology(params: Dict[str, Any], seed: int):
             signed=bool(params["signed"]),
             p_excite=float(params["p_excite"]),
             cutoff_radius="auto",
+            normalize_after_masks=bool(params.get("normalize_after_masks", True)),
             seed=seed,
         )
     if topo == "random":
@@ -126,6 +127,7 @@ def build_reservoir(params: Dict[str, Any], seed: int) -> Tuple[Node, Dict[str, 
             "topo_interaction_diameters": params.get("interaction_diameters"),
             "topo_fade_alpha": params.get("fade_alpha"),
             "topo_cutoff_radius": "auto",
+            "topo_normalize_after_masks": bool(params.get("normalize_after_masks", True)),
             "topo_seed": seed,
             "esn_spectral_radius": None,
             "esn_leak_rate": None,

@@ -41,6 +41,7 @@ reservoir:
     p_excite: 0.8354274565239865
     geometry: v0.1
     delay_scheme: frozen
+    normalize_after_masks: false
   source:
     study: P2-distance
     trial: 416

@@ -102,6 +102,14 @@ Each entry is marked **[science]** if it changes a reported number, or
   held it for all the substeps: more substeps did not reduce that error, and the
   "no delay" ablation was not delay-free. `delay_scheme="frozen"` (and the
   `v0.1` preset) keeps the `v0.1` solver.
+- [science] The distance kernel is normalised after the random signs and sparsity, so
+  its spectral radius is 1 as stated. The `v0.1` code normalised first, which left the
+  headline topology (P2-distance trial 416) at 0.43; the new order is the old matrix
+  times 1/0.43, the same as a larger `rc_scaling`. Row normalisation uses absolute
+  weights. `normalize_after_masks=False` (and the `v0.1` preset) keeps the
+  `v0.1` order.
+- [engineering] The distance kernel option is `decay_mode="gaussian"`
+  (`exp(-(d/l)^2)`); `"exp"`, its `v0.1` name, still works.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or
