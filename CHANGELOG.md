@@ -46,6 +46,11 @@ Each entry is marked **[science]** if it changes a reported number, or
   were consulted in the revision pilots; draw 3 is sealed for the confirmatory evaluation.
 - [engineering] Run manifests (code version, data and lock-file checksums, environment)
   and an append-only run registry (`registry.jsonl`, `python -m utils.provenance`).
+- [engineering] Unit tests of the current behaviour of the model, training and
+  preprocessing code: the solver against the written-out model equations and a reference
+  ODE solver (fourth-order convergence), the distance kernel against its interaction-range
+  calibration, and cross-validation folds (stratified, reproducible, and identical
+  predictions in worker processes).
 
 ### Fixed
 
