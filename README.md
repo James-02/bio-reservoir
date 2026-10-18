@@ -56,6 +56,22 @@ Y = np.concatenate([Y_train, Y_test])
 results = cross_validate(reservoir, readout, X, Y, folds=5)
 ```
 
+## Running Experiments
+
+A run is defined by a YAML config: the task (labels, pool size, balancing, scaling), the reservoir (explicit parameters or an Optuna study trial), the state features, the readout and the cross-validation. The configs of the `v0.1` headline runs are in [experiments/benchmarks/v0.1](experiments/benchmarks/v0.1).
+
+```bash
+python -m training.run run experiments/benchmarks/v0.1/balanced.yaml --processes 5
+python -m training.run resolve my-config.yaml          # print the explicit config
+python -m training.run compare archive:v0.1/P4-readout-balanced-best results/runs/<run>
+python -m utils.provenance list                        # the run registry
+python -m utils.provenance mark <run id> ok --uses "Table 2, balanced"
+```
+
+Each run writes `results/runs/<name>-<UTC time>/`: the resolved `config.yaml`, `metrics.json` (per fold, mean and sample SD, pooled), `fold-<k>.npz`, `figures/`, `run.log` and `manifest.json` (code version, data checksums, environment), and adds a line to `registry.jsonl`. Runs from uncommitted code need `--allow-dirty` and are marked non-citable. `compare` prints per-fold metrics, the prediction agreement and a paired bootstrap 95% CI of the macro-F1 difference, and saves figures with `--out`. `optimize rerun-best` and `optimize apply-best` use the same runner.
+
+`pytest -m benchmark` reruns the `v0.1` headline configs and compares them fold by fold with the archived runs; it needs a capable host (`BIORESERVOIR_BENCHMARK_PROCESSES` sets the parallel folds).
+
 ## Project Structure
 
 - **bioreservoir/** — Core library: DDE solver, `BioReservoir` node, topology generation (distance-based spatial kernels).
@@ -63,6 +79,7 @@ results = cross_validate(reservoir, readout, X, Y, folds=5)
 - **optimization/** — Optuna hyperparameter studies, study registry, and CLI commands for running/evaluating studies.
 - **utils/** — Preprocessing (ECG loading, augmentation, scaling), analysis metrics, visualisation, and result management.
 - **scripts/** — Standalone experiment scripts and analysis helpers.
+- **experiments/** — Run configs (`benchmarks/v0.1/`: the headline runs as submitted) and the sealed held-out draws.
 - **data/ecg/** — MIT-BIH arrhythmia dataset files.
 - **results/** — Working outputs (gitignored): Optuna studies, fold runs, metrics and figures; see [Results Layout](#results-layout).
 - **logs/** — Log files from studies and experiment scripts (gitignored).
@@ -155,7 +172,7 @@ Paths and settings come from [utils/config.py](utils/config.py). Each setting is
 | Default path | Setting | Contents |
 |---|---|---|
 | `results/optuna/` | `BIORESERVOIR_RESULTS_DIR` (root) | Optuna studies, `optuna-<study>.db` |
-| `results/runs/<run>/` | | Five-fold run files, `fold-<k>.npz` |
+| `results/runs/<run>/` | | Run folders: `config.yaml`, `metrics.json`, `fold-<k>.npz`, `figures/`, `run.log`, `manifest.json` |
 | `results/metrics/` | | Derived metric tables and statistics |
 | `results/figures/<topic>/` | | Figures |
 | `logs/` | `BIORESERVOIR_LOGS_DIR` | Log files, `<command>-<study>-<UTC time>.log` |

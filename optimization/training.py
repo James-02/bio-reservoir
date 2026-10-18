@@ -41,6 +41,7 @@ from optuna.visualization.matplotlib import (
 from sklearn.neighbors import KNeighborsClassifier
 
 
+from utils import config
 from utils.preprocessing import load_ecg_data
 from utils.analysis import compute_class_dicts
 from training import classify, cross_validate
@@ -536,149 +537,101 @@ def cmd_rerun_best(args: argparse.Namespace) -> None:
             --classifiers KNN RF Ridge LR \\
             --trials 500 --processes 32
     """
-    from optimization.studies import get_study as _get_study_cfg
+    from training.run import execute
 
     study_name = args.study_name or getattr(args, "study", None)
     if not study_name:
         raise SystemExit("--study_name is required for rerun-best.")
+    if getattr(args, "preserve_split", False):
+        _rerun_best_preserved_split(args, study_name)
+        return
+
+    study_config = get_study(study_name)
+    archive = getattr(args, "archive", None)
+    trial_name = getattr(args, "trial_name", None) or f"{study_name}-best"
+    task: Dict[str, Any] = {}
+    if getattr(args, "instances", None):
+        task["rows"] = int(args.instances)
+    if getattr(args, "binary", False):
+        task["labels"] = "binary"
+    cv: Dict[str, Any] = {"folds": int(getattr(args, "folds", None) or study_config.get("folds", 1)),
+                          "profile": bool(getattr(args, "profile", False))}
+    if getattr(args, "primary_average", None):
+        cv["primary_average"] = args.primary_average
+    for key in ("noise_rate", "noise_ratio"):
+        if getattr(args, key, None) is not None:
+            cv[key] = float(getattr(args, key))
+    if getattr(args, "readout_study", None):
+        readout_trial = getattr(args, "readout_trial", None)
+        readout: Dict[str, Any] = {"study": args.readout_study, "archive": archive,
+                                   "trial": "best" if readout_trial is None else readout_trial}
+    else:
+        readout = {"classifier": "KNN", "params": dict(_KNN_HYPERS)}
+    run_config = {
+        "name": trial_name,
+        "description": f"Best trial of {study_name} (optimize rerun-best).",
+        "seed": int(getattr(args, "seed", DEFAULT_SEED)),
+        "reservoir": {"study": study_name, "trial": "best", "archive": archive,
+                      "storage": getattr(args, "storage", None)},
+        "readout": readout, "task": task, "cv": cv, "outputs": {"save_states": True},
+    }
+    run_dir = execute(run_config, out=config.runs_dir() / trial_name,
+                      processes=int(getattr(args, "processes", 1)), allow_dirty=True)
+    logger.info("Saved the run with states in %s", run_dir)
+    logger.info(
+        "Next: python -m optimization.optimize research --type readout "
+        "--study_name <P4-readout-study> --trial_name %s "
+        "--classifiers KNN RF Ridge LR --trials 500 --processes <N>",
+        trial_name,
+    )
+
+
+def _rerun_best_preserved_split(args: argparse.Namespace, study_name: str) -> None:
+    """Rerun the best trial on the original Kachuee train/test split (one fold)."""
     storage = args.storage or get_default_storage(study_name)
     study   = optuna.load_study(study_name=study_name, storage=storage)
-
     try:
         best = study.best_trial
     except ValueError:
         raise SystemExit(f"No completed trials in study '{study_name}'.")
 
-    study_config = _get_study_cfg(study_name)
+    study_config = get_study(study_name)
     params = _resolve_params_from_trial(best, study_config)
-
     seed        = int(getattr(args, "seed", DEFAULT_SEED))
     instances   = int(getattr(args, "instances", None) or study_config.get("instances", 4015))
     binary      = bool(getattr(args, "binary", False) or study_config.get("binary", False))
     folds       = int(getattr(args, "folds", None) or study_config.get("folds", 1))
-    scaler_type = str(params.get("scaler_type", "sequence_zscore"))
     trial_name  = getattr(args, "trial_name", None) or f"{study_name}-best"
-    preserve_split = bool(getattr(args, "preserve_split", False) or params.get("preserve_split", False))
     objective_average = str(getattr(args, "primary_average", None) or params.get("objective_average", "macro"))
-    noise_rate  = float(params["noise_rate"])
-    noise_ratio = float(params["noise_ratio"])
-    # Allow CLI overrides for re-validated augmentation values.
-    if getattr(args, "noise_rate", None) is not None:
-        noise_rate = float(args.noise_rate)
-        logger.info("Overriding noise_rate → %.4f (from CLI)", noise_rate)
-    if getattr(args, "noise_ratio", None) is not None:
-        noise_ratio = float(args.noise_ratio)
-        logger.info("Overriding noise_ratio → %.4f (from CLI)", noise_ratio)
-
-    if preserve_split and folds != 1:
+    noise_rate  = float(params["noise_rate"] if getattr(args, "noise_rate", None) is None else args.noise_rate)
+    noise_ratio = float(params["noise_ratio"] if getattr(args, "noise_ratio", None) is None else args.noise_ratio)
+    if folds != 1:
         raise SystemExit("--preserve_split requires --folds 1 so the original train/test split remains untouched.")
-
-    logger.info(
-        "Rerunning best trial %d of '%s' (F1=%.4f) → trial_name='%s', folds=%d, binary=%s, preserve_split=%s, average=%s",
-        best.number, study_name, best.value, trial_name, folds, binary, preserve_split, objective_average,
-    )
 
     X_train, Y_train, X_test, Y_test = _get_dataset(
         instances=instances,
         binary=binary,
         balance_classes=bool(params.get("balance_classes", True)),
         max_per_class=params.get("max_per_class"),
-        noise_rate=noise_rate if preserve_split else 0.0,
-        noise_ratio=noise_ratio if preserve_split else 0.0,
-        scaler_type=scaler_type,
+        noise_rate=noise_rate,
+        noise_ratio=noise_ratio,
+        scaler_type=str(params.get("scaler_type", "sequence_zscore")),
         seed=seed,
-        preserve_split=preserve_split,
+        preserve_split=True,
     )
     reservoir, _reservoir_attrs = build_reservoir(params, seed=seed)
-
-    readout_study_name = getattr(args, "readout_study", None)
-    if readout_study_name:
-        from optimization.readout import choose_classifier
-        ro_storage = get_default_storage(readout_study_name, archive=getattr(args, "archive", None))
-        ro_study = optuna.load_study(study_name=readout_study_name, storage=ro_storage)
-        readout_trial_number = getattr(args, "readout_trial", None)
-        if readout_trial_number is not None:
-            ro_best = ro_study.trials[readout_trial_number]
-        else:
-            ro_best = ro_study.best_trial
-        clf_name = ro_best.params["classifier"]
-        clf_class, clf_hypers = choose_classifier(ro_best, clf_name, seed=seed)
-        logger.info(
-            "Using readout from study '%s' trial %d: %s %s",
-            readout_study_name, ro_best.number, clf_name, clf_hypers,
-        )
-        readout = ScikitLearnNode(clf_class, model_hypers=clf_hypers)
-    else:
-        readout = ScikitLearnNode(KNeighborsClassifier, model_hypers=_KNN_HYPERS)
-
+    readout = ScikitLearnNode(KNeighborsClassifier, model_hypers=_KNN_HYPERS)
     _ra = str(params.get("readout_aggregation", "final"))
     _rw = int(params.get("readout_window", 1)) if _ra == "last_N" else 1
-
-    processes = int(getattr(args, "processes", 1))
-    fold_backend = "loky" if processes > 1 else "sequential"
-    fold_workers = processes if processes > 1 else None
-    profile = bool(getattr(args, "profile", False))
-
-    if preserve_split:
-        metrics = classify(
-            reservoir,
-            readout,
-            X_train,
-            Y_train,
-            X_test,
-            Y_test,
-            trial_name=trial_name,
-            save_states=True,
-            readout_aggregation=_ra,
-            readout_window=_rw,
-            primary_average=objective_average,
-        )
-    else:
-        X = np.concatenate((X_train, X_test), axis=0)
-        Y = np.concatenate((Y_train, Y_test), axis=0)
-        if len(X) > instances:
-            rng = np.random.default_rng(seed)
-            idx = np.sort(rng.permutation(len(X))[:instances])
-            X, Y = X[idx], Y[idx]
-
-        metrics = cross_validate(
-            reservoir, readout, X, Y,
-            folds=folds,
-            trial_name=trial_name,
-            save_threshold=0.0,
-            save_states=True,
-            scaler_type=scaler_type,
-            readout_aggregation=_ra,
-            readout_window=_rw,
-            noise_rate=noise_rate,
-            noise_ratio=noise_ratio,
-            fold_backend=fold_backend,
-            fold_workers=fold_workers,
-            seed=seed,
-            profile=profile,
-            primary_average=objective_average,
-        )
-
-    logger.info(
-        "Saved %d fold artefact(s) with states under results/runs/%s/",
-        folds, trial_name,
+    metrics = classify(
+        reservoir, readout, X_train, Y_train, X_test, Y_test,
+        trial_name=trial_name, save_states=True,
+        readout_aggregation=_ra, readout_window=_rw, primary_average=objective_average,
     )
     logger.info(
-        "Rerun result — F1=%.4f  accuracy=%.4f  MCC=%.4f  kappa=%.4f",
-        float(metrics.get("f1", 0.0)),
-        float(metrics.get("accuracy", 0.0)),
-        float(metrics.get("mcc", 0.0)),
-        float(metrics.get("kappa", 0.0)),
-    )
-    if profile and "profiling" in metrics:
-        logger.info("Pipeline timings:")
-        for section, stats in metrics["profiling"].items():
-            logger.info("  %s: %s", section, stats)
-    logger.info(
-        "Next: python -m optimization.optimize research --type readout "
-        "--study_name <P4-readout-study> --trial_name %s "
-        "--classifiers KNN RF Ridge LR --trials 500 --processes <N>",
-        trial_name,
+        "Rerun result (original split) — F1=%.4f  accuracy=%.4f  MCC=%.4f  kappa=%.4f",
+        float(metrics.get("f1", 0.0)), float(metrics.get("accuracy", 0.0)),
+        float(metrics.get("mcc", 0.0)), float(metrics.get("kappa", 0.0)),
     )
 
 

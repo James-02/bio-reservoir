@@ -247,6 +247,7 @@ class TestCrossValidate:
         for art, fold in zip(artifacts, cv._iter_folds(X, Y, folds=3, seed=5), strict=True):
             np.testing.assert_array_equal(art.Y_train, Y[fold.train_idx])
             np.testing.assert_array_equal(art.Y_test, Y[fold.val_idx])
+            np.testing.assert_array_equal(art.test_index, fold.val_idx)
         assert result["accuracy"] == pytest.approx(np.mean([a.metrics.accuracy for a in artifacts]))
 
     def test_results_are_reproducible(self):

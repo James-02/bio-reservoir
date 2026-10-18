@@ -452,6 +452,9 @@ def cross_validate(
             for fold in folds_list
         ))
 
+    for artifact, fold in zip(artifacts, folds_list, strict=True):
+        artifact.test_index = fold.val_idx
+
     # ---- Trial-level save decision (all-or-none) --------------------------
     # Evaluated after ALL folds complete so a partial trial is never written.
     if trial_name:

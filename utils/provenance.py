@@ -5,10 +5,11 @@ Every citable run writes ``manifest.json`` into its run folder and appends one l
 changes are refused unless explicitly allowed; they are then marked non-citable.  Status
 changes (for example ``superseded``) are appended as new lines; nothing is deleted::
 
-    python -m utils.provenance list [--exp EXP_ID] [--status ok]
+    python -m utils.provenance list [--exp EXP_ID] [--status ok] [--used]
     python -m utils.provenance show RUN_ID
     python -m utils.provenance diff RUN_A RUN_B
     python -m utils.provenance mark RUN_ID superseded [--by RUN_ID] [--note TEXT]
+    python -m utils.provenance mark RUN_ID ok --uses "Table 2, balanced"
 
 Manifests follow the environment metadata policy: no host names, IP addresses, user
 names or absolute paths; files are recorded relative to the repository root.
@@ -173,14 +174,22 @@ def register(manifest: dict[str, Any], run_dir: Path, *, status: str = "ok",
 
 
 def mark(run_id: str, status: str, *, by: str | None = None, note: str = "",
-         registry: Path = REGISTRY_FILE) -> None:
-    """Append a status change (runs are flagged, never deleted)."""
+         uses: str | None = None, registry: Path = REGISTRY_FILE) -> None:
+    """Append a status change (runs are flagged, never deleted).
+
+    *uses* names a manuscript item the run backs, e.g. "Table 2, balanced"; items
+    accumulate over successive marks.
+    """
     if status not in STATUSES:
         raise ValueError(f"status must be one of {STATUSES}")
-    if run_id not in load_registry(registry):
+    runs = load_registry(registry)
+    if run_id not in runs:
         raise SystemExit(f"unknown run {run_id!r}")
-    _append({"run_id": run_id, "status": status, "superseded_by": by, "note": note,
-             "registered_utc": _utc()}, registry)
+    entry = {"run_id": run_id, "status": status, "superseded_by": by, "note": note,
+             "registered_utc": _utc()}
+    if uses:
+        entry["uses"] = [*runs[run_id].get("uses", []), uses]
+    _append(entry, registry)
 
 
 def load_registry(registry: Path = REGISTRY_FILE) -> dict[str, dict[str, Any]]:
@@ -231,6 +240,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     p_list = sub.add_parser("list", help="List runs.")
     p_list.add_argument("--exp")
     p_list.add_argument("--status", choices=STATUSES)
+    p_list.add_argument("--used", action="store_true", help="Only runs that back manuscript items.")
     sub.add_parser("show", help="Show one run.").add_argument("run_id")
     p_diff = sub.add_parser("diff", help="Compare two runs.")
     p_diff.add_argument("run_a")
@@ -240,18 +250,22 @@ def main(argv: Sequence[str] | None = None) -> None:
     p_mark.add_argument("status", choices=STATUSES)
     p_mark.add_argument("--by")
     p_mark.add_argument("--note", default="")
+    p_mark.add_argument("--uses", help="Manuscript item this run backs.")
     args = parser.parse_args(argv)
 
     runs = load_registry()
     if args.command == "list":
         for run_id, entry in runs.items():
             if (args.exp and entry.get("exp_id") != args.exp) or (
-                    args.status and entry.get("status") != args.status):
+                    args.status and entry.get("status") != args.status) or (
+                    args.used and not entry.get("uses")):
                 continue
             flag = "" if entry.get("citable") else "  (not citable)"
-            print(f"{run_id}  {entry.get('status')}  {json.dumps(entry.get('metrics', {}))}{flag}")
+            uses = f"  uses: {'; '.join(entry['uses'])}" if entry.get("uses") else ""
+            print(f"{run_id}  {entry.get('status')}  {json.dumps(entry.get('metrics', {}))}"
+                  f"{flag}{uses}")
     elif args.command == "mark":
-        mark(args.run_id, args.status, by=args.by, note=args.note)
+        mark(args.run_id, args.status, by=args.by, note=args.note, uses=args.uses)
     else:
         wanted = [args.run_id] if args.command == "show" else [args.run_a, args.run_b]
         missing = [r for r in wanted if r not in runs]

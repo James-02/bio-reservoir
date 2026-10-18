@@ -16,6 +16,11 @@ Each entry is marked **[science]** if it changes a reported number, or
   `metrics/`, `figures/`) and log files under `logs/`. Paths and settings come from
   `utils/config.py` (environment variable, then `config.env`, then default).
   `BIORESERVOIR_RESULTS_DIR` now names the results root rather than the runs folder.
+- [engineering] `optimize rerun-best` and `optimize apply-best` go through the run
+  framework: they write a run folder with config, metrics, manifest and a registry line,
+  and refuse to overwrite an existing run folder. `apply-best` writes a new run
+  (`results/runs/<study>-best/`) instead of rewriting the source run's fold files.
+  PyYAML (already installed with Optuna) is a declared dependency.
 
 ### Added
 
@@ -51,6 +56,16 @@ Each entry is marked **[science]** if it changes a reported number, or
   ODE solver (fourth-order convergence), the distance kernel against its interaction-range
   calibration, and cross-validation folds (stratified, reproducible, and identical
   predictions in worker processes).
+- [engineering] Run framework: `python -m training.run run <config>` runs a
+  classification task from a YAML config (task, reservoir, features, readout, folds;
+  explicit values or Optuna study trials, `resolve` prints the explicit config) into one
+  folder per run (config, metrics with sample SDs, folds with test-beat positions,
+  figures, log, manifest) and the registry; `compare` reports per-fold metrics,
+  prediction agreement and a paired bootstrap CI between two runs, including archived
+  ones. The registry records the manuscript items a run backs (`mark --uses`,
+  `list --used`). Configs of the `v0.1` headline runs (`experiments/benchmarks/v0.1/`)
+  are checked against the archived models and pools, and rerun in full as benchmarks
+  (`pytest -m benchmark`).
 
 ### Fixed
 
