@@ -1,8 +1,12 @@
 """Unit tests for bioreservoir.node.BioReservoir."""
 
+import logging
+from types import SimpleNamespace
+
 import pytest
 import numpy as np
 
+import bioreservoir.node as node_module
 from bioreservoir import BioReservoir
 
 
@@ -168,3 +172,170 @@ class TestBioReservoirDiagnostics:
         # Manual reset should clear timing
         tiny_node_diagnostics.reset()
         assert tiny_node_diagnostics.get_timing_summary() == {}
+
+
+# ---------------------------------------------------------------------------
+# Construction, history buffer, input drive and forward step (v0.1 behaviour)
+# ---------------------------------------------------------------------------
+
+def _node(**kwargs):
+    options = dict(units=4, warmup=2, rk4_substeps=4, seed=42, input_dim=1,
+                   output_variables="He", parallel=False)
+    options.update(kwargs)
+    return BioReservoir(**options)
+
+
+class TestConstruction:
+    def test_units_are_required_without_a_weight_matrix(self):
+        with pytest.raises(ValueError, match="units"):
+            BioReservoir(units=None)
+
+    @pytest.mark.parametrize("variables, indices", [
+        ("all", [0, 1, 2, 3]), ((), [0, 1, 2, 3]), ("IHe", [1, 3]), ("AHi", [0, 2]),
+        ("IHiHe", [1, 2, 3]), (("Hi", "A"), [2, 0]),
+    ])
+    def test_output_variables_select_state_columns(self, variables, indices):
+        node = _node(output_variables=variables, warmup=0)
+        np.testing.assert_array_equal(node.output_indices, indices)
+
+    def test_solver_time_grid_spans_one_input_step(self):
+        node = _node(rk4_substeps=8, warmup=0)
+        np.testing.assert_allclose(node.rk4_timespan, np.linspace(0.0, 1.0, 9))
+
+    def test_warmup_runs_zero_input_steps(self, monkeypatch):
+        inputs = []
+        original = BioReservoir._step
+
+        def counting_step(self, x):
+            inputs.append(np.array(x))
+            return original(self, x)
+
+        monkeypatch.setattr(BioReservoir, "_step", counting_step)
+        node = _node(warmup=3)
+        assert len(inputs) == 3 and all(np.all(x == 0) for x in inputs)
+        np.testing.assert_array_equal(node._warmup_states, node.states)
+        assert node.t == 0
+
+    def test_heterogeneity_creates_seeded_node_parameters(self):
+        assert _node(warmup=0).node_params is None
+        node = _node(warmup=0, param_heterogeneity_cv=0.2, param_heterogeneity_seed=5)
+        assert node.node_params.shape == (4, 16)
+        same = _node(warmup=0, param_heterogeneity_cv=0.2, param_heterogeneity_seed=5)
+        other = _node(warmup=0, param_heterogeneity_cv=0.2, param_heterogeneity_seed=6)
+        np.testing.assert_array_equal(node.node_params, same.node_params)
+        assert not np.array_equal(node.node_params, other.node_params)
+
+    def test_hyperparameters_are_logged_at_debug_level(self, caplog):
+        with caplog.at_level(logging.DEBUG, logger="bioreservoir.node"):
+            _node(warmup=0)
+        assert any("Reservoir Hyperparameters" in r.getMessage() for r in caplog.records)
+
+
+class TestInitialHistory:
+    def test_history_covers_the_delay(self):
+        node = _node(warmup=0, dde_kwargs={"delay": 4.5})
+        assert node._initialize_states().shape == (6, 4, 4)
+
+    def test_initial_levels_are_log_normal_as_documented(self):
+        node = _node(units=4000, warmup=0)
+        logs = np.log(node._initialize_states())
+        for var, (mean, sd) in enumerate([(-2.0, 0.5), (-2.0, 0.5), (-4.0, 0.3), (-3.0, 0.3)]):
+            assert logs[..., var].mean() == pytest.approx(mean, abs=0.01)
+            assert logs[..., var].std() == pytest.approx(sd, rel=0.02)
+
+    def test_initial_levels_depend_on_the_seed(self):
+        a, b, c = (_node(warmup=0, seed=s)._initialize_states() for s in (1, 1, 2))
+        np.testing.assert_array_equal(a, b)
+        assert not np.array_equal(a, c)
+
+    def test_history_shifts_by_one_step(self):
+        node = _node(warmup=0)
+        before = node.states.copy()
+        new = np.full((4, 4), 9.0)
+        node._update_history(new)
+        np.testing.assert_array_equal(node.states[:-1], before[1:])
+        np.testing.assert_array_equal(node.states[-1], new)
+
+
+class TestStep:
+    def test_step_solves_one_input_step_and_appends_the_final_state(self, monkeypatch):
+        node = _node(warmup=0, cell_coupling=3.0)
+        history = node.states.copy()
+        calls = {}
+
+        def fake_solver(states, times, input_vec, parallel, node_params, **dde_kwargs):
+            calls.update(states=states.copy(), times=times, input_vec=input_vec,
+                         parallel=parallel, node_params=node_params, dde=dde_kwargs)
+            return np.stack([np.zeros((4, 4)), np.full((4, 4), 0.5)])
+
+        monkeypatch.setattr(node_module, "solve_dde_rk4", fake_solver)
+        out = node._step(np.array([[0.1], [0.2], [0.3], [0.4]]))
+        np.testing.assert_array_equal(calls["states"], history)
+        np.testing.assert_allclose(calls["input_vec"], [0.3, 0.6, 0.9, 1.2])
+        np.testing.assert_array_equal(calls["times"], node.rk4_timespan)
+        assert calls["parallel"] is False and calls["node_params"] is None
+        assert calls["dde"] == node.dde_kwargs
+        np.testing.assert_array_equal(out, np.full((4, 4), 0.5))
+        np.testing.assert_array_equal(node.states[-1], out)
+        np.testing.assert_array_equal(node.states[:-1], history[1:])
+
+
+class TestInputDrive:
+    def test_drive_combines_input_bias_and_recurrent_terms(self):
+        node = _node(noise_in=0.0, noise_rc=0.0, input_bias=True, rc_scaling=0.3,
+                     dde_scaling=0.01)
+        x = np.array([[0.7]])
+        node.initialize(x)
+        r = node.state().T
+        expected = 0.01 * (node.Win @ x.T + node.bias + 0.3 * (node.W @ r))
+        drive = node_module._compute_input(node, x)
+        assert drive.shape == (4, 1)
+        np.testing.assert_allclose(drive, expected)
+
+    def test_noise_changes_the_drive(self):
+        node = _node(noise_in=0.5, noise_rc=0.5)
+        x = np.array([[0.7]])
+        node.initialize(x)
+        assert not np.allclose(node_module._compute_input(node, x),
+                               node_module._compute_input(node, x))
+
+    def test_diagnostics_keep_the_last_terms(self, caplog):
+        node = _node(diagnostics=True, noise_in=0.0, noise_rc=0.0, dde_scaling=0.02)
+        with caplog.at_level(logging.DEBUG, logger="bioreservoir.node"):
+            node.run(np.array([[0.5], [0.1]]), reset=True)
+        np.testing.assert_allclose(node._last_drive, node._last_inp_term + node._last_rec_term)
+        np.testing.assert_allclose(node._last_final_input, 0.02 * node._last_drive)
+        assert any("std(inp)" in r.getMessage() for r in caplog.records)
+
+
+class TestForward:
+    def test_output_lists_the_selected_variables_unit_by_unit(self, monkeypatch):
+        state = np.arange(12.0).reshape(3, 4)
+        stub = SimpleNamespace(t=0, diagnostics=False, rk4_substep_aggregation_window=1,
+                               output_indices=np.array([1, 3]), _step=lambda x: state)
+        monkeypatch.setattr(node_module, "_compute_input", lambda reservoir, x: x)
+        out = node_module._forward(stub, np.zeros((1, 1)))
+        np.testing.assert_array_equal(out, [[1.0, 3.0, 5.0, 7.0, 9.0, 11.0]])
+        assert stub.t == 1
+
+    def test_run_output_is_the_last_solver_state(self):
+        node = _node(noise_in=0.0, noise_rc=0.0)
+        out = node.run(np.array([[0.2], [0.4]]), reset=True)
+        np.testing.assert_array_equal(out[-1], node.states[-1][:, 3])
+
+
+class TestResetToState:
+    def test_new_state_restores_the_warmup_history(self):
+        node = _node()
+        node.run(np.array([[0.2], [0.4]]), reset=True)
+        node.t = 5
+        node.reset(to_state=np.zeros((1, 4)))
+        np.testing.assert_array_equal(node.states, node._warmup_states)
+        assert node.t == 0
+
+    def test_same_state_keeps_the_history(self):
+        node = _node()
+        node.run(np.array([[0.2], [0.4]]), reset=True)
+        history = node.states.copy()
+        node.reset(to_state=node.state().copy())
+        np.testing.assert_array_equal(node.states, history)
