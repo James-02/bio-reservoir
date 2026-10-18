@@ -9,9 +9,11 @@ Key reminders (see `AGENTS.md` for detail):
 - Keep changes simple and standard; explain non-trivial designs to the maintainer and
   agree them before implementing.
 - Anchor dependencies are **reservoirpy** and **optuna**; follow their patterns.
-- **Never modify `archive/`** (frozen manuscript artefacts), never tune on the held-out
-  draws, or change the pinned scientific dependency versions; new results go to
+- **Never modify `archive/`** (frozen results of released versions), never tune on the
+  held-out draws, or change the pinned scientific dependency versions; new results go to
   `results/`, logs to `logs/`.
+- Write for a reader who has only this repository and the paper: no references to
+  internal plans, meetings, pilot studies, review rounds or private tracking numbers.
 - **No infrastructure details** (hostnames, IPs, user names, remote paths, proxies,
   systemd units, credentials) in tracked files; they belong in `config.env`.
 - Every bug fix comes with a test that fails before the fix; record changes in
