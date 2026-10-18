@@ -24,13 +24,13 @@ from sklearn.neural_network import MLPClassifier
 
 
 from utils import config
-from utils.analysis import compute_class_dicts, compute_mean_dicts, evaluate_performance, sample_sd
+from utils.analysis import compute_class_dicts, evaluate_performance, sample_sd
 from utils.results import FoldArtifact
 from optimization.base import (
     DEFAULT_SEED,
     research, plot_results, print_topn_trials,
     parse_show_sections, SHOW_DEFAULT,
-    get_default_storage, build_study,
+    get_default_storage, build_study, fold_average_attrs,
 )
 from optimization.environment import get_environment
 from training.pipeline import fit_readout, predict as predict_readout
@@ -636,16 +636,9 @@ def objective(trial, **kwargs):
             safe_mk = _CLASS_KEY_MAP.get(raw_name, raw_name.replace("-", "_"))
             trial.set_user_attr(f"metric_class_{cls_key}_{safe_mk}_{stat}", mv)
 
-    # Macro/weighted averages (from averaged class_metrics using legacy helper)
-    _class_metrics_avg = compute_mean_dicts(fold_class_metrics)
-    for cls_key, cls_vals in _class_metrics_avg.items():
-        if not isinstance(cls_vals, dict):
-            continue
-        if cls_key in ("macro avg", "weighted avg"):
-            tag = cls_key.split()[0]
-            for mk, mv in cls_vals.items():
-                safe_mk = _CLASS_KEY_MAP.get(mk, mk.replace("-", "_"))
-                trial.set_user_attr(f"metric_{tag}_{safe_mk}", mv)
+    # Macro/weighted averages over folds
+    for key, value in fold_average_attrs(fold_class_metrics).items():
+        trial.set_user_attr(key, value)
 
     # Aggregated confusion matrix (summed across folds, stored as nested list)
     agg_cm = sum(fold_confusion_matrices)

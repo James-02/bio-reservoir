@@ -196,6 +196,11 @@ coupling the hyperparameters were tuned for, so the studies need re-tuning.
 - [engineering] Readout studies optimise macro F1 unless `--primary_average` says
   otherwise; they defaulted to weighted F1, unlike the reservoir and baseline studies.
   Every archived readout study was run with macro F1.
+- [engineering] Trials store the macro and weighted averages of precision, recall, F1
+  and support (`metric_macro_*`, `metric_weighted_*`), which the evaluation report's
+  per-class table shows. The objectives averaged the folds with a helper that keeps the
+  class rows only, so no trial (archived or new) had them; the reported metrics are
+  stored separately and are unaffected.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or

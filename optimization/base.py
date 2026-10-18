@@ -160,6 +160,21 @@ def evaluate_study(
             emit()
 
 
+def fold_average_attrs(fold_class_metrics: List[Dict[str, Any]]) -> Dict[str, float]:
+    """``metric_macro_<m>`` and ``metric_weighted_<m>`` trial attributes: each fold's
+    macro and weighted precision, recall, F1 and support, averaged over the folds."""
+    names = {"precision": "precision", "recall": "recall", "f1-score": "f1",
+             "support": "support"}
+    attrs: Dict[str, float] = {}
+    for tag in ("macro", "weighted"):
+        for key, name in names.items():
+            values = [m[f"{tag} avg"][key] for m in fold_class_metrics
+                      if key in m.get(f"{tag} avg", {})]
+            if values:
+                attrs[f"metric_{tag}_{name}"] = float(sum(values) / len(values))
+    return attrs
+
+
 
 # =============================================================================
 # Shared evaluation helpers

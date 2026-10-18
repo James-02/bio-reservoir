@@ -56,6 +56,7 @@ from optimization.base import (
     get_default_storage,
     build_study,
     add_common_args,
+    fold_average_attrs,
 )
 from optimization.environment import get_environment
 from optimization.reservoirs import build_reservoir
@@ -444,16 +445,9 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
                 safe_mk = _CLASS_KEY_MAP.get(raw_name, raw_name.replace("-", "_"))
                 trial.set_user_attr(f"metric_class_{cls_key}_{safe_mk}_{stat}", mv)
 
-    # Macro/weighted averages (from mean class_metrics)
-    _class_metrics_avg = metrics.get("class_metrics", {})
-    for cls_key, cls_vals in _class_metrics_avg.items():
-        if not isinstance(cls_vals, dict):
-            continue
-        if cls_key in ("macro avg", "weighted avg"):
-            tag = cls_key.split()[0]
-            for mk, mv in cls_vals.items():
-                safe_mk = _CLASS_KEY_MAP.get(mk, mk.replace("-", "_"))
-                trial.set_user_attr(f"metric_{tag}_{safe_mk}", mv)
+    # Macro/weighted averages over folds
+    for key, value in fold_average_attrs(fold_class_dicts).items():
+        trial.set_user_attr(key, value)
 
     # Aggregated confusion matrix (flattened for Optuna storage)
     _cm = metrics.get("confusion_matrix")
