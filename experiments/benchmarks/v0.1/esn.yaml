@@ -1,0 +1,57 @@
+# A v0.1 headline run, resolved from the archived study databases with
+# python -m training.run resolve (see the source fields). Reference: the archived run.
+name: v0.1-esn
+description: 'ESN comparator as submitted (main text 0.896): the ESN-balanced trial
+  239 reservoir with the ESN-readout ridge classifier.'
+seed: 6337
+task:
+  labels: five-class
+  rows: 4015
+  balance_classes: true
+  max_per_class: null
+  scaler: sequence_zscore
+  seed: 6337
+reservoir:
+  type: esn
+  seed: 6337
+  params:
+    units: 850
+    esn_leak_rate: 0.3160238707949273
+    esn_spectral_radius: 1.6955020298458932
+    esn_activation: tanh
+    input_scaling: 0.32714579463608107
+    input_connectivity: 0.6246343669642176
+    input_bias: true
+    bias_scaling: 0.9630661362999436
+    noise_in: 0.005487227657292568
+    noise_rc: 0.0009442056404533605
+    rc_connectivity: 0.17937632730640085
+  source:
+    study: ESN-balanced
+    trial: 239
+    archive: v0.1
+features:
+  aggregation: signal_mean
+  window: 1
+readout:
+  classifier: Ridge
+  params:
+    alpha: 0.00022310354715286321
+    fit_intercept: true
+    tol: 0.0007815554285826364
+    solver: svd
+    max_iter: 2000
+  source:
+    study: ESN-readout
+    trial: 364
+    archive: v0.1
+cv:
+  folds: 5
+  primary_average: macro
+  noise_rate: 0.0
+  noise_ratio: 0.0
+  profile: false
+  seed: 6337
+outputs:
+  save_states: false
+reference: archive:v0.1/ESN-readout-best

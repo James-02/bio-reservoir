@@ -136,6 +136,8 @@ class FoldArtifact:
     # Ephemeral: timing data from Profiler; never written to disk
     profiling: Optional[Dict[str, Any]] = None
     path: str = ""
+    # Positions of the test beats in the pool (absent from files written before v0.2)
+    test_index: Optional[np.ndarray] = None
 
     # -----------------------------------------------------------------------
     # Save
@@ -191,6 +193,8 @@ class FoldArtifact:
             arrays["train_states"] = self.train_states
         if save_states and self.test_states is not None:
             arrays["test_states"] = self.test_states
+        if self.test_index is not None:
+            arrays["test_index"] = np.asarray(self.test_index, dtype=np.int64)
 
         _atomic_npz_save(path, **arrays)
         self.path = path
@@ -247,6 +251,7 @@ class FoldArtifact:
             test_states = test_states,
             model_hypers= model_hypers,
             path        = path,
+            test_index  = data["test_index"] if "test_index" in data.files else None,
         )
 
     # -----------------------------------------------------------------------

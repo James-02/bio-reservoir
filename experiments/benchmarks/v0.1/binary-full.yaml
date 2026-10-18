@@ -1,0 +1,73 @@
+# A v0.1 headline run, resolved from the archived study databases with
+# python -m training.run resolve (see the source fields). Reference: the archived run.
+name: v0.1-binary-full
+description: 'Binary headline as submitted (main text 0.961): the P2-distance trial
+  416 reservoir on the full balanced binary pool (37,714 beats) with the P4-readout-binary
+  random forest.'
+seed: 6337
+task:
+  labels: binary
+  rows: 50000
+  balance_classes: true
+  max_per_class: null
+  scaler: sequence_zscore
+  seed: 6337
+reservoir:
+  type: bioreservoir
+  seed: 6337
+  params:
+    units: 1000
+    warmup: 50
+    rk4_substeps: 64
+    rk4_substep_aggregation: 1
+    input_scaling: 0.02769874909436638
+    input_connectivity: 0.5281956378922816
+    input_bias: false
+    bias_scaling: 0.1
+    rc_scaling: 0.007036187544739917
+    dde_scaling: 0.0006439480590749527
+    cell_coupling: 12.74579065885262
+    noise_in: 0.01442
+    noise_rc: 0.2397
+    output_variables: IHe
+    param_heterogeneity_cv: 0.0
+    param_heterogeneity_seed: null
+    topology_type: distance
+    interaction_diameters: 8.2
+    fade_alpha: 2.80278092396274e-05
+    sparsity: 0.5759952026896107
+    signed: true
+    p_excite: 0.8354274565239865
+  source:
+    study: P2-distance
+    trial: 416
+    archive: v0.1
+features:
+  aggregation: signal_mean
+  window: 1
+readout:
+  classifier: RF
+  params:
+    n_estimators: 279
+    criterion: log_loss
+    oob_score: true
+    max_features: sqrt
+    max_depth: 27
+    min_samples_split: 6
+    min_samples_leaf: 1
+    class_weight: balanced
+    random_state: 6337
+  source:
+    study: P4-readout-binary
+    trial: 651
+    archive: v0.1
+cv:
+  folds: 5
+  primary_average: macro
+  noise_rate: 0.0
+  noise_ratio: 0.0
+  profile: false
+  seed: 6337
+outputs:
+  save_states: false
+reference: archive:v0.1/P4-readout-binary-best-full

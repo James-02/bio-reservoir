@@ -1,8 +1,7 @@
 
 import argparse
 import logging
-import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
 import optuna
@@ -23,8 +22,8 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neural_network import MLPClassifier
 
-from joblib import Parallel, delayed
 
+from utils import config
 from utils.analysis import compute_class_dicts, compute_mean_dicts, evaluate_performance
 from utils.results import FoldArtifact
 from optimization.base import (
@@ -324,109 +323,33 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
             )
 
 
-def _apply_fold_worker(
-    clf_cls,
-    hypers: Dict[str, Any],
-    artifact: "FoldArtifact",
-    results_dir: str,
-) -> int:
-    """Fit clf on one fold's states, update its NPZ file, return fold index.
-
-    Module-level so joblib can pickle it across processes.
-    """
-    trained_states = artifact.train_states.reshape(artifact.train_states.shape[0], 1, -1).copy()
-    Y_train        = artifact.Y_train.reshape(artifact.Y_train.shape[0], 1, -1).copy()
-    tested_states  = artifact.test_states.reshape(artifact.test_states.shape[0], 1, -1).copy()
-    Y_test         = artifact.Y_test.reshape(artifact.Y_test.shape[0], 1, -1).copy()
-
-    import time as _time
-    node = ScikitLearnNode(clf_cls, model_hypers=hypers)
-    _t0 = _time.perf_counter()
-    fit_readout(node, list(trained_states), list(Y_train))
-    Y_pred_list = predict_readout(node, list(tested_states))
-    Y_pred = np.stack(Y_pred_list)  # restore (N, 1, C)
-    _runtime = round(_time.perf_counter() - _t0, 4)
-    metrics = evaluate_performance(Y_test, Y_pred, time=_runtime)
-
-    updated_hypers = dict(artifact.model_hypers)
-    updated_hypers["model"] = clf_cls
-    updated_hypers["model_hypers"] = hypers
-
-    updated = FoldArtifact(
-        trial_name=artifact.trial_name,
-        fold_index=artifact.fold_index,
-        train_states=artifact.train_states,
-        Y_train=artifact.Y_train,
-        test_states=artifact.test_states,
-        Y_test=artifact.Y_test,
-        Y_pred=Y_pred,
-        metrics=metrics,
-        model_hypers=updated_hypers,
-    )
-    updated.save(results_dir=results_dir, save_states=True)
-    return artifact.fold_index
-
-
 def cmd_apply_best(args: argparse.Namespace) -> None:
-    """Re-run the best Optuna trial across all folds and update NPZ files.
+    """Fit the best (or a chosen) readout trial on every fold of a run with saved states.
 
-    Re-fits the best readout classifier on each fold's saved reservoir states
-    and overwrites ``Y_pred`` and ``metrics`` in the NPZ files while
-    preserving all other stored content (states, Y_train, Y_test, etc.).
-
-    Pass ``--processes N`` to fit folds in parallel using joblib (one process
-    per fold).  Default is sequential (``--processes 1``).
+    Goes through the run framework (``training.run``): the readout is fitted on each
+    fold's saved training states and scored on its test states, and the result is a new
+    run, ``results/runs/<study>-best/``, with predictions, metrics and the states. The
+    source run (``--trial_name``: a run under ``results/runs``, a registry run id or
+    ``archive:<version>/<run>``) is not modified.
     """
+    from training.run import execute
 
     study_name = args.study_name or getattr(args, "study", None)
-    storage = args.storage or get_default_storage(study_name)
-    study = optuna.load_study(study_name=study_name, storage=storage)
-
-    readout_trial_number = getattr(args, "readout_trial", None)
-    if readout_trial_number is not None:
-        best_trial = study.trials[readout_trial_number]
-    else:
-        best_trial = study.best_trial
-    classifier_name = best_trial.params["classifier"]
-    processes = int(getattr(args, "processes", 1))
-
-    logger.info(
-        "Applying best trial %d (classifier=%s, f1=%.6f) to fold NPZ files "
-        "(processes=%d).",
-        best_trial.number,
-        classifier_name,
-        float(best_trial.value),
-        processes,
-    )
-
-    seed = int(getattr(args, "seed", DEFAULT_SEED))
-    clf, hypers = choose_classifier(best_trial, classifier_name, seed=seed)
-    artifacts = FoldArtifact.load_trial(args.trial_name)
-
-    for artifact in artifacts:
-        if artifact.train_states is None or artifact.test_states is None:
-            raise SystemExit(
-                f"Fold {artifact.fold_index} of trial '{args.trial_name}' has no saved states.\n"
-                "Re-run classification with --save_states to enable readout optimisation."
-            )
-
-    # Derive absolute results_dir from the first artifact's path so that
-    # worker processes (which may have a different CWD) save to the right place.
-    abs_results_dir = os.path.abspath(
-        os.path.dirname(os.path.dirname(artifacts[0].path))
-    )
-
-    if processes > 1:
-        logger.info("Running %d folds in parallel across %d processes.", len(artifacts), processes)
-        Parallel(n_jobs=processes, backend="loky")(
-            delayed(_apply_fold_worker)(clf, hypers, a, abs_results_dir) for a in artifacts
-        )
-    else:
-        for artifact in artifacts:
-            logger.info("Fitting best %s on fold %d", classifier_name, artifact.fold_index)
-            _apply_fold_worker(clf, hypers, artifact, abs_results_dir)
-            logger.info("Updated Y_pred and metrics in fold %d", artifact.fold_index)
-
+    readout_trial = getattr(args, "readout_trial", None)
+    run_config = {
+        "name": f"{study_name}-best",
+        "description": (f"Readout of {study_name} on the states of {args.trial_name} "
+                        "(optimize apply-best)."),
+        "seed": int(getattr(args, "seed", DEFAULT_SEED)),
+        "reservoir": {"states_from": args.trial_name},
+        "readout": {"study": study_name, "archive": getattr(args, "archive", None),
+                    "trial": "best" if readout_trial is None else readout_trial,
+                    "storage": getattr(args, "storage", None)},
+        "outputs": {"save_states": True},
+    }
+    run_dir = execute(run_config, out=config.runs_dir() / f"{study_name}-best",
+                      processes=int(getattr(args, "processes", 1)), allow_dirty=True)
+    logger.info("Saved the readout run in %s", run_dir)
 
 
 def choose_classifier(trial: optuna.trial.Trial, classifier_name: str, seed: int = DEFAULT_SEED, binary: bool = False):
