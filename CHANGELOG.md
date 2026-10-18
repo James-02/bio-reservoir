@@ -96,6 +96,11 @@ Each entry is marked **[science]** if it changes a reported number, or
   trials reproduced fold by fold. Line coverage of `optimization/` (unit and integration
   tests) is 90-100% per module, up from 0-90%; the unused `classification.py` is not
   tested.
+- [engineering] A tutorial notebook, `docs/tutorial.ipynb`: the model and its drive and
+  state diagnostics, a run from a config, per-fold, per-class and timing metrics, run
+  comparisons and the registry, the data and the held-out splits, optimisation studies,
+  the checks against `v0.1` and the scripts behind the figures. It runs at small size in
+  about ten minutes and writes only to `results/tutorial/`.
 
 ### Removed
 

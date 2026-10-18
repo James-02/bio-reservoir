@@ -56,6 +56,8 @@ conventions and integrate with them rather than reinventing.
 - `data/splits/heldout.json` — the held-out validation and test splits (beat IDs and
   checksums; tracked, never edited).
 - `experiments/benchmarks/v0.1/` — run configs of the `v0.1` headline runs.
+- `docs/tutorial.ipynb` — a hands-on tour of the code; update it when a command, config
+  key or output it uses changes.
 
 ## Workspace data layout (all gitignored)
 

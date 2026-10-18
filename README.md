@@ -56,6 +56,8 @@ Y = np.concatenate([Y_train, Y_test])
 results = cross_validate(reservoir, readout, X, Y, folds=5)
 ```
 
+The notebook [docs/tutorial.ipynb](docs/tutorial.ipynb) is a guided tour at small size: the model and its diagnostics, run configs, per-fold, per-class and timing metrics, run comparisons, the data and the held-out splits, optimisation studies, and the checks against `v0.1`.
+
 ## Running Experiments
 
 A run is defined by a YAML config: the task (labels, pool size, balancing, scaling), the reservoir (explicit parameters or an Optuna study trial), the state features, the readout and the cross-validation. The configs of the `v0.1` headline runs are in [experiments/benchmarks/v0.1](experiments/benchmarks/v0.1).
