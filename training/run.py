@@ -54,7 +54,8 @@ RESERVOIR_KEYS = {
         "units", "warmup", "rk4_substeps", "input_scaling",
         "input_connectivity", "input_bias", "bias_scaling", "rc_scaling", "dde_scaling",
         "cell_coupling", "noise_in", "noise_rc", "output_variables",
-        "param_heterogeneity_cv", "param_heterogeneity_seed", "topology_type",
+        "param_heterogeneity_cv", "param_heterogeneity_seed", "heterogeneity_mean_preserving",
+        "topology_type",
         "interaction_diameters", "fade_alpha", "sparsity", "signed", "p_excite",
         "rc_connectivity", "geometry", "couple_vars", "delay_scheme", "normalize_after_masks",
     ),
@@ -73,7 +74,8 @@ PRESETS: dict[str, dict[str, dict[str, Any]]] = {
     "v0.1": {
         "task": {"cap_includes_test": False},
         "reservoir": {"geometry": "v0.1", "delay_scheme": "frozen",
-                      "normalize_after_masks": False},
+                      "normalize_after_masks": False,
+                      "heterogeneity_mean_preserving": False},
         "readout": {"scale": False},
     },
 }

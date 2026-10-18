@@ -32,6 +32,7 @@ reservoir:
     output_variables: IHe
     param_heterogeneity_cv: 0.0
     param_heterogeneity_seed: null
+    heterogeneity_mean_preserving: false
     topology_type: distance
     interaction_diameters: 8.2
     fade_alpha: 2.803e-05

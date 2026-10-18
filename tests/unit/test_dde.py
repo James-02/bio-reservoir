@@ -346,6 +346,21 @@ class TestGenerateNodeParams:
         factors = node_params[:, 0] / get_dde_params()["CA"]
         assert factors.std() / factors.mean() == pytest.approx(0.25, rel=0.03)
 
+    def test_factors_have_mean_one(self):
+        # v0.1 drew exp(N(0, s^2)), whose mean is sqrt(1 + cv^2): 4.4% high at cv 0.3.
+        base = get_dde_params()
+        node_params = generate_node_params(200_000, 0.3, base, seed=0)
+        for i, name in enumerate(dde._PARAM_ORDER):
+            if name in dde._VARY_SET:
+                assert node_params[:, i].mean() / base[name] == pytest.approx(1.0, abs=0.004)
+
+    def test_v0_1_factors_are_biased_upwards(self):
+        base = get_dde_params()
+        node_params = generate_node_params(200_000, 0.3, base, seed=0, mean_preserving=False)
+        factors = node_params[:, 0] / base["CA"]
+        assert factors.mean() == pytest.approx(np.sqrt(1.09), abs=0.004)
+        assert factors.std() / factors.mean() == pytest.approx(0.3, rel=0.02)
+
     def test_reproducible_with_a_seed(self):
         base = get_dde_params()
         first = generate_node_params(10, 0.2, base, seed=11)

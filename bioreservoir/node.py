@@ -63,6 +63,7 @@ class BioReservoir(Node):
         diagnostics: bool = False,
         param_heterogeneity_cv: float = 0.0,
         param_heterogeneity_seed: Optional[int] = None,
+        param_heterogeneity_mean_preserving: bool = True,
         geometry: str = "per_node",
         couple_vars: Optional[Sequence[float]] = None,
         delay_scheme: str = "substep",
@@ -82,6 +83,11 @@ class BioReservoir(Node):
         ``"substep"``: at every RK4 stage, from the Hi history at substep resolution
         (a delay of 0 is the ordinary differential equation). ``"frozen"``: once per input
         step, held for all its substeps (v0.1).
+
+        ``param_heterogeneity_cv`` > 0 draws per-oscillator kinetic rates around the
+        nominal values (log-normal, coefficient of variation ``param_heterogeneity_cv``),
+        with mean equal to the nominal value unless
+        ``param_heterogeneity_mean_preserving=False`` (v0.1, biased upwards).
         """
         if units is None and not is_array(W):
             raise ValueError("'units' must be specified if 'W' is not a matrix.")
@@ -218,6 +224,7 @@ class BioReservoir(Node):
             self.node_params = generate_node_params(
                 self.units, self.param_heterogeneity_cv,
                 self.dde_kwargs, seed=self._het_seed,
+                mean_preserving=param_heterogeneity_mean_preserving,
             )
             logger.info(
                 "Generated per-node kinetic heterogeneity (CV=%.3f) for %d nodes",

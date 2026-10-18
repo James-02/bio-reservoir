@@ -120,6 +120,11 @@ Each entry is marked **[science]** if it changes a reported number, or
   `classify.py --rk4_substep_aggregation_window`): the node only ever received the state
   at the end of each input step, so the option had no effect. Run configs log a
   warning for reservoir parameters the builder does not read.
+- [science] Per-oscillator kinetic heterogeneity draws mean-preserving log-normal
+  factors (mean 1, coefficient of variation `param_heterogeneity_cv`). The `v0.1` factors
+  had mean sqrt(1 + cv^2), so every varied rate was biased upwards (4.4% at cv 0.3, 11.8%
+  at 0.5). `param_heterogeneity_mean_preserving=False` (and the `v0.1` preset)
+  keeps the `v0.1` draws.
 - [engineering] The environment metadata timestamp uses a timezone-aware UTC clock
   (`datetime.utcnow()` is deprecated from Python 3.12); the recorded format is unchanged.
 - [engineering] `load_ecg_data` reads the preprocessed cache without requiring (or

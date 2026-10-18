@@ -375,6 +375,7 @@ def generate_node_params(
     cv: float,
     base_params: Mapping[str, Any],
     seed: Optional[int] = None,
+    mean_preserving: bool = True,
 ) -> np.ndarray:
     """Generate per-node kinetic parameter arrays with log-normal heterogeneity.
 
@@ -400,6 +401,10 @@ def generate_node_params(
         Nominal DDE parameters (from get_dde_params()).
     seed : int, optional
         Random seed for reproducibility.
+    mean_preserving : bool, default=True
+        Draw the factors as ``exp(N(-s^2/2, s^2))``, whose mean is 1, so the nominal
+        values are the population means. False draws ``exp(N(0, s^2))`` (v0.1), whose
+        mean is ``exp(s^2/2) = sqrt(1 + cv^2)``: every varied rate is biased upwards.
 
     Returns
     -------
@@ -409,12 +414,13 @@ def generate_node_params(
     prepared = _prepare_dde_params_cached(base_params)
     rng = np.random.default_rng(seed)
     sigma = np.sqrt(np.log(1.0 + cv ** 2)) if cv > 0 else 0.0
+    log_mean = -0.5 * sigma ** 2 if mean_preserving else 0.0
 
     node_params = np.empty((n_nodes, N_NODE_PARAMS), dtype=np.float64)
     for i, name in enumerate(_PARAM_ORDER):
         nominal = getattr(prepared, name)
         if name in _VARY_SET and cv > 0:
-            factors = rng.lognormal(mean=0.0, sigma=sigma, size=n_nodes)
+            factors = rng.lognormal(mean=log_mean, sigma=sigma, size=n_nodes)
             node_params[:, i] = nominal * factors
         else:
             node_params[:, i] = nominal
