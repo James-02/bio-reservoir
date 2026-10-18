@@ -419,6 +419,17 @@ class TestGeometry:
         with pytest.raises(ValueError, match="geometry"):
             _node(geometry="grid")
 
+    def test_the_initializer_waits_for_data_and_checks_shapes(self):
+        node = _node()
+        assert node_module._initialize_per_node(node, x=None) is None
+        x = np.zeros((1, 1))
+        with pytest.raises(ValueError, match="recurrent kernel"):
+            node_module._initialize_per_node(node, x=x, W_init=np.zeros((3, 3)),
+                                             Win_init=np.zeros((4, 1)))
+        with pytest.raises(ValueError, match="Win"):
+            node_module._initialize_per_node(node, x=x, W_init=np.zeros((4, 4)),
+                                             Win_init=np.zeros((4, 2)))
+
 
 class TestSequentialSolver:
     """The v0.1 sequential solver crashed when two variables were observed."""
@@ -427,6 +438,14 @@ class TestSequentialSolver:
     def test_sequential_and_parallel_runs_agree(self, geometry):
         x = np.linspace(0, 1, 6)[:, None]
         runs = [_node(output_variables="IHe", warmup=2, geometry=geometry, parallel=p)
+                .run(x, reset=True) for p in (True, False)]
+        np.testing.assert_allclose(runs[0], runs[1], rtol=1e-10, atol=1e-12)
+
+    @pytest.mark.parametrize("delay_scheme", ["substep", "frozen"])
+    def test_heterogeneous_sequential_and_parallel_runs_agree(self, delay_scheme):
+        x = np.linspace(0, 1, 6)[:, None]
+        runs = [_node(warmup=2, parallel=p, delay_scheme=delay_scheme, rk4_substeps=16,
+                      param_heterogeneity_cv=0.2, param_heterogeneity_seed=3)
                 .run(x, reset=True) for p in (True, False)]
         np.testing.assert_allclose(runs[0], runs[1], rtol=1e-10, atol=1e-12)
 

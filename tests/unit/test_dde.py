@@ -514,6 +514,21 @@ class TestDelayResolution:
         with pytest.raises(ValueError, match="substep"):
             _run_node(0.01, 16, ())
 
+    def test_the_history_must_cover_the_delay(self):
+        with pytest.raises(ValueError, match="shorter than the delay"):
+            dde.substep_history(np.zeros((2, 3, 4)), delay=2.0, substeps=4)
+
+    def test_the_substep_solver_checks_the_history_and_defaults_to_nominal_rates(self):
+        state = np.full((2, 4), 0.1)
+        ring, pos = dde.substep_history(np.full((3, 2, 4), 0.1), delay=2.0, substeps=4)
+        with pytest.raises(ValueError, match="delay history"):
+            dde.solve_dde_substep(state, ring[:, :-1], pos, np.zeros(2), 4, delay=2.0)
+        nominal = generate_node_params(2, 0.0, get_dde_params(delay=2.0))
+        a, _ = dde.solve_dde_substep(state, ring.copy(), pos, np.zeros(2), 4, delay=2.0)
+        b, _ = dde.solve_dde_substep(state, ring.copy(), pos, np.zeros(2), 4,
+                                     node_params=nominal, delay=2.0)
+        np.testing.assert_array_equal(a, b)
+
     def test_unknown_scheme_is_rejected(self):
         with pytest.raises(ValueError, match="delay_scheme"):
             _run_node(2.0, 16, (), delay_scheme="cubic")
