@@ -1,45 +1,48 @@
 
 import argparse
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 import optuna
 import pandas as pd  # type: ignore
-
 from optuna.visualization.matplotlib import (
-    plot_slice,
-    plot_param_importances,
     plot_edf,
+    plot_param_importances,
+    plot_slice,
 )
-
 from reservoirpy.nodes import ScikitLearnNode
-from sklearn.linear_model import RidgeClassifier, LogisticRegression, Perceptron
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression, Perceptron, RidgeClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.naive_bayes import GaussianNB
-from sklearn.neural_network import MLPClassifier
 
-
+from optimization.base import (
+    DEFAULT_SEED,
+    SHOW_DEFAULT,
+    build_study,
+    fold_average_attrs,
+    get_default_storage,
+    parse_show_sections,
+    plot_results,
+    print_topn_trials,
+    research,
+)
+from optimization.environment import get_environment
+from training.pipeline import fit_readout
+from training.pipeline import predict as predict_readout
+from training.profiling import ResourceMonitor
 from utils import config
 from utils.analysis import compute_class_dicts, evaluate_performance, sample_sd
 from utils.results import FoldArtifact
-from optimization.base import (
-    DEFAULT_SEED,
-    research, plot_results, print_topn_trials,
-    parse_show_sections, SHOW_DEFAULT,
-    get_default_storage, build_study, fold_average_attrs,
-)
-from optimization.environment import get_environment
-from training.pipeline import fit_readout, predict as predict_readout
-from training.profiling import ResourceMonitor
 
 logger = logging.getLogger(__name__)
 
 
-def _important_params(study: optuna.Study, max_n: int = 8) -> List[str]:
+def _important_params(study: optuna.Study, max_n: int = 8) -> list[str]:
     """Return up to *max_n* non-fixed parameter names ranked by importance."""
     try:
         from optuna.importance import get_param_importances
@@ -55,7 +58,7 @@ def _important_params(study: optuna.Study, max_n: int = 8) -> List[str]:
         return sorted(seen)[:max_n]
 
 
-def _compute_group_stats(df, top_n: int) -> Dict[str, Any]:
+def _compute_group_stats(df, top_n: int) -> dict[str, Any]:
     """Compute top-N and all-trials summary stats for a group of trials.
 
     Returns a dict with keys:
@@ -109,7 +112,7 @@ def _print_classifier_summary_table(df, top_n: int) -> None:
     if "value" not in df.columns:
         return
 
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
 
     # Global summary over all classifiers
     stats_all = _compute_group_stats(df, top_n)
@@ -153,7 +156,7 @@ def cmd_research(args: argparse.Namespace) -> None:
     storage = args.storage or get_default_storage(study_name)
     study = build_study(study_name=study_name, storage=storage, seed=int(args.seed))
 
-    params: Dict[str, Any] = {
+    params: dict[str, Any] = {
         "classifiers": list(args.classifiers),
         "study_name": study_name,
         "job_id": int(args.job_id),
@@ -493,7 +496,8 @@ def objective(trial, **kwargs):
     the predictions and metrics from this trial. Other saved content (states,
     labels, hyperparameters, etc.) is left untouched.
     """
-    import datetime, time as _time
+    import datetime
+    import time as _time
 
     trial.set_user_attr(
         "trial_start_utc",
@@ -506,17 +510,17 @@ def objective(trial, **kwargs):
     objective_average = str(kwargs.get("objective_average", "macro"))
 
     artifacts = FoldArtifact.load_trial(kwargs['trial_name'])
-    f1s: List[float] = []
-    accuracies: List[float] = []
-    precisions: List[float] = []
-    recalls: List[float] = []
-    mccs: List[float] = []
-    kappas: List[float] = []
-    fold_runtimes: List[float] = []
-    fold_fit_times: List[float] = []
-    fold_predict_times: List[float] = []
-    fold_class_metrics: List[dict] = []
-    fold_confusion_matrices: List[np.ndarray] = []
+    f1s: list[float] = []
+    accuracies: list[float] = []
+    precisions: list[float] = []
+    recalls: list[float] = []
+    mccs: list[float] = []
+    kappas: list[float] = []
+    fold_runtimes: list[float] = []
+    fold_fit_times: list[float] = []
+    fold_predict_times: list[float] = []
+    fold_class_metrics: list[dict] = []
+    fold_confusion_matrices: list[np.ndarray] = []
 
     seed: int = int(kwargs.get("seed", DEFAULT_SEED))
     clf, hypers = choose_classifier(trial, classifier_name, seed=seed)
@@ -582,7 +586,7 @@ def objective(trial, **kwargs):
     # Store per-fold metrics
     for i, (f1, acc, prec, rec, mcc, kap, rt, fit_t, pred_t) in enumerate(
         zip(f1s, accuracies, precisions, recalls, mccs, kappas,
-            fold_runtimes, fold_fit_times, fold_predict_times)
+            fold_runtimes, fold_fit_times, fold_predict_times, strict=True)
     ):
         trial.set_user_attr(f"fold_{i}_f1",          f1)
         trial.set_user_attr(f"fold_{i}_accuracy",    acc)

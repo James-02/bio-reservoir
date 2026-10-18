@@ -12,8 +12,8 @@ Profiler, ResourceMonitor
     Optional timing / resource instrumentation.
 """
 
-from training.pipeline import train, fit_readout, predict
-from training.cross_validate import cross_validate, run_fold, classify
+from training.cross_validate import classify, cross_validate, run_fold
+from training.pipeline import fit_readout, predict, train
 from training.profiling import Profiler, ResourceMonitor
 
 __all__ = [

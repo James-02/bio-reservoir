@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
 
 import numpy as np
 import reservoirpy as rpy

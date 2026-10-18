@@ -21,14 +21,12 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-from typing import Dict, List
 
 import numpy as np
 
 from bioreservoir import BioReservoir
 from utils.preprocessing import load_ecg_data
 from utils.visualisation import plot_dde_ecg_multiscale
-
 
 
 def _simulate_step_only(*, reservoir: BioReservoir, input_series: np.ndarray) -> np.ndarray:
@@ -61,8 +59,8 @@ def _make_reservoir(*, units: int, seed: int) -> BioReservoir:
 	)
 
 
-def _parse_scales(s: str) -> List[float]:
-	vals: List[float] = []
+def _parse_scales(s: str) -> list[float]:
+	vals: list[float] = []
 	for tok in str(s).split(","):
 		tok = tok.strip()
 		if not tok:
@@ -101,7 +99,7 @@ def _build_ecg_drive_unscaled(*, ecg: np.ndarray, timesteps: int, warmup: int) -
 	return np.concatenate([np.zeros(int(warmup), dtype=np.float64), ecgt])
 
 
-def _states_to_vars(states_all: np.ndarray) -> Dict[str, np.ndarray]:
+def _states_to_vars(states_all: np.ndarray) -> dict[str, np.ndarray]:
 	# states_all: (T, units=1, 4) in order (A, I, Hi, He)
 	return {
 		"A": states_all[:, 0, 0],
@@ -192,8 +190,8 @@ def main() -> None:
 	baseline_states = _states_to_vars(states0)
 
 	# Driven: ECG input at multiple scales.
-	driven_states_by_scale: Dict[float, Dict[str, np.ndarray]] = {}
-	driven_input_by_scale: Dict[float, np.ndarray] = {}
+	driven_states_by_scale: dict[float, dict[str, np.ndarray]] = {}
+	driven_input_by_scale: dict[float, np.ndarray] = {}
 	input_unscaled = _build_ecg_drive_unscaled(ecg=ecg, timesteps=timesteps, warmup=warmup)
 	for s in scales:
 		reservoir = _make_reservoir(units=1, seed=seed)

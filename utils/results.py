@@ -53,8 +53,9 @@ from __future__ import annotations
 import glob as _glob
 import os
 import random
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -130,20 +131,20 @@ class FoldArtifact:
     Y_pred: np.ndarray
     metrics: Metrics
     # Optional — see docstring for when to enable
-    train_states: Optional[np.ndarray] = None
-    test_states: Optional[np.ndarray] = None
-    model_hypers: Dict[str, Any] = field(default_factory=dict)
+    train_states: np.ndarray | None = None
+    test_states: np.ndarray | None = None
+    model_hypers: dict[str, Any] = field(default_factory=dict)
     # Ephemeral: timing data from Profiler; never written to disk
-    profiling: Optional[Dict[str, Any]] = None
+    profiling: dict[str, Any] | None = None
     path: str = ""
     # Positions of the test beats in the pool (absent from files written before v0.2)
-    test_index: Optional[np.ndarray] = None
+    test_index: np.ndarray | None = None
 
     # -----------------------------------------------------------------------
     # Save
     # -----------------------------------------------------------------------
 
-    def save(self, results_dir: Optional[str] = None, save_states: bool = False) -> str:
+    def save(self, results_dir: str | None = None, save_states: bool = False) -> str:
         """Save this fold to ``{results_dir}/{trial_name}/fold-{fold_index}.npz``.
 
         Creates intermediate directories as needed.  Writes atomically via a
@@ -180,7 +181,7 @@ class FoldArtifact:
         os.makedirs(out_dir, exist_ok=True)
         path = os.path.join(out_dir, f"fold-{self.fold_index}.npz")
 
-        arrays: Dict[str, Any] = dict(
+        arrays: dict[str, Any] = dict(
             trial_name  = np.bytes_(self.trial_name),
             fold_index  = np.array(self.fold_index, dtype=np.int32),
             Y_train     = self.Y_train,
@@ -205,7 +206,7 @@ class FoldArtifact:
     # -----------------------------------------------------------------------
 
     @classmethod
-    def load(cls, path: str) -> "FoldArtifact":
+    def load(cls, path: str) -> FoldArtifact:
         """Load a single fold artefact from an NPZ file.
 
         Supports both the new format (keys: ``trial_name``, ``fold_index``,
@@ -262,8 +263,8 @@ class FoldArtifact:
     def load_trial(
         cls,
         trial_name: str,
-        results_dir: Optional[str] = None,
-    ) -> List["FoldArtifact"]:
+        results_dir: str | None = None,
+    ) -> list[FoldArtifact]:
         """Load all fold artefacts for a named trial.
 
         Searches for fold files in this order:
@@ -314,7 +315,7 @@ class FoldArtifact:
     # -----------------------------------------------------------------------
 
     @classmethod
-    def list_trials(cls, results_dir: Optional[str] = None) -> List[str]:
+    def list_trials(cls, results_dir: str | None = None) -> list[str]:
         """Return the names of all trials that have saved fold artefacts.
 
         Discovers both the new subdir layout and the legacy flat layout.
@@ -389,7 +390,7 @@ def _atomic_npz_save(path: str, **arrays: Any) -> None:
     os.replace(src, path)
 
 
-def _extract_dict(data: Any, keys: Sequence[str]) -> Dict[str, Any]:
+def _extract_dict(data: Any, keys: Sequence[str]) -> dict[str, Any]:
     """Extract a dict stored as a 0-d object array under one of the given keys."""
     for k in keys:
         if k in data.files:

@@ -22,8 +22,7 @@ from __future__ import annotations
 
 import contextlib
 import time
-from typing import Any, Dict, List, Optional
-
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Profiler
@@ -57,7 +56,7 @@ class Profiler:
 
     def __init__(self, enabled: bool = True) -> None:
         self.enabled = enabled
-        self._data: Dict[str, Dict[str, float]] = {}
+        self._data: dict[str, dict[str, float]] = {}
 
     @contextlib.contextmanager
     def section(self, name: str):
@@ -74,9 +73,9 @@ class Profiler:
             entry["total_s"] += elapsed
             entry["calls"] += 1
 
-    def summary(self) -> Dict[str, Any]:
+    def summary(self) -> dict[str, Any]:
         """Return ``{section: {total_s, calls, mean_s}}`` for all timed sections."""
-        out: Dict[str, Any] = {}
+        out: dict[str, Any] = {}
         for name, d in self._data.items():
             calls = d["calls"]
             total = d["total_s"]
@@ -87,13 +86,13 @@ class Profiler:
             }
         return out
 
-    def flat_summary(self, prefix: str = "") -> Dict[str, float]:
+    def flat_summary(self, prefix: str = "") -> dict[str, float]:
         """Flat ``{prefix}{section}_{stat}`` → value dict.
 
         ``/`` in section names is replaced with ``_`` so the keys are valid
         Python identifiers and safe as Optuna ``user_attr`` keys.
         """
-        out: Dict[str, float] = {}
+        out: dict[str, float] = {}
         for name, stats in self.summary().items():
             safe = name.replace("/", "_")
             for k, v in stats.items():
@@ -101,7 +100,7 @@ class Profiler:
         return out
 
 
-def _merge_profiles(profiles: List[Optional[Dict[str, Any]]]) -> Dict[str, Any]:
+def _merge_profiles(profiles: list[dict[str, Any] | None]) -> dict[str, Any]:
     """Combine :meth:`Profiler.summary` dicts across multiple folds.
 
     Returns per-section statistics that describe the whole trial:
@@ -124,13 +123,13 @@ def _merge_profiles(profiles: List[Optional[Dict[str, Any]]]) -> Dict[str, Any]:
         return {}
     n_folds = len(valid)
     # Collect per-fold values for each section
-    fold_totals: Dict[str, List[float]] = {}
-    fold_calls:  Dict[str, List[int]]   = {}
+    fold_totals: dict[str, list[float]] = {}
+    fold_calls:  dict[str, list[int]]   = {}
     for prof in valid:
         for section, stats in prof.items():
             fold_totals.setdefault(section, []).append(stats["total_s"])
             fold_calls.setdefault(section,  []).append(stats["calls"])
-    result: Dict[str, Any] = {}
+    result: dict[str, Any] = {}
     for section in fold_totals:
         totals = fold_totals[section]
         calls  = fold_calls[section]
@@ -186,10 +185,10 @@ class ResourceMonitor:
 
     def __init__(self, interval: float = 0.5) -> None:
         self.interval = interval
-        self._cpu: List[float] = []
-        self._rss_mb: List[float] = []
-        self._thread: Optional[Any] = None
-        self._stop_event: Optional[Any] = None
+        self._cpu: list[float] = []
+        self._rss_mb: list[float] = []
+        self._thread: Any | None = None
+        self._stop_event: Any | None = None
         try:
             import psutil as _ps
             self._psutil = _ps
@@ -212,7 +211,7 @@ class ResourceMonitor:
                 pass
             self._stop_event.wait(self.interval)  # type: ignore[union-attr]
 
-    def start(self) -> "ResourceMonitor":
+    def start(self) -> ResourceMonitor:
         """Start the background sampling thread and return ``self``."""
         if self._psutil is None:
             return self
@@ -225,7 +224,7 @@ class ResourceMonitor:
         self._thread.start()
         return self
 
-    def stop(self) -> Dict[str, Any]:
+    def stop(self) -> dict[str, Any]:
         """Stop sampling and return ``{metric_min, metric_mean, metric_max}`` stats."""
         if self._stop_event is not None:
             self._stop_event.set()
@@ -234,7 +233,7 @@ class ResourceMonitor:
 
         import numpy as np
 
-        def _stats(vals: List[float], key: str) -> Dict[str, Any]:
+        def _stats(vals: list[float], key: str) -> dict[str, Any]:
             if not vals:
                 return {f"{key}_min": "N/A", f"{key}_mean": "N/A", f"{key}_max": "N/A"}
             arr = np.asarray(vals, dtype=float)
@@ -248,7 +247,7 @@ class ResourceMonitor:
                 f"{key}_max":  round(float(effective.max()),  2),
             }
 
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
         result.update(_stats(self._cpu,    "runtime_cpu_pct"))
         result.update(_stats(self._rss_mb, "runtime_rss_mb"))
         return result

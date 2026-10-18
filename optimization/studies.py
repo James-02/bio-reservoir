@@ -55,13 +55,14 @@ ESN-*, B*          Echo state network comparator and no-reservoir baselines.
 """
 
 from __future__ import annotations
-from typing import Any, Dict
+
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Baseline — best-known fixed values from preliminary iterative experiments.
 # Update after evaluating each Phase and before launching the next Phase.
 # ---------------------------------------------------------------------------
-BASELINE: Dict[str, Any] = {
+BASELINE: dict[str, Any] = {
     "reservoir_type":          "bioreservoir",
     # -------------------------------------------------------------------------
     # Updated from Phase 1 results (March 2026).
@@ -136,7 +137,7 @@ _PHASE1_COMMON_FIXED = {
     # The objective merges: BASELINE <- study["fixed"] <- optimized params.
 }
 
-STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
+STUDY_REGISTRY: dict[str, dict[str, Any]] = {
 
     # -----------------------------------------------------------------------
     # P1-scaler
@@ -1245,7 +1246,7 @@ STUDY_REGISTRY: Dict[str, Dict[str, Any]] = {
 # Public helpers
 # ---------------------------------------------------------------------------
 
-def get_study(name: str) -> Dict[str, Any]:
+def get_study(name: str) -> dict[str, Any]:
     """Return study config for *name*, raising KeyError with helpful message."""
     if name not in STUDY_REGISTRY:
         available = ", ".join(sorted(STUDY_REGISTRY))

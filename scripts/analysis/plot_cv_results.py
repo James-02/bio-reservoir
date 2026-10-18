@@ -28,28 +28,29 @@ import argparse
 import glob
 import json
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
 import numpy as np
 
+from utils.results import FoldArtifact
 from utils.visualisation import (
     plot_class_metrics,
     plot_confusion_matrix,
     plot_metrics_across_folds,
     plot_tsne_clustering,
 )
-from utils.results import FoldArtifact
 
 
 @dataclass
 class FoldResult:
     path: str
-    metrics: Optional[Dict[str, Any]] = None
-    confusion_matrix: Optional[np.ndarray] = None
-    y_true: Optional[np.ndarray] = None
-    y_pred: Optional[np.ndarray] = None
-    readout: Optional[np.ndarray] = None
+    metrics: dict[str, Any] | None = None
+    confusion_matrix: np.ndarray | None = None
+    y_true: np.ndarray | None = None
+    y_pred: np.ndarray | None = None
+    readout: np.ndarray | None = None
 
 
 _METRICS_KEYS = ("metrics", "metric", "results")
@@ -59,7 +60,7 @@ _YPRED_KEYS = ("Y_pred", "y_pred", "pred_y", "yhat", "Y_hat")
 _READOUT_KEYS = ("readout", "readout_outputs", "y_scores", "scores", "logits", "probas")
 
 
-def _maybe_load_dict(value: Any) -> Optional[Dict[str, Any]]:
+def _maybe_load_dict(value: Any) -> dict[str, Any] | None:
     if value is None:
         return None
     if isinstance(value, dict):
@@ -77,7 +78,7 @@ def _maybe_load_dict(value: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _first_key(npz: np.lib.npyio.NpzFile, keys: Sequence[str]) -> Optional[str]:
+def _first_key(npz: np.lib.npyio.NpzFile, keys: Sequence[str]) -> str | None:
     for k in keys:
         if k in npz.files:
             return k
@@ -112,8 +113,8 @@ def _load_fold(path: str) -> FoldResult:
         )
 
 
-def _coerce_metrics_list(folds: List[FoldResult]) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
+def _coerce_metrics_list(folds: list[FoldResult]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
     for fr in folds:
         if fr.metrics is None:
             continue
@@ -121,7 +122,7 @@ def _coerce_metrics_list(folds: List[FoldResult]) -> List[Dict[str, Any]]:
     return out
 
 
-def _sum_confusion_matrices(folds: List[FoldResult]) -> Optional[np.ndarray]:
+def _sum_confusion_matrices(folds: list[FoldResult]) -> np.ndarray | None:
     cms = [fr.confusion_matrix for fr in folds if fr.confusion_matrix is not None]
     if not cms:
         return None
@@ -131,7 +132,7 @@ def _sum_confusion_matrices(folds: List[FoldResult]) -> Optional[np.ndarray]:
     return cm_sum
 
 
-def _stack_one_hot_arrays(folds: List[FoldResult]) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+def _stack_one_hot_arrays(folds: list[FoldResult]) -> tuple[np.ndarray | None, np.ndarray | None]:
     y_true = [fr.y_true for fr in folds if fr.y_true is not None]
     y_pred = [fr.y_pred for fr in folds if fr.y_pred is not None]
     if y_true and y_pred and len(y_true) == len(y_pred):
@@ -139,14 +140,14 @@ def _stack_one_hot_arrays(folds: List[FoldResult]) -> Tuple[Optional[np.ndarray]
     return None, None
 
 
-def _stack_readouts(folds: List[FoldResult]) -> Optional[np.ndarray]:
+def _stack_readouts(folds: list[FoldResult]) -> np.ndarray | None:
     arrs = [fr.readout for fr in folds if fr.readout is not None]
     if not arrs:
         return None
     return np.concatenate(arrs, axis=0)
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Plot CV fold results from saved npz artifacts")
     parser.add_argument(
         "paths",
@@ -176,7 +177,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         artifacts = FoldArtifact.load_trial(args.trial_name)
         folds = [_load_fold(a.path) for a in artifacts]
     else:
-        expanded: List[str] = []
+        expanded: list[str] = []
         for p in args.paths:
             matches = glob.glob(p)
             expanded.extend(matches if matches else [p])

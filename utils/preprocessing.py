@@ -1,12 +1,12 @@
-from typing import Tuple, List, Optional, Sequence
 import hashlib
+import logging
 import os
+from collections.abc import Sequence
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-
-import logging
 
 from utils import config
 from utils.analysis import count_labels
@@ -29,9 +29,9 @@ __all__ = [
 
 def ensure_kaggle_heartbeat_files(
     filenames: Sequence[str],
-    data_dir: Optional[str] = None,
+    data_dir: str | None = None,
     dataset_handle: str = "shayanfazeli/heartbeat",
-) -> List[str]:
+) -> list[str]:
     """Resolve heartbeat CSV files from the workspace or Kaggle cache."""
     wanted = [str(name) for name in filenames]
     root = Path(data_dir) if data_dir else config.data_dir() / "ecg"
@@ -70,7 +70,7 @@ def ensure_kaggle_heartbeat_files(
     return [str(path.resolve()) for path in resolved]
 
 
-def _rng_from_seed(seed: Optional[int]) -> np.random.Generator:
+def _rng_from_seed(seed: int | None) -> np.random.Generator:
     """Return a dedicated RNG for this call.
 
     We avoid using the process-global RNG where possible so that callers can
@@ -100,7 +100,7 @@ def save_npz(filename: str, **kwargs) -> None:
         os.unlink(tmp_name)
         raise
 
-def load_npz(filename: str, allow_pickle: bool = True) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+def load_npz(filename: str, allow_pickle: bool = True) -> tuple[np.ndarray, np.ndarray] | None:
     """
     Load numpy arrays from a compressed file.
 
@@ -129,7 +129,7 @@ def dataset_sha256(path: str) -> str:
     return digest.hexdigest()
 
 def load_ecg_data(
-    rows: Optional[int] = None,
+    rows: int | None = None,
     test_ratio: float = 0.2,
     encode_labels: bool = True,
     standardize: bool = True,
@@ -138,18 +138,18 @@ def load_ecg_data(
     binary: bool = False,
     noise_rate: float = 0,
     noise_ratio: float = 0,
-    data_dir: Optional[str] = None,
+    data_dir: str | None = None,
     train_file: str = "mitbih_train.csv",
     test_file: str = "mitbih_test.csv",
     save_file: str = "ecg_data.npz",
     binary_save_file: str = "binary_ecg_data.npz",
     scaler_type: str = "sequence_zscore",
     balance_classes: bool = True,
-    max_per_class: Optional[int] = None,
-    seed: Optional[int] = config.SEED,
+    max_per_class: int | None = None,
+    seed: int | None = config.SEED,
     preserve_split: bool = False,
     cap_includes_test: bool = True,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Load ECG dataset from file, encode labels, shuffle, augment, scale, balance classes, and split into training and testing subsets.
 
@@ -284,8 +284,10 @@ def load_ecg_data(
     # Repeat targets if specified
     if repeat_targets:
         logger.debug(f"Repeating train and test targets to size: {X_train[0].shape[0]}")
-        Y_train = [np.repeat(Y_instance, X_instance.shape[0], axis=0) for X_instance, Y_instance in zip(X_train, Y_train)]
-        Y_test = [np.repeat(Y_instance, X_instance.shape[0], axis=0) for X_instance, Y_instance in zip(X_test, Y_test)]
+        Y_train = [np.repeat(Y_instance, X_instance.shape[0], axis=0)
+                   for X_instance, Y_instance in zip(X_train, Y_train, strict=True)]
+        Y_test = [np.repeat(Y_instance, X_instance.shape[0], axis=0)
+                  for X_instance, Y_instance in zip(X_test, Y_test, strict=True)]
 
     # add augmentation (noise) to training set
     if noise_rate and noise_ratio:
@@ -372,8 +374,8 @@ def load_ecg_data(
 def _shuffle_dataset(
     X: np.ndarray,
     Y: np.ndarray,
-    rng: Optional[np.random.Generator] = None,
-) -> Tuple[np.ndarray, np.ndarray]:
+    rng: np.random.Generator | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
     """Shuffle X/Y in unison without changing split membership."""
     rng = rng or np.random.default_rng()
     indices = rng.permutation(len(X))
@@ -412,7 +414,7 @@ def _sequence_minmax(X: np.ndarray, a: float = 0.0, b: float = 1.0) -> np.ndarra
     return a + (b - a) * (X - x_min) / denom
 
 
-def standardize_data(X_train: np.ndarray, X_test: np.ndarray, scaler_type: str = "sequence_zscore") -> Tuple[np.ndarray, np.ndarray]:
+def standardize_data(X_train: np.ndarray, X_test: np.ndarray, scaler_type: str = "sequence_zscore") -> tuple[np.ndarray, np.ndarray]:
     """Standardize input data using configurable scaling.
 
     scaler_type:
@@ -463,9 +465,9 @@ def standardize_data(X_train: np.ndarray, X_test: np.ndarray, scaler_type: str =
 def _balance_classes(
     X: np.ndarray,
     Y: np.ndarray,
-    max_per_class: Optional[int] = None,
-    rng: Optional[np.random.RandomState] = None,
-) -> Tuple[np.ndarray, np.ndarray]:
+    max_per_class: int | None = None,
+    rng: np.random.RandomState | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Balance classes by undersampling.
 
@@ -484,7 +486,8 @@ def _balance_classes(
         target_per_class = {c: min_instances_per_class for c in classes}
     else:
         # Cap each class at max_per_class while keeping minority classes intact
-        target_per_class = {c: min(count, max_per_class) for c, count in zip(classes, counts)}
+        target_per_class = {c: min(count, max_per_class)
+                            for c, count in zip(classes, counts, strict=True)}
 
     rng = rng or np.random.RandomState()
     balanced_indices = [rng.choice(np.where(Y == c)[0], target_per_class[c], replace=False) for c in classes]
@@ -495,8 +498,8 @@ def augment_data(
     Y: np.ndarray,
     noise_rate: float,
     noise_ratio: float,
-    rng: Optional[np.random.RandomState] = None,
-) -> Tuple[np.ndarray, np.ndarray]:
+    rng: np.random.RandomState | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Augment training data with Gaussian distributed noise, at a specific rate, for a specific ratio of the training data.
 
@@ -533,7 +536,7 @@ def augment_data(
     X_augmented = np.empty((0, X.shape[1], X.shape[2]))
     Y_augmented = np.empty(0)
 
-    for class_label, count_c in zip(classes, counts):
+    for class_label, count_c in zip(classes, counts, strict=True):
         class_instances = X[Y_flat == class_label]
 
         # Number of augmented samples for this class, proportional to its size
@@ -569,7 +572,7 @@ def augment_data(
 
     return X_augmented, Y_augmented
 
-def _merge_dataset(train_df: pd.DataFrame, test_df: pd.DataFrame, binary: bool) -> Tuple[np.ndarray, np.ndarray]:
+def _merge_dataset(train_df: pd.DataFrame, test_df: pd.DataFrame, binary: bool) -> tuple[np.ndarray, np.ndarray]:
     """
     Preprocess the dataset by concatenating train and test datasets.
 
@@ -597,7 +600,7 @@ def _load_raw_ecg_splits(
     binary: bool,
     train_file_path: str,
     test_file_path: str,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Load the original Kachuee train/test CSV split without recombining it."""
     logger.debug("Loading raw ECG train/test split from: %s and %s", train_file_path, test_file_path)
     train_df = pd.read_csv(train_file_path, header=None)
@@ -617,7 +620,7 @@ def _load_raw_ecg_splits(
 
     return X_train, Y_train, X_test, Y_test
 
-def _load_raw_ecg_dataset(binary: bool, train_file_path: str, test_file_path: str, save_file_path: str, save_file_path_binary: str) -> Tuple[np.ndarray, np.ndarray]:
+def _load_raw_ecg_dataset(binary: bool, train_file_path: str, test_file_path: str, save_file_path: str, save_file_path_binary: str) -> tuple[np.ndarray, np.ndarray]:
     """
     Load or preprocess ECG dataset.
 
@@ -660,8 +663,8 @@ def _train_test_split(
     Y: np.ndarray,
     test_size: float,
     shuffle: bool,
-    rng: Optional[np.random.RandomState] = None,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    rng: np.random.RandomState | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Split dataset into training and testing sets.
 
@@ -681,7 +684,7 @@ def _train_test_split(
     test_class_counts = np.floor(counts * test_size).astype(int)
     train_indices, test_indices = [], []
 
-    for c, count in zip(classes, test_class_counts):
+    for c, count in zip(classes, test_class_counts, strict=True):
         class_indices = np.where(Y == c)[0]
         selected_indices = rng.choice(class_indices, count, replace=False)
         test_indices.extend(selected_indices)
@@ -698,8 +701,8 @@ def _train_test_split_balanced_test(
     Y: np.ndarray,
     test_size: float,
     shuffle: bool,
-    rng: Optional[np.random.RandomState] = None,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    rng: np.random.RandomState | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Split dataset into train and *balanced* test sets.
 
     The test set will contain the same number of samples per class, limited by
@@ -772,7 +775,7 @@ def _one_hot_encode(labels: np.ndarray, num_classes: int) -> np.ndarray:
     """
     return np.eye(num_classes)[labels.astype(int)]
 
-def _reshape_data(X: np.ndarray, Y: np.ndarray) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+def _reshape_data(X: np.ndarray, Y: np.ndarray) -> tuple[list[np.ndarray], list[np.ndarray]]:
     """
     Reshape input and target data for reservoir processing.
 
@@ -795,8 +798,8 @@ def _limit_instances(
     X: np.ndarray,
     Y: np.ndarray,
     rows: int,
-    rng: Optional[np.random.RandomState] = None,
-) -> Tuple[np.ndarray, np.ndarray]:
+    rng: np.random.RandomState | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
     """Limit the total number of instances without re-balancing classes.
 
     This function randomly selects up to ``rows`` samples from the dataset,
@@ -820,7 +823,7 @@ def _limit_instances(
     return X[selected], Y[selected]
 
 
-def main(argv: Optional[Sequence[str]] = None) -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     """Prepare the ECG dataset: find or download the source CSVs and build both caches."""
     import argparse
 

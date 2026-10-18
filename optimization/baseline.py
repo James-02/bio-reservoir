@@ -40,28 +40,31 @@ import argparse
 import datetime
 import logging
 import time as _time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import optuna
 import pandas as pd  # type: ignore
-
 from optuna.visualization.matplotlib import (
-    plot_slice,
-    plot_param_importances,
     plot_edf,
+    plot_param_importances,
+    plot_slice,
 )
-
 from sklearn.model_selection import StratifiedKFold
 
 from optimization.base import (
     DEFAULT_SEED,
-    research, plot_results, print_topn_trials,
-    parse_show_sections, SHOW_DEFAULT,
-    get_default_storage, build_study, fold_average_attrs,
+    SHOW_DEFAULT,
+    build_study,
+    fold_average_attrs,
+    get_default_storage,
+    parse_show_sections,
+    plot_results,
+    print_topn_trials,
+    research,
 )
 from optimization.environment import get_environment
-from optimization.readout import choose_classifier, _important_params
+from optimization.readout import _important_params, choose_classifier
 from training.profiling import ResourceMonitor
 from utils.analysis import (
     compute_class_dicts,
@@ -69,8 +72,8 @@ from utils.analysis import (
     sample_sd,
 )
 from utils.preprocessing import (
-    load_ecg_data,
     augment_data,
+    load_ecg_data,
     standardize_data,
 )
 
@@ -80,7 +83,7 @@ logger = logging.getLogger(__name__)
 # Dataset loading (mirrors optimization.classification._get_dataset)
 # ---------------------------------------------------------------------------
 
-_DATA_CACHE: Dict[tuple, Tuple[np.ndarray, ...]] = {}
+_DATA_CACHE: dict[tuple, tuple[np.ndarray, ...]] = {}
 
 
 def _get_dataset(
@@ -88,10 +91,10 @@ def _get_dataset(
     instances: int,
     binary: bool,
     balance_classes: bool = True,
-    max_per_class: Optional[int] = None,
+    max_per_class: int | None = None,
     scaler_type: str = "sequence_zscore",
     seed: int = DEFAULT_SEED,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Load and cache the ECG dataset.
 
     Unlike the classification module, noise augmentation is NOT applied here
@@ -157,7 +160,7 @@ def _prepare_fold(
     noise_ratio: float,
     seed: int,
     scaler_type: str = "sequence_zscore",
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Prepare one fold's data with augmentation and standardisation.
 
     Mirrors ``training.cross_validate._prepare_fold_data`` exactly so the
@@ -183,7 +186,7 @@ def _prepare_fold(
 # Summary table (reused from readout.py pattern)
 # ---------------------------------------------------------------------------
 
-def _compute_group_stats(df_group: pd.DataFrame, top_n: int) -> Dict[str, Any]:
+def _compute_group_stats(df_group: pd.DataFrame, top_n: int) -> dict[str, Any]:
     """Aggregate stats over top-N and all trials in *df_group*."""
     vals = df_group["value"].dropna().sort_values(ascending=False)
     top = vals.head(int(top_n))
@@ -299,17 +302,17 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     y_1d = _labels_to_1d(Y)
     skf = StratifiedKFold(n_splits=folds, shuffle=True, random_state=seed)
 
-    f1s: List[float] = []
-    accuracies: List[float] = []
-    precisions: List[float] = []
-    recalls: List[float] = []
-    mccs: List[float] = []
-    kappas: List[float] = []
-    fold_runtimes: List[float] = []
-    fold_fit_times: List[float] = []
-    fold_predict_times: List[float] = []
-    fold_class_metrics: List[dict] = []
-    fold_confusion_matrices: List[np.ndarray] = []
+    f1s: list[float] = []
+    accuracies: list[float] = []
+    precisions: list[float] = []
+    recalls: list[float] = []
+    mccs: list[float] = []
+    kappas: list[float] = []
+    fold_runtimes: list[float] = []
+    fold_fit_times: list[float] = []
+    fold_predict_times: list[float] = []
+    fold_class_metrics: list[dict] = []
+    fold_confusion_matrices: list[np.ndarray] = []
 
     for fold_i, (train_idx, val_idx) in enumerate(skf.split(X, y_1d)):
         X_tr, Y_tr, X_va, Y_va = _prepare_fold(
@@ -322,7 +325,6 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
 
         # Y must be 1-D class indices for sklearn.
         y_tr = _labels_to_1d(Y_tr)
-        y_va = _labels_to_1d(Y_va)
 
         clf = clf_cls(**hypers)
 
@@ -372,7 +374,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     # ── Store per-fold metrics ──────────────────────────────────────────────
     for i, (f1, acc, prec, rec, mcc, kap, rt, fit_t, pred_t) in enumerate(
         zip(f1s, accuracies, precisions, recalls, mccs, kappas,
-            fold_runtimes, fold_fit_times, fold_predict_times)
+            fold_runtimes, fold_fit_times, fold_predict_times, strict=True)
     ):
         trial.set_user_attr(f"fold_{i}_f1",        f1)
         trial.set_user_attr(f"fold_{i}_accuracy",  acc)
@@ -470,8 +472,8 @@ def cmd_research(args: argparse.Namespace) -> None:
     # CLI args override study-config values; study-config overrides hardcoded
     # defaults.  This is needed because launch_studies() only passes --study,
     # not every individual flag (--instances, --binary, --max_per_class, etc.).
-    scfg: Dict[str, Any] = {}
-    sfixed: Dict[str, Any] = {}
+    scfg: dict[str, Any] = {}
+    sfixed: dict[str, Any] = {}
     try:
         from optimization.studies import STUDY_REGISTRY
         scfg = STUDY_REGISTRY.get(study_name, {})
@@ -497,7 +499,7 @@ def cmd_research(args: argparse.Namespace) -> None:
     # through to the study config.
     binary = bool(getattr(args, "binary", False) or scfg.get("binary", False))
 
-    params: Dict[str, Any] = {
+    params: dict[str, Any] = {
         "classifiers": list(args.classifiers),
         "study_name": study_name,
         "job_id": int(args.job_id),

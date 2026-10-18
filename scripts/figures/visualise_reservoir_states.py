@@ -22,15 +22,14 @@ from __future__ import annotations
 import argparse
 import os
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.lines import Line2D
 
-from bioreservoir import BioReservoir
-from bioreservoir import distance_matrix
+from bioreservoir import BioReservoir, distance_matrix
 from utils.preprocessing import load_ecg_data
-from utils.visualisation import _save_figure, gene_full_name, classes as ECG_CLASSES
-
+from utils.visualisation import _save_figure, gene_full_name
+from utils.visualisation import classes as ECG_CLASSES
 
 _VAR_TO_INDEX = {"A": 0, "I": 1, "Hi": 2, "He": 3}
 

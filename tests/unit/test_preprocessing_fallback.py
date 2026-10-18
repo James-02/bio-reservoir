@@ -24,14 +24,14 @@ Scenarios covered:
    real network request is made.
 """
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
-from pathlib import Path
 
 from utils import preprocessing
-from utils.preprocessing import load_ecg_data, ensure_kaggle_heartbeat_files
-
+from utils.preprocessing import ensure_kaggle_heartbeat_files, load_ecg_data
 
 # ---------------------------------------------------------------------------
 # Synthetic-data helpers

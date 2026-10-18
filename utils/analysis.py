@@ -6,8 +6,11 @@ and averaging fold metrics.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, fields as _dc_fields
-from typing import Any, Dict, Iterator, List, Tuple
+import logging
+from collections.abc import Iterator
+from dataclasses import dataclass
+from dataclasses import fields as _dc_fields
+from typing import Any
 
 import numpy as np
 from sklearn.metrics import (
@@ -20,8 +23,6 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
 )
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ def normalize_average_name(average: str) -> str:
     return average
 
 
-def _nanmean_attr(metrics_list: List["Metrics"], attr_name: str) -> float:
+def _nanmean_attr(metrics_list: list[Metrics], attr_name: str) -> float:
     values = np.array([getattr(m, attr_name, float("nan")) for m in metrics_list], dtype=float)
     if values.size == 0 or np.isnan(values).all():
         return float("nan")
@@ -104,7 +105,7 @@ class Metrics:
     kappa: float
     runtime: float
     confusion_matrix: np.ndarray
-    class_metrics: Dict[str, Any]
+    class_metrics: dict[str, Any]
     primary_average: str = "weighted"
     f1_macro: float = float("nan")
     f1_weighted: float = float("nan")
@@ -117,12 +118,12 @@ class Metrics:
     # Serialisation
     # ------------------------------------------------------------------
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to a plain ``dict`` (e.g. for NPZ storage or Optuna attrs)."""
         return {f.name: getattr(self, f.name) for f in _dc_fields(self)}
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "Metrics":
+    def from_dict(cls, d: dict[str, Any]) -> Metrics:
         """Reconstruct from a dict, silently ignoring unknown keys.
 
         Provides backward compatibility with older NPZ artefacts that stored
@@ -150,7 +151,7 @@ class Metrics:
         try:
             return getattr(self, key)
         except AttributeError:
-            raise KeyError(key)
+            raise KeyError(key) from None
 
     def get(self, key: str, default: Any = None) -> Any:
         return getattr(self, key, default)
@@ -164,7 +165,7 @@ class Metrics:
     def values(self) -> Iterator[Any]:
         return (getattr(self, f.name) for f in _dc_fields(self))
 
-    def items(self) -> Iterator[Tuple[str, Any]]:
+    def items(self) -> Iterator[tuple[str, Any]]:
         return ((f.name, getattr(self, f.name)) for f in _dc_fields(self))
 
     def __repr__(self) -> str:
@@ -189,7 +190,7 @@ def log_metrics(metrics: Metrics) -> None:
     logger.info("---------------------------------")
 
 
-def log_params(params: Dict[str, Any], title: str = "Hyperparameters") -> None:
+def log_params(params: dict[str, Any], title: str = "Hyperparameters") -> None:
     """Log hyperparameter key/value pairs at DEBUG level."""
     logger.debug("----- %s -----", title)
     for key, value in params.items():
@@ -267,8 +268,8 @@ def _is_class_key(key: str) -> bool:
 
 
 def _extract_class_keys_and_metrics(
-    dicts_list: List[Dict],
-) -> Tuple[List[str], List[str]]:
+    dicts_list: list[dict],
+) -> tuple[list[str], list[str]]:
     """Discover per-class keys and metric names from a list of class_metrics dicts.
 
     Returns (sorted class keys, metric names) or ([], []) when the input is
@@ -278,7 +279,7 @@ def _extract_class_keys_and_metrics(
     if not keys:
         return [], []
 
-    metric_keys: List[str] = []
+    metric_keys: list[str] = []
     for d in dicts_list:
         for k in keys:
             v = d.get(k)
@@ -290,7 +291,7 @@ def _extract_class_keys_and_metrics(
     return keys, metric_keys
 
 
-def compute_mean_dicts(dicts_list: List[Dict]) -> Dict[str, Dict[str, float]]:
+def compute_mean_dicts(dicts_list: list[dict]) -> dict[str, dict[str, float]]:
     """
     Compute the mean of dictionaries for integer based keys, representing each class in the dataset.
 
@@ -305,7 +306,7 @@ def compute_mean_dicts(dicts_list: List[Dict]) -> Dict[str, Dict[str, float]]:
         return {}
 
     count = len(dicts_list)
-    sum_values: Dict[str, Dict[str, float]] = {
+    sum_values: dict[str, dict[str, float]] = {
         key: {mk: 0.0 for mk in metric_keys} for key in keys
     }
 
@@ -328,8 +329,8 @@ def sample_sd(values) -> float:
 
 
 def compute_class_dicts(
-    dicts_list: List[Dict],
-) -> Dict[str, Dict[str, float]]:
+    dicts_list: list[dict],
+) -> dict[str, dict[str, float]]:
     """Compute per-class metric means **and** sample standard deviations across folds.
 
     Returns a dict keyed by class index (``"0"``, ``"1"``, …) where each
@@ -341,9 +342,9 @@ def compute_class_dicts(
     if not keys:
         return {}
 
-    result: Dict[str, Dict[str, float]] = {}
+    result: dict[str, dict[str, float]] = {}
     for cls in keys:
-        cls_result: Dict[str, float] = {}
+        cls_result: dict[str, float] = {}
         for mk in metric_keys:
             vals = [
                 d[cls][mk]
@@ -357,7 +358,7 @@ def compute_class_dicts(
         result[cls] = cls_result
     return result
 
-def compute_mean_metrics(metrics_list: List[Metrics]) -> Metrics:
+def compute_mean_metrics(metrics_list: list[Metrics]) -> Metrics:
     """Average a list of :class:`Metrics` instances across folds.
 
     Scalar fields are arithmetically averaged.  ``confusion_matrix`` is
@@ -398,7 +399,7 @@ def compute_mean_metrics(metrics_list: List[Metrics]) -> Metrics:
         recall_weighted  = _nanmean_attr(metrics_list, "recall_weighted"),
     )
 
-def count_labels(Y: np.ndarray | List[np.ndarray]) -> Dict[int, int]:
+def count_labels(Y: np.ndarray | list[np.ndarray]) -> dict[int, int]:
     """
     Count the occurrences of each class label, converts one-hot encoding if given.
 
@@ -411,9 +412,10 @@ def count_labels(Y: np.ndarray | List[np.ndarray]) -> Dict[int, int]:
     Y = np.array([targets[0] for targets in Y])
     if len(Y.shape) != 1:
         Y = np.argmax(Y, axis=1)
-    return {int(label): int(count) for label, count in zip(*np.unique(Y, return_counts=True))}
+    return {int(label): int(count)
+            for label, count in zip(*np.unique(Y, return_counts=True), strict=True)}
 
-def measure_dataset_deviation(X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def measure_dataset_deviation(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Measure the mean and standard deviation of features in a dataset.
 
@@ -428,9 +430,9 @@ def measure_dataset_deviation(X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     return mean, std
 
 def measure_class_deviation(
-    X: List[np.ndarray],
-    Y: List[np.ndarray],
-) -> Tuple[Dict[int, float], Dict[int, float]]:
+    X: list[np.ndarray],
+    Y: list[np.ndarray],
+) -> tuple[dict[int, float], dict[int, float]]:
     """
     Measure the mean and standard deviation of features for each class in a dataset.
 

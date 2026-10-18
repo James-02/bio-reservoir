@@ -1,16 +1,14 @@
 import logging
-import sys
 import os
-
-from typing import Optional, Union, Tuple
+import sys
 
 
 def setup_logging(
     *,
-    level: Union[int, str] = logging.INFO,
+    level: int | str = logging.INFO,
     datefmt: str = "%Y-%m-%d %H:%M:%S",
-    log_file: Optional[str] = None,
-    quiet_loggers: Tuple[str, ...] = ("numba",),
+    log_file: str | None = None,
+    quiet_loggers: tuple[str, ...] = ("numba",),
 ) -> None:
     """Configure application logging for scripts/CLIs.
 

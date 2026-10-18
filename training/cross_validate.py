@@ -21,7 +21,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Literal
 
 import numpy as np
 import reservoirpy as rpy
@@ -103,7 +103,7 @@ def _iter_folds(
     *,
     folds: int,
     seed: int = config.SEED,
-) -> List[Fold]:
+) -> list[Fold]:
     """Return train/val index pairs for cross-validation.
 
     When *folds* == 1 a single stratified 80/20 hold-out split is used
@@ -130,7 +130,7 @@ def _prepare_fold_data(
     noise_ratio: float,
     seed: int,
     scaler_type: str = "sequence_zscore",
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     X_train_fold, X_val = X[fold.train_idx], X[fold.val_idx]
     Y_train_fold, Y_val = Y[fold.train_idx], Y[fold.val_idx]
 
@@ -145,9 +145,9 @@ def _prepare_fold_data(
 
 
 def _average_fold_artifacts(
-    fold_artifacts: List[FoldArtifact],
+    fold_artifacts: list[FoldArtifact],
     profile: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Average metrics across fold artefacts and optionally merge profiling.
 
     Returns a plain ``dict`` with the following structure:
@@ -166,7 +166,7 @@ def _average_fold_artifacts(
     """
     import math
     mean: Metrics = compute_mean_metrics([fa.metrics for fa in fold_artifacts])
-    result: Dict[str, Any] = mean.to_dict()
+    result: dict[str, Any] = mean.to_dict()
     # Per-fold breakdown: each entry is the complete Metrics dict for that fold.
     result["folds"] = [
         {"fold_index": fa.fold_index, **fa.metrics.to_dict()}
@@ -316,12 +316,12 @@ def cross_validate(
     X: np.ndarray,
     Y: np.ndarray,
     folds: int = 5,
-    trial_name: Optional[str] = None,
-    save_threshold: Optional[float] = None,
+    trial_name: str | None = None,
+    save_threshold: float | None = None,
     save_states: bool = False,
     noise_rate: float = 0,
     noise_ratio: float = 0,
-    fold_workers: Optional[int] = None,
+    fold_workers: int | None = None,
     fold_backend: Literal["sequential", "loky"] = "sequential",
     seed: int = config.SEED,
     scaler_type: str = "sequence_zscore",
@@ -330,7 +330,7 @@ def cross_validate(
     primary_average: str = "weighted",
     profile: bool = False,
     return_artifacts: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Stratified k-fold cross-validation.
 
     Parameters
@@ -386,7 +386,7 @@ def cross_validate(
         raise ValueError(f"Unknown fold_backend '{fold_backend}'")
 
     if fold_backend == "sequential":
-        artifacts: List[FoldArtifact] = []
+        artifacts: list[FoldArtifact] = []
         for fold in folds_list:
             X_tr, Y_tr, X_va, Y_va = _prepare_fold_data(
                 X, Y, fold,
@@ -476,16 +476,16 @@ def classify(
     Y_train: np.ndarray,
     X_test: np.ndarray,
     Y_test: np.ndarray,
-    folds: Optional[int] = None,
-    trial_name: Optional[str] = None,
-    save_threshold: Optional[float] = None,
+    folds: int | None = None,
+    trial_name: str | None = None,
+    save_threshold: float | None = None,
     save_states: bool = False,
     noise_rate: float = 0,
     noise_ratio: float = 0,
     readout_aggregation: str = "final",
     readout_window: int = 1,
     primary_average: str = "weighted",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Train and evaluate a reservoir classifier.
 
     When ``folds > 1`` the full dataset (train + test) is pooled and passed

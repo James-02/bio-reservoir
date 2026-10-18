@@ -10,10 +10,7 @@ These are pure functional helpers with no global state.  They are composed by
 
 from __future__ import annotations
 
-import contextlib
 import logging
-import time
-from typing import Any, Dict, List, Optional
 
 import numpy as np
 from reservoirpy.node import Node
@@ -106,8 +103,8 @@ def train(
     X_train: np.ndarray,
     readout_aggregation: str = "final",
     readout_window: int = 1,
-    profiler: Optional[Profiler] = None,
-) -> List[np.ndarray]:
+    profiler: Profiler | None = None,
+) -> list[np.ndarray]:
     """Drive the reservoir with each instance in ``X_train`` and return readout vectors.
 
     Parameters
@@ -149,7 +146,7 @@ def train(
             for x in X_train
         ]
 
-    results: List[np.ndarray] = []
+    results: list[np.ndarray] = []
     for x in X_train:
         with profiler.section("instance/reservoir_run"):
             states = reservoir.run(x, reset=True)
@@ -183,7 +180,7 @@ def _is_sklearn_classifier(readout: Node) -> bool:
 
 def fit_readout(
     readout: Node,
-    trained_states: List[np.ndarray],
+    trained_states: list[np.ndarray],
     Y_train: np.ndarray,
 ) -> None:
     """Fit the readout using pre-computed reservoir states.
@@ -232,7 +229,7 @@ def fit_readout(
         readout.fit(trained_states, Y_train)
 
 
-def predict(readout: Node, states: List[np.ndarray]) -> List[np.ndarray]:
+def predict(readout: Node, states: list[np.ndarray]) -> list[np.ndarray]:
     """Run the fitted readout on a list of state vectors.
 
     For scikit-learn classifiers, predictions are converted from integer
@@ -272,7 +269,7 @@ def predict(readout: Node, states: List[np.ndarray]) -> List[np.ndarray]:
     return [readout.run(state, reset=True) for state in states]
 
 
-def _stack_runs(outputs: List[np.ndarray]) -> np.ndarray:
+def _stack_runs(outputs: list[np.ndarray]) -> np.ndarray:
     """Stack a list of ReservoirPy readout outputs into ``(N, 1, C)``.
 
     Normalises the common shapes returned by ``readout.run(...)``:

@@ -24,43 +24,41 @@ from __future__ import annotations
 
 import argparse
 import logging
-from typing import Any, Dict, Optional, Tuple, List
+from typing import Any
 
 import numpy as np
 import optuna
-from reservoirpy.nodes import ScikitLearnNode
 from optuna.visualization.matplotlib import (
-    plot_param_importances,
-    plot_slice,
-    plot_edf,
     plot_contour,
+    plot_edf,
     plot_intermediate_values,
-    plot_rank,
     plot_optimization_history,
+    plot_param_importances,
+    plot_rank,
+    plot_slice,
 )
+from reservoirpy.nodes import ScikitLearnNode
 from sklearn.neighbors import KNeighborsClassifier
 
-
-from utils import config
-from utils.preprocessing import load_ecg_data
-from utils.analysis import compute_class_dicts, sample_sd
-from training import classify, cross_validate
-from training.profiling import ResourceMonitor
 from optimization.base import (
     DEFAULT_SEED,
-    research,
+    SHOW_DEFAULT,
+    build_study,
+    fold_average_attrs,
+    get_default_storage,
+    parse_show_sections,
     plot_results,
     print_topn_trials,
-    parse_show_sections,
-    SHOW_DEFAULT,
-    get_default_storage,
-    build_study,
-    add_common_args,
-    fold_average_attrs,
+    research,
 )
 from optimization.environment import get_environment
 from optimization.reservoirs import build_reservoir
 from optimization.studies import BASELINE, get_study, list_studies
+from training import classify, cross_validate
+from training.profiling import ResourceMonitor
+from utils import config
+from utils.analysis import compute_class_dicts, sample_sd
+from utils.preprocessing import load_ecg_data
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +73,7 @@ logger = logging.getLogger(__name__)
 # the P2-distance vs P2-random comparison since both studies used the same hypers.
 # P3-imbalance uses these updated values for headline reporting.
 # ---------------------------------------------------------------------------
-_KNN_HYPERS: Dict[str, Any] = {
+_KNN_HYPERS: dict[str, Any] = {
     "n_neighbors": 1,
     "weights":     "uniform",
     "algorithm":   "auto",
@@ -84,7 +82,7 @@ _KNN_HYPERS: Dict[str, Any] = {
 }
 
 # Trial attributes recording the value a trial ran with -> its study parameter.
-RECORDED: Dict[str, str] = {
+RECORDED: dict[str, str] = {
     "res_units": "units", "res_warmup": "warmup", "res_rk4_substeps": "rk4_substeps",
     "res_input_scaling": "input_scaling", "res_rc_scaling": "rc_scaling",
     "res_dde_scaling": "dde_scaling", "res_cell_coupling": "cell_coupling",
@@ -110,7 +108,7 @@ RECORDED: Dict[str, str] = {
 # ---------------------------------------------------------------------------
 # Dataset cache  (keyed on all dataset parameters to avoid stale hits)
 # ---------------------------------------------------------------------------
-_DATA_CACHE: Dict[Tuple, Tuple[np.ndarray, ...]] = {}
+_DATA_CACHE: dict[tuple, tuple[np.ndarray, ...]] = {}
 
 
 def _get_dataset(
@@ -118,13 +116,13 @@ def _get_dataset(
     instances: int,
     binary: bool,
     balance_classes: bool = True,
-    max_per_class: Optional[int] = None,
+    max_per_class: int | None = None,
     noise_rate: float = 0.0,
     noise_ratio: float = 0.0,
     scaler_type: str = "sequence_zscore",
     seed: int = DEFAULT_SEED,
     preserve_split: bool = False,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Load and cache the ECG dataset for the given configuration.
 
     The cache key includes all dataset parameters so that studies varying
@@ -157,8 +155,8 @@ def _get_dataset(
 def _suggest(
     trial: optuna.Trial,
     name: str,
-    spec: Dict[str, Any],
-    current_params: Dict[str, Any],
+    spec: dict[str, Any],
+    current_params: dict[str, Any],
 ) -> Any:
     """Dispatch an Optuna suggest call from a parameter spec dict.
 
@@ -195,8 +193,8 @@ def _suggest(
 
 def _build_params(
     trial: optuna.Trial,
-    study_config: Dict[str, Any],
-) -> Dict[str, Any]:
+    study_config: dict[str, Any],
+) -> dict[str, Any]:
     """Resolve all parameter values for this trial.
 
     Merge order: BASELINE <- study fixed overrides <- Optuna-suggested values.
@@ -204,14 +202,14 @@ def _build_params(
     ``current_params``, so upstream params must be listed first in the
     study's ``optimize`` dict.
     """
-    params: Dict[str, Any] = dict(BASELINE)
+    params: dict[str, Any] = dict(BASELINE)
     params.update(study_config.get("fixed", {}))
     for name, spec in study_config.get("optimize", {}).items():
         params[name] = _suggest(trial, name, spec, params)
     return params
 
 
-def _build_topology(params: Dict[str, Any], seed: int):
+def _build_topology(params: dict[str, Any], seed: int):
     """Deprecated helper kept only to avoid breaking old imports."""
     raise RuntimeError(
         "_build_topology is deprecated. Use optimization.reservoirs.build_reservoir instead."
@@ -234,7 +232,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     import datetime
 
     seed: int         = int(kwargs.get("seed", DEFAULT_SEED))
-    study_config: Dict[str, Any] = kwargs.get("study_config", {})
+    study_config: dict[str, Any] = kwargs.get("study_config", {})
     profile: bool     = True  # always-on; negligible overhead
 
     trial.set_user_attr(
@@ -503,7 +501,7 @@ def cmd_research(args: argparse.Namespace) -> None:
         sampler_override=args.sampler,
     )
 
-    kwargs: Dict[str, Any] = {
+    kwargs: dict[str, Any] = {
         "study_name":     study_name,
         "study_config":   study_config,
         "instances":      instances,
@@ -567,12 +565,12 @@ def cmd_rerun_best(args: argparse.Namespace) -> None:
     study_config = get_study(study_name)
     archive = getattr(args, "archive", None)
     trial_name = getattr(args, "trial_name", None) or f"{study_name}-best"
-    task: Dict[str, Any] = {}
+    task: dict[str, Any] = {}
     if getattr(args, "instances", None):
         task["rows"] = int(args.instances)
     if getattr(args, "binary", False):
         task["labels"] = "binary"
-    cv: Dict[str, Any] = {"folds": int(getattr(args, "folds", None) or study_config.get("folds", 1)),
+    cv: dict[str, Any] = {"folds": int(getattr(args, "folds", None) or study_config.get("folds", 1)),
                           "profile": bool(getattr(args, "profile", False))}
     if getattr(args, "primary_average", None):
         cv["primary_average"] = args.primary_average
@@ -581,7 +579,7 @@ def cmd_rerun_best(args: argparse.Namespace) -> None:
             cv[key] = float(getattr(args, key))
     if getattr(args, "readout_study", None):
         readout_trial = getattr(args, "readout_trial", None)
-        readout: Dict[str, Any] = {"study": args.readout_study, "archive": archive,
+        readout: dict[str, Any] = {"study": args.readout_study, "archive": archive,
                                    "trial": "best" if readout_trial is None else readout_trial}
     else:
         readout = {"classifier": "KNN", "params": dict(_KNN_HYPERS)}
@@ -611,7 +609,7 @@ def _rerun_best_preserved_split(args: argparse.Namespace, study_name: str) -> No
     try:
         best = study.best_trial
     except ValueError:
-        raise SystemExit(f"No completed trials in study '{study_name}'.")
+        raise SystemExit(f"No completed trials in study '{study_name}'.") from None
 
     study_config = get_study(study_name)
     params = _resolve_params_from_trial(best, study_config)
@@ -657,7 +655,7 @@ def _rerun_best_preserved_split(args: argparse.Namespace, study_name: str) -> No
 # Evaluate helpers
 # ---------------------------------------------------------------------------
 
-def _important_params(study: optuna.Study, max_n: int = 8) -> List[str]:
+def _important_params(study: optuna.Study, max_n: int = 8) -> list[str]:
     """Return up to *max_n* non-fixed parameter names ranked by Optuna importance.
 
     ``fixed_*`` parameters are single-value conditional placeholders (e.g.
@@ -672,7 +670,7 @@ def _important_params(study: optuna.Study, max_n: int = 8) -> List[str]:
         imps = get_param_importances(study)
         return [p for p in imps if not p.startswith("fixed_")][:max_n]
     except Exception:
-        seen: Dict[str, bool] = {}
+        seen: dict[str, bool] = {}
         for t in study.trials:
             if t.state.name == "COMPLETE":
                 for p in t.params:
@@ -683,8 +681,8 @@ def _important_params(study: optuna.Study, max_n: int = 8) -> List[str]:
 
 def _resolve_params_from_trial(
     trial: optuna.Trial,
-    study_config: Dict[str, Any],
-) -> Dict[str, Any]:
+    study_config: dict[str, Any],
+) -> dict[str, Any]:
     """The parameters a trial ran with.
 
     BASELINE, then the study's fixed values, then the trial's params, then the values
@@ -693,7 +691,7 @@ def _resolve_params_from_trial(
     keys produced by :func:`_suggest` for conditional parameters whose condition was
     not met.
     """
-    params: Dict[str, Any] = dict(BASELINE)
+    params: dict[str, Any] = dict(BASELINE)
     params.update(study_config.get("fixed", {}))
     for k, v in trial.params.items():
         if k.startswith("fixed_"):
@@ -715,9 +713,9 @@ def _resolve_params_from_trial(
 def _plot_confusion_matrix(
     study: optuna.Study,
     study_name: str,
-    study_config: Dict[str, Any],
+    study_config: dict[str, Any],
     *,
-    filename: Optional[str] = None,
+    filename: str | None = None,
 ) -> None:
     """Re-run the best trial and plot an aggregate confusion matrix.
 
