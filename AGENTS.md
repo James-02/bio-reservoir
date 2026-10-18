@@ -201,10 +201,17 @@ ruff format .                        # format
   AHL (**Hi**) that diffuses externally (**He**).
 - ECG input drives the reservoir through **He**.
 - The observed state per oscillator is set by `output_variables` (the headline runs
-  observe LuxI, **I**, and external AHL, **He**). Each oscillator has one position; its
-  observed variables couple through the same kernel row, weighted by `couple_vars`.
-- Coupling weights come from a Gaussian kernel of distance (`decay_mode="gaussian"`)
-  with random signs and sparsity, normalised to unit spectral radius, built in
+  observe LuxI, **I**, and external AHL, **He**). Each oscillator has one position; with
+  the abstract coupling its observed variables couple through the same kernel row,
+  weighted by `couple_vars`.
+- `coupling` sets how colonies interact: `"abstract"` (default, the `v0.1` model: a
+  signed kernel applied to the observed states once per input step, added to the drive),
+  `"diffusion"` (AHL exchange through a graph Laplacian on He at every RK4 stage, with
+  conductances from `distance_matrix(signed=False)` or `lattice_matrix()` scaled to
+  `diffusion_rate`) or `"none"`. `preset: qs_diffusion` is the chemically realisable
+  model (symmetric conductances, non-negative input).
+- Kernels come from a Gaussian of distance (`decay_mode="gaussian"`), with random signs
+  and sparsity for the abstract coupling, normalised to unit spectral radius, built in
   `bioreservoir/topology.py`.
 - `BioReservoir` subclasses the ReservoirPy `Node`; respect that contract when
   extending (e.g. `run(X) -> states`).

@@ -150,11 +150,44 @@ The code defaults include the fixes listed in the [CHANGELOG](CHANGELOG.md) (one
 
 2. **External input** — ECG time-series samples are fed through He, representing the influence of the extracellular environment on the oscillator dynamics.
 
-3. **Reservoir network** — A spatial topology of oscillator nodes is constructed with distance-dependent coupling weights (a Gaussian kernel of distance, with random signs and sparsity, normalised to unit spectral radius).
+3. **Reservoir network** — A spatial topology of oscillator nodes is constructed with distance-dependent coupling weights (a Gaussian kernel of distance, with random signs and sparsity, normalised to unit spectral radius). This is the abstract coupling of `v0.1`; diffusive AHL exchange is the alternative (see [Coupling Models](#coupling-models)).
 
 4. **State extraction** — At each timestep the concentration of each node's luxI gene is read out, producing a high-dimensional state representation of the input.
 
 5. **Classification** — A readout layer (Ridge, KNN, or Random Forest) is trained on the final reservoir states to classify the input into arrhythmia categories.
+
+## Coupling Models
+
+`BioReservoir(coupling=...)` (in a run config, `reservoir.params.coupling`) sets how the colonies interact:
+
+- `abstract` (default, the `v0.1` model): once per input step each oscillator receives `rc_scaling * W r`, a signed kernel applied to the observed states of the previous step, added to its input drive. It is a computational abstraction: the coupling can be negative and carries LuxI between colonies.
+- `diffusion`: colonies exchange extracellular AHL (He) through the medium. At every RK4 stage, `dHe_i/dt` gains `sum_j G_ij (He_j - He_i)`, a graph Laplacian over non-negative conductances `G`. The kernel comes from `W` (`distance_matrix(signed=False)` or `lattice_matrix()`, a trap array with nearest-neighbour exchange; `topology_type: distance` or `lattice` in a config) and is scaled so that a colony's conductances sum to `diffusion_rate` per model time unit on average. Symmetric conductances conserve AHL: the exchange only moves it between colonies.
+- `none`: independent oscillators.
+
+The input can be delivered as a non-negative inducer level: `input_encoding: nonnegative` clips each (z-scored) sample to `input_range` (default `[-3, 8]`) and shifts it by the lower end, a fixed and causal offset, and input noise cannot take it below zero; `input_sign: positive` makes the input weights non-negative. `preset: qs_diffusion` sets these choices together with symmetric, distance-based conductances:
+
+```yaml
+preset: qs_diffusion
+reservoir:
+  params:
+    units: 1000
+    topology_type: lattice      # or distance, with interaction_diameters and fade_alpha
+    diffusion_rate: 0.5         # mean AHL exchange rate of a colony
+    # ... and the other parameters: warmup, rk4_substeps, input_scaling, dde_scaling, ...
+```
+
+Each step from the `v0.1` model towards a chemically realisable one is one config change, so the steps can be run and compared one at a time:
+
+| Model | Config |
+|---|---|
+| `v0.1` code path | `preset: v0.1` |
+| Corrected abstract coupling | `coupling: abstract` (the defaults) |
+| AHL exchange, non-negative conductances | `coupling: diffusion`, `signed: false` (with `sparsity < 1` the conductances are not symmetric, so AHL is not conserved) |
+| + symmetric conductances, non-negative input | `preset: qs_diffusion` |
+| + reporter readout: LuxI only, one end-point image | `output_variables: I`, `features: {aggregation: final}` |
+| + colony-to-colony variability | `param_heterogeneity_cv` |
+
+The diffusive solver advances all colonies together and runs on one thread (a parallel region per RK4 stage costs more than the stage itself); run folds or beats in parallel processes instead (`--processes`). `bioreservoir.topology.relative_asymmetry` measures how far a coupling matrix is from symmetric.
 
 ## Visualisation
 

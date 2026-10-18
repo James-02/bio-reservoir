@@ -96,6 +96,26 @@ Each entry is marked **[science]** if it changes a reported number, or
   channels of each test fold a gain error the readout does not see in training. They need
   `cv.simulate: once`; the defaults observe every output variable without error, as
   before.
+- [engineering] Diffusive coupling, a chemically realisable alternative to the abstract
+  coupling of `v0.1` (which stays the default): with `BioReservoir(coupling="diffusion")`
+  colonies exchange extracellular AHL through a graph Laplacian, `dHe_i/dt` gaining
+  `sum_j G_ij (He_j - He_i)` at every RK4 stage (`solve_dde_substep(conductance=...)`).
+  The conductances come from a non-negative kernel (`distance_matrix(signed=False)`, or
+  the new `lattice_matrix()` for a trap array), scaled so that a colony's conductances
+  sum to `diffusion_rate` on average (`scale_conductances`); symmetric conductances
+  conserve AHL, and `relative_asymmetry` measures how far a kernel is from symmetric.
+  `coupling="none"` gives independent oscillators. The input can be a non-negative
+  inducer level (`input_encoding="nonnegative"`: a fixed offset on the clipped sample,
+  noise cannot make it negative) delivered with non-negative weights
+  (`input_sign="positive"`). Run configs and studies take the new options (`coupling`,
+  `diffusion_rate`, `input_encoding`, `input_range`, `input_sign`, `topology_type:
+  lattice`; trials record them), the `qs_diffusion` preset sets the structure of the
+  realisable model, and only the abstract coupling needs `rc_scaling` and `noise_rc`.
+  The solver is checked against an independent integrator (fourth-order convergence
+  without delay, second order with it), for AHL conservation, and for non-negative
+  states with non-negative input. It runs on one thread; `drive_shares` applies to the
+  abstract coupling only, and the ablation and heterogeneity scripts accept
+  `--preset v0.1` only.
 - [engineering] `--archive VERSION` reads frozen studies from `archive/<version>/`.
 - [engineering] `optimization/deploy.py` and `optimization/collect.py` are now part of the
   repository. Host addresses, user, remote workspace, pip proxy and service come from
