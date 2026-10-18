@@ -91,7 +91,7 @@ def test_refitting_the_balanced_readout_reproduces_the_phase4_value(tmp_path):
         study_name="P4-readout-balanced",
         storage=f"sqlite:///{config.optuna_db('P4-readout-balanced', 'v0.1')}")
     run_dir = run.execute(
-        {"name": "refit-P4-readout-balanced",
+        {"name": "refit-P4-readout-balanced", "preset": "v0.1",
          "reservoir": {"states_from": "archive:v0.1/P2-distance-best"},
          "readout": {"study": "P4-readout-balanced", "trial": 833, "archive": "v0.1"}},
         out=tmp_path / "refit", processes=5, allow_dirty=True,
