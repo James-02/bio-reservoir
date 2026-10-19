@@ -9,16 +9,15 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Changed
 
-- [science] Python 3.12 or 3.13 and current releases of the scientific stack: numpy 2.5.4,
-  numba 0.68.0, scipy 1.18.1, scikit-learn 1.9.1, pandas 3.0.6, matplotlib 3.11.2,
-  Optuna 5.0.0, joblib 1.6.0 and ReservoirPy 0.3.16 (also pillow 13.0.0 and psutil 7.2.2;
-  wfdb, which nothing imports, is no longer installed). The reservoir's outputs are
-  unchanged: the model regression test against the `v0.1` reference outputs passes.
-  Random forests score slightly differently with the new scikit-learn: refitting the
-  `v0.1` balanced readout on the archived states gives 0.8950 instead of 0.8953. Optuna 5
-  reads the archived study databases unchanged, and runs with several worker processes no
-  longer print a `ResourceTracker` error at exit. Scientific dependencies are now upgraded
-  between sets of reported results rather than held until `v1.0`.
+- [engineering] Python 3.12, and current releases of the tools: ReservoirPy 0.3.16, Optuna
+  5.0.0, joblib 1.6.0, matplotlib 3.11.2, pillow 13.0.0 and psutil 7.2.2 (wfdb, which
+  nothing imports, is no longer installed). The numerical libraries stay at the versions
+  `v0.1` used (numpy 1.26.4, numba 0.60.0, scipy 1.13.0, scikit-learn 1.5.0, pandas
+  2.2.3), so every `v0.1` result reproduces exactly: the balanced and ESN headline reruns
+  match the archived predictions beat for beat. Optuna 5 reads the archived study
+  databases unchanged, and runs with several worker processes no longer print a
+  `ResourceTracker` error at exit. Scientific dependencies are upgraded only between sets
+  of reported results.
 - [engineering] Study names follow Supplementary Table S5 (`P1-scaling`, `P2-distance`,
   `P4-readout-balanced`, `ESN-balanced`, `B1-balanced`, ...). Runs are named
   `<study>-best[-<variant>]`; the ablation condition `baseline` is now `full`.

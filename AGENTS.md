@@ -165,13 +165,13 @@ ruff format .                        # format
 - **Formatting/linting:** `ruff` (line length 100, target py312).
 - **Commits:** Conventional Commits with a component scope, e.g.
   `feat(provenance): ...`. Versioning follows SemVer.
-- **Python support:** 3.12–3.13. Runtime dependencies are pinned in `pyproject.toml`;
+- **Python support:** 3.12. Runtime dependencies are pinned in `pyproject.toml`;
   every dependency is locked in `uv.lock`.
 - **Settings:** paths, secrets and host details only through `utils.config`
   (environment, then `config.env`, then default).
 - Library code must not call `logging.basicConfig`; use
   `utils.logger.setup_logging` from CLIs/scripts only.
-- **CI** (GitHub Actions, every PR): ruff, unit tests on Python 3.12–3.13,
+- **CI** (GitHub Actions, every PR): ruff, unit tests on Python 3.12,
   integration tests, coverage.
 
 ## Hard rules (do not violate)

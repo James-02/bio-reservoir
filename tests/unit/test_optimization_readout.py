@@ -154,7 +154,11 @@ class TestSummaries:
         readout._print_classifier_summary_table(pd.DataFrame({"number": [1]}), top_n=1)
         assert capsys.readouterr().out == ""
 
-    def test_parameter_names_stand_in_when_importances_fail(self):
+    def test_parameter_names_stand_in_when_importances_fail(self, monkeypatch):
+        def fail(study):
+            raise RuntimeError("no importances")
+
+        monkeypatch.setattr("optuna.importance.get_param_importances", fail)
         study = optuna.create_study()
         study.add_trial(create_trial(
             params={"b": "x", "a": "y", "fixed_c": 1},

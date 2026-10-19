@@ -3,7 +3,7 @@
 [![Tests](https://github.com/James-02/bio-reservoir/actions/workflows/tests.yml/badge.svg)](https://github.com/James-02/bio-reservoir/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/James-02/bio-reservoir/branch/main/graph/badge.svg)](https://codecov.io/gh/James-02/bio-reservoir)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue.svg)](pyproject.toml)
+[![Python](https://img.shields.io/badge/python-3.12-blue.svg)](pyproject.toml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23436888.svg)](https://doi.org/10.5281/zenodo.23436888)
 
 A reservoir computing framework built on coupled genetic oscillators for ECG arrhythmia classification. Each reservoir node is a quorum-sensing oscillator modelled by delay differential equations (DDEs), implemented as a [ReservoirPy](https://github.com/reservoirpy/reservoirpy) `Node`.
@@ -18,7 +18,7 @@ High-level overview of the biological reservoir computing pipeline: ECG sequence
 
 ## Environment Setup
 
-Dependencies are declared in `pyproject.toml` and locked in `uv.lock` (Python 3.12–3.13), so [uv](https://docs.astral.sh/uv/) recreates the exact environment:
+Dependencies are declared in `pyproject.toml` and locked in `uv.lock` (Python 3.12), so [uv](https://docs.astral.sh/uv/) recreates the exact environment:
 
 ```bash
 export UV_PROJECT_ENVIRONMENT=venv
@@ -217,7 +217,7 @@ Run these locally in the same Python environment as the optimisation CLI.
 
 ### Remote Deployment
 
-[optimization/deploy.py](optimization/deploy.py) runs studies or commands on remote hosts in a detached session, and [optimization/collect.py](optimization/collect.py) copies the databases, run folders and logs back. Each host needs RHEL 9 (or a compatible distribution) with Python 3.12 or 3.13, `ssh` and `rsync`, and key-based SSH login. Host addresses, the SSH user and the remote workspace are set in `config.env` (see [config.env.example](config.env.example)); hosts are otherwise referred to by label (`host1`, ...), and every remote run records its label, CPU model, core counts and RAM with its results.
+[optimization/deploy.py](optimization/deploy.py) runs studies or commands on remote hosts in a detached session, and [optimization/collect.py](optimization/collect.py) copies the databases, run folders and logs back. Each host needs RHEL 9 (or a compatible distribution) with Python 3.12, `ssh` and `rsync`, and key-based SSH login. Host addresses, the SSH user and the remote workspace are set in `config.env` (see [config.env.example](config.env.example)); hosts are otherwise referred to by label (`host1`, ...), and every remote run records its label, CPU model, core counts and RAM with its results.
 
 ```bash
 python -m optimization.deploy --inventory          # hardware per host -> results/metrics/hosts.json
