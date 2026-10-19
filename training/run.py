@@ -4,6 +4,8 @@
                                            [--final-test]
     python -m training.run resolve CONFIG.yaml
     python -m training.run compare RUN_A RUN_B [--out DIR]
+    python -m training.run study CONFIG.yaml [--processes N] [--trials N]
+    python -m training.run study-best CONFIG.yaml [--out BEST.yaml]
 
 A config names the task (labels, pool size, balancing, scaling), the reservoir (explicit
 parameters or an Optuna study trial), the state features, the readout (explicit or a
@@ -22,6 +24,10 @@ By default every beat is simulated once and the folds share its features
 (``cv.simulate: once``, :mod:`training.simulate`), with ``--processes`` worker processes
 simulating beats; ``cv.simulate: per_fold`` simulates the beats of every fold again, with
 ``--processes`` folds in parallel (the ``v0.1`` code path).
+
+A config with a ``study`` section defines an Optuna search over its own values:
+``study`` runs the trials through this runner's pipeline and ``study-best`` writes the best
+trial as a plain config (:mod:`training.study`).
 
 With ``test: {split: <name>}`` the run fits the readout on the whole pool and evaluates it
 on a held-out split instead of cross-validating (``utils.heldout``: ``validation-1``,
@@ -754,6 +760,21 @@ def main(argv: list[str] | None = None) -> None:
     p_cmp.add_argument("run_b")
     p_cmp.add_argument("--out", help="Folder for compare.json and figures.")
     p_cmp.add_argument("--bootstrap", type=int, default=2000)
+    p_std = sub.add_parser("study", help="Run the Optuna study of a config (training.study).")
+    p_std.add_argument("config")
+    p_std.add_argument("--processes", type=int, default=1,
+                       help="Worker processes of each trial, as for run.")
+    p_std.add_argument("--trials", type=int,
+                       help="Finished trials to reach (default: study.trials).")
+    p_std.add_argument("--storage",
+                       help="Optuna storage URL (default results/optuna/optuna-<study>.db).")
+    p_std.add_argument("--allow-dirty", action="store_true",
+                       help="Run from uncommitted code; trials are marked non-citable.")
+    p_bst = sub.add_parser("study-best",
+                           help="Print (or write) the best trial of a study as a run config.")
+    p_bst.add_argument("config")
+    p_bst.add_argument("--out", help="File for the run config.")
+    p_bst.add_argument("--storage")
     args = parser.parse_args(argv)
 
     setup_logging(level=logging.INFO)
@@ -766,6 +787,19 @@ def main(argv: list[str] | None = None) -> None:
         run_dir = execute(cfg, out=args.out, processes=args.processes,
                           allow_dirty=args.allow_dirty, final_test=args.final_test)
         print(run_dir)
+    elif args.command == "study":
+        from training.study import run_study
+
+        study = run_study(load_config(args.config), processes=args.processes,
+                          trials=args.trials, storage=args.storage,
+                          allow_dirty=args.allow_dirty)
+        best = study.best_trial
+        print(f"{study.study_name}: {len(study.trials)} trials, best {best.value:.4f} "
+              f"(trial {best.number})")
+    elif args.command == "study-best":
+        from training.study import write_best
+
+        print(write_best(load_config(args.config), args.out, args.storage), end="")
     else:
         from training.compare import compare, format_comparison
 
