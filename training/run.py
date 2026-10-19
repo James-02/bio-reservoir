@@ -18,6 +18,11 @@ predictions and, with ``outputs.save_states``, the state features), ``figures/``
 (``utils.provenance``). With ``reservoir.states_from`` the readout is refitted on the
 saved states of another run instead of simulating the reservoir again.
 
+By default every beat is simulated once and the folds share its features
+(``cv.simulate: once``, :mod:`training.simulate`), with ``--processes`` worker processes
+simulating beats; ``cv.simulate: per_fold`` simulates the beats of every fold again, with
+``--processes`` folds in parallel (the ``v0.1`` code path).
+
 With ``test: {split: <name>}`` the run fits the readout on the whole pool and evaluates it
 on a held-out split instead of cross-validating (``utils.heldout``: ``validation-1``,
 ``validation-2`` or ``test``); ``fold-0.npz`` then holds the split's predictions and
@@ -52,7 +57,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
              "data_file": None},
     "features": {"aggregation": "final", "window": 1},
     "cv": {"folds": 5, "primary_average": "macro", "noise_rate": 0.0, "noise_ratio": 0.0,
-           "profile": False},
+           "profile": False, "simulate": "once"},
     "outputs": {"save_states": False},
 }
 
@@ -85,6 +90,7 @@ PRESETS: dict[str, dict[str, dict[str, Any]]] = {
                       "normalize_after_masks": False,
                       "heterogeneity_mean_preserving": False},
         "readout": {"scale": False},
+        "cv": {"simulate": "per_fold"},
     },
 }
 
@@ -176,7 +182,9 @@ def _from_study(params: dict[str, Any]) -> dict[str, dict[str, Any]]:
                      if aggregation == "last_N" else 1},
         "cv": {"primary_average": str(params.get("objective_average", "macro")),
                "noise_rate": float(params.get("noise_rate", 0.0)),
-               "noise_ratio": float(params.get("noise_ratio", 0.0))},
+               "noise_ratio": float(params.get("noise_ratio", 0.0)),
+               # study trials simulated the beats of every fold
+               "simulate": "per_fold"},
     }
 
 
@@ -261,6 +269,7 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
     sections["cv"].setdefault("seed", seed)
     if sections["task"]["labels"] not in ("five-class", "binary"):
         raise ValueError("task.labels must be 'five-class' or 'binary'.")
+    _check_simulation(sections, resolved_reservoir)
     split = (cfg.get("test") or {}).get("split")
     if split is not None:
         from utils.heldout import SPLITS
@@ -285,6 +294,23 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
     if cfg.get("reference"):
         out["reference"] = str(cfg["reference"])
     return _plain(out)
+
+
+def _check_simulation(sections: dict[str, Any], reservoir: dict[str, Any]) -> None:
+    from training.simulate import PER_BEAT_SCALERS
+
+    simulate = sections["cv"]["simulate"]
+    if simulate not in ("once", "per_fold"):
+        raise ValueError("cv.simulate must be 'once' or 'per_fold'.")
+    if simulate == "per_fold" or "states_from" in reservoir:
+        return
+    if sections["cv"]["noise_rate"] or sections["cv"]["noise_ratio"]:
+        raise ValueError("Augmented beats belong to one training fold: augmentation "
+                         "(cv.noise_rate, cv.noise_ratio) needs cv.simulate: per_fold.")
+    if sections["task"]["scaler"] not in PER_BEAT_SCALERS:
+        raise ValueError(f"task.scaler {sections['task']['scaler']!r} is fitted on a training "
+                         "fold; cv.simulate: once needs a scaling of each beat on its own "
+                         f"({', '.join(PER_BEAT_SCALERS)}).")
 
 
 # ---------------------------------------------------------------------------
@@ -356,10 +382,18 @@ def make_readout(readout: dict[str, Any]):
 def _simulate(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray,
               processes: int) -> tuple[dict[str, Any], list]:
     from optimization.reservoirs import build_reservoir
-    from training.cross_validate import cross_validate
+    from training.cross_validate import cross_validate, cross_validate_features
 
     reservoir_cfg = dict(cfg["reservoir"]["params"], reservoir_type=cfg["reservoir"]["type"])
     reservoir, _ = build_reservoir(reservoir_cfg, seed=int(cfg["reservoir"]["seed"]))
+    if cfg["cv"]["simulate"] == "once":
+        features, timing = _features(cfg, X, processes)
+        result, artifacts = cross_validate_features(
+            features, Y, make_readout(cfg["readout"]), folds=int(cfg["cv"]["folds"]),
+            seed=int(cfg["cv"]["seed"]), primary_average=str(cfg["cv"]["primary_average"]),
+            save_states=bool(cfg["outputs"]["save_states"]), model_hypers=reservoir.hypers)
+        result["simulation"] = timing
+        return result, artifacts
     return cross_validate(
         reservoir, make_readout(cfg["readout"]), X, Y,
         folds=int(cfg["cv"]["folds"]), seed=int(cfg["cv"]["seed"]),
@@ -380,8 +414,30 @@ def _classes(Y: np.ndarray) -> np.ndarray:
     return np.argmax(np.asarray(Y).reshape(len(Y), -1), axis=1)
 
 
+def _features(cfg: dict[str, Any], X: np.ndarray,
+              processes: int) -> tuple[np.ndarray, dict[str, Any]]:
+    """Scale the beats and simulate each once; return the features and the timing."""
+    import time
+
+    from training.simulate import simulate_beats
+    from utils.preprocessing import standardize_data
+
+    X_scaled, _ = standardize_data(X, X[:1], scaler_type=str(cfg["task"]["scaler"]))
+    started = time.perf_counter()
+    features = simulate_beats(
+        dict(cfg["reservoir"]["params"], reservoir_type=cfg["reservoir"]["type"]),
+        int(cfg["reservoir"]["seed"]), X_scaled, noise_seed=int(cfg["reservoir"]["seed"]),
+        aggregation=str(cfg["features"]["aggregation"]),
+        window=int(cfg["features"]["window"]), processes=processes)
+    elapsed = time.perf_counter() - started
+    logger.info("Simulated %d beats once in %.1f s (%d processes)", len(X), elapsed, processes)
+    return features, {"beats": int(len(X)), "processes": int(processes),
+                      "simulate_s": round(elapsed, 3),
+                      "beats_per_s": round(len(X) / elapsed, 2) if elapsed else None}
+
+
 def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: np.ndarray,
-                    Y_test: np.ndarray, beat_ids: np.ndarray):
+                    Y_test: np.ndarray, beat_ids: np.ndarray, processes: int = 1):
     """Fit the readout on the whole pool and evaluate it on a held-out split, as fold 0.
 
     The pool is augmented and scaled as a cross-validation training fold, and the metrics
@@ -398,12 +454,23 @@ def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: n
     X_all, Y_all = np.concatenate((X, X_test)), np.concatenate((Y, Y_test))
     fold = Fold(train_idx=np.arange(len(X)), val_idx=np.arange(len(X), len(X_all)),
                 fold_index=0)
+    reservoir_cfg = dict(cfg["reservoir"]["params"], reservoir_type=cfg["reservoir"]["type"])
+    reservoir, _ = build_reservoir(reservoir_cfg, seed=int(cfg["reservoir"]["seed"]))
+    if cfg["cv"]["simulate"] == "once":
+        from training.cross_validate import fit_on_features
+
+        features, _ = _features(cfg, X_all, processes)
+        artifact = fit_on_features(features, Y_all, make_readout(cfg["readout"]), fold,
+                                   save_states=bool(cfg["outputs"]["save_states"]),
+                                   primary_average=str(cfg["cv"]["primary_average"]),
+                                   labels=np.unique(_classes(Y_test)),
+                                   model_hypers=reservoir.hypers)
+        artifact.test_index = np.asarray(beat_ids, dtype=np.int64)
+        return artifact
     data = _prepare_fold_data(X_all, Y_all, fold, noise_rate=float(cfg["cv"]["noise_rate"]),
                               noise_ratio=float(cfg["cv"]["noise_ratio"]),
                               seed=int(cfg["cv"]["seed"]),
                               scaler_type=str(cfg["task"]["scaler"]))
-    reservoir_cfg = dict(cfg["reservoir"]["params"], reservoir_type=cfg["reservoir"]["type"])
-    reservoir, _ = build_reservoir(reservoir_cfg, seed=int(cfg["reservoir"]["seed"]))
     artifact = run_fold(reservoir, make_readout(cfg["readout"]), *data, fold_index=0,
                         save_states=bool(cfg["outputs"]["save_states"]),
                         readout_aggregation=str(cfg["features"]["aggregation"]),
@@ -610,14 +677,15 @@ def execute(cfg: dict[str, Any], *, out: str | Path | None = None, processes: in
                 labels = np.unique(_classes(Y_test))
                 logger.info("Held-out split %s: %d beats, class counts %s", split,
                             len(X_test), np.bincount(_classes(Y_test)).tolist())
-                artifacts = [_evaluate_split(cfg, X, Y, X_test, Y_test, beat_ids)]
+                artifacts = [_evaluate_split(cfg, X, Y, X_test, Y_test, beat_ids, processes)]
                 low, high = bootstrap_ci(_classes(Y_test), _classes(artifacts[0].Y_pred),
                                          seed=int(cfg["seed"]))
                 evaluation = {"split": split, "n_beats": int(len(X_test)),
                               "classes": labels.tolist(), "f1_macro_ci95": [low, high]}
             else:
                 result, artifacts = _simulate(cfg, X, Y, processes)
-                timings = {k: result[k] for k in ("profiling", "fold_runtimes") if k in result}
+                timings = {k: result[k] for k in ("profiling", "fold_runtimes", "simulation")
+                           if k in result}
         for artifact in artifacts:
             artifact.trial_name = run_dir.name
             artifact.save(results_dir=str(run_dir.parent),
@@ -668,7 +736,8 @@ def main(argv: list[str] | None = None) -> None:
     p_run.add_argument("config")
     p_run.add_argument("--out", help="Run folder (default results/runs/<name>-<UTC time>).")
     p_run.add_argument("--processes", type=int, default=1,
-                       help="Folds run in parallel worker processes.")
+                       help="Worker processes: beats simulated in parallel (cv.simulate: "
+                            "once, the default) or folds (per_fold).")
     p_run.add_argument("--allow-dirty", action="store_true",
                        help="Run from uncommitted code; the run is marked non-citable.")
     p_run.add_argument("--save-states", action="store_true",

@@ -471,6 +471,55 @@ def _return_cv_result(
     if return_artifacts:
         return result, artifacts
     return result
+
+
+def fit_on_features(features: np.ndarray, Y: np.ndarray, readout: Node, fold: Fold, *,
+                    save_states: bool = False, primary_average: str = "weighted",
+                    labels: np.ndarray | None = None,
+                    model_hypers: dict[str, Any] | None = None) -> FoldArtifact:
+    """Fit a copy of ``readout`` on the fold's training rows and score its test rows."""
+    readout = readout.copy()
+    train_rows = [features[i][np.newaxis] for i in fold.train_idx]
+    test_rows = [features[i][np.newaxis] for i in fold.val_idx]
+    Y_train, Y_test = Y[fold.train_idx], Y[fold.val_idx]
+    started = time.perf_counter()
+    fit_readout(readout, train_rows, Y_train)
+    Y_pred = _stack_runs(predict(readout, test_rows))
+    runtime = round(time.perf_counter() - started, 4)
+    selected = getattr(getattr(readout, "_fitted_sklearn", None), "best_params_", None)
+    return FoldArtifact(
+        trial_name="",
+        fold_index=fold.fold_index,
+        Y_train=Y_train,
+        Y_test=Y_test,
+        Y_pred=Y_pred,
+        metrics=evaluate_performance(Y_test, Y_pred, runtime,
+                                     primary_average=primary_average, labels=labels),
+        train_states=np.stack(train_rows) if save_states else None,
+        test_states=np.stack(test_rows) if save_states else None,
+        model_hypers={**(model_hypers or {}), **readout.hypers,
+                      **({"selected_readout_params": selected} if selected else {})},
+        test_index=fold.val_idx,
+    )
+
+
+def cross_validate_features(features: np.ndarray, Y: np.ndarray, readout: Node, *,
+                            folds: int = 5, seed: int = config.SEED,
+                            primary_average: str = "weighted", save_states: bool = False,
+                            model_hypers: dict[str, Any] | None = None):
+    """Cross-validate ``readout`` on features computed once per beat.
+
+    ``features[i]`` belongs to beat ``i`` (:func:`training.simulate.simulate_beats`). The
+    folds are those of :func:`cross_validate` for the same labels and seed, and every
+    fold fits its own copy of the readout. Returns ``(result, artifacts)``, as
+    ``cross_validate(..., return_artifacts=True)`` does.
+    """
+    artifacts = [
+        fit_on_features(features, Y, readout, fold, save_states=save_states,
+                        primary_average=primary_average, model_hypers=model_hypers)
+        for fold in _iter_folds(features, Y, folds=folds, seed=seed)
+    ]
+    return _return_cv_result(artifacts, profile=False, return_artifacts=True)
 # ---------------------------------------------------------------------------
 
 def classify(

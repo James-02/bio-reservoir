@@ -79,6 +79,7 @@ cv:
   noise_rate: 0.0
   noise_ratio: 0.0
   profile: false
+  simulate: per_fold
   seed: 6337
 outputs:
   save_states: false

@@ -18,6 +18,17 @@ Each entry is marked **[science]** if it changes a reported number, or
   databases unchanged, and runs with several worker processes no longer print a
   `ResourceTracker` error at exit. Scientific dependencies are upgraded only between sets
   of reported results.
+- [science] A run simulates each beat once and every fold fits its readout on these
+  features (`cv.simulate: once`, the new default; `training.simulate`). The folds and the
+  readouts are the same as before, the simulation is done once instead of once per fold,
+  and `--processes` runs beats in worker processes with one thread each, which keeps every
+  core busy. Each beat draws its noise from its own seed (the reservoir seed and the beat's
+  position), so a beat's features no longer depend on its fold or on the beats run before
+  it; a reservoir with noise therefore gives slightly different numbers than before.
+  `cv.simulate: per_fold` keeps the previous path, and the `v0.1` preset and configs that
+  take their reservoir from a study trial use it, so the `v0.1` benchmarks are unchanged.
+  Augmentation and scalings fitted on a training fold need `per_fold`. A held-out
+  evaluation simulates the pool and the split once in the same way.
 - [engineering] Study names follow Supplementary Table S5 (`P1-scaling`, `P2-distance`,
   `P4-readout-balanced`, `ESN-balanced`, `B1-balanced`, ...). Runs are named
   `<study>-best[-<variant>]`; the ablation condition `baseline` is now `full`.
