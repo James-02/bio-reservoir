@@ -56,7 +56,7 @@ def reseed_noise(node, seed: int) -> None:
                                              **keywords)
 
 
-def _run_beats(node, noise_seed: int, mode: str, beats: np.ndarray,
+def _run_beats(node, noise_seed: int, mode: str, columns: np.ndarray | None, beats: np.ndarray,
                indices: np.ndarray) -> np.ndarray:
     from training.pipeline import _aggregate_states
 
@@ -64,7 +64,10 @@ def _run_beats(node, noise_seed: int, mode: str, beats: np.ndarray,
     for beat, index in zip(beats, indices, strict=True):
         reseed_noise(node, beat_seed(noise_seed, index))
         x = np.asarray(beat, dtype=float).reshape(len(beat), -1)
-        rows.append(_aggregate_states(np.asarray(node.run(x, reset=True)), mode, x).ravel())
+        states = np.asarray(node.run(x, reset=True))
+        if columns is not None:
+            states = states[:, columns]
+        rows.append(_aggregate_states(states, mode, x).ravel())
     return np.asarray(rows)
 
 
@@ -75,8 +78,8 @@ def _load_reservoir(path: str) -> None:
 
 
 def _simulate_chunk(job) -> tuple[np.ndarray, np.ndarray]:
-    noise_seed, mode, beats, indices = job
-    return indices, _run_beats(_worker_reservoir, noise_seed, mode, beats, indices)
+    noise_seed, mode, columns, beats, indices = job
+    return indices, _run_beats(_worker_reservoir, noise_seed, mode, columns, beats, indices)
 
 
 @contextmanager
@@ -95,7 +98,8 @@ def _one_thread_per_process() -> Iterator[None]:
 
 
 def simulate_beats(reservoir, X: np.ndarray, *, noise_seed: int, aggregation: str = "final",
-                   window: int = 1, processes: int = 1, first_index: int = 0) -> np.ndarray:
+                   window: int = 1, columns: np.ndarray | None = None, processes: int = 1,
+                   first_index: int = 0) -> np.ndarray:
     """Features of every beat in ``X``, each simulated once from the warm-up state.
 
     Parameters
@@ -108,6 +112,9 @@ def simulate_beats(reservoir, X: np.ndarray, *, noise_seed: int, aggregation: st
     noise_seed : int
         Beat ``i`` of ``X`` draws its noise from ``beat_seed(noise_seed, first_index + i)``.
     aggregation, window : as for :func:`training.pipeline.train`.
+    columns : np.ndarray, optional
+        The state columns that are observed (:func:`training.observation.observed_columns`);
+        all of them by default.
     processes : int
         Worker processes (started fresh, one thread each); 1 simulates here.
 
@@ -119,10 +126,10 @@ def simulate_beats(reservoir, X: np.ndarray, *, noise_seed: int, aggregation: st
     X = np.asarray(X)
     indices = np.arange(first_index, first_index + len(X))
     if processes <= 1 or len(X) < 2:
-        return _run_beats(reservoir.copy(), noise_seed, mode, X, indices)
+        return _run_beats(reservoir.copy(), noise_seed, mode, columns, X, indices)
     chunks = [c for c in np.array_split(np.arange(len(X)), min(len(X), 4 * processes))
               if len(c)]
-    jobs = [(noise_seed, mode, X[c], indices[c]) for c in chunks]
+    jobs = [(noise_seed, mode, columns, X[c], indices[c]) for c in chunks]
     features = None
     with tempfile.TemporaryDirectory() as tmp:
         path = os.path.join(tmp, "reservoir.pkl")

@@ -56,6 +56,9 @@ reservoir:
 features:
   aggregation: signal_mean
   window: 1
+  variables: null
+  measurement_noise: 0.0
+  calibration_error: 0.0
 readout:
   classifier: RF
   params:

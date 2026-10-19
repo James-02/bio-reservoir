@@ -49,6 +49,9 @@ def _aggregate_states(states: np.ndarray, mode: str, x: np.ndarray) -> np.ndarra
         ``"last_N:K"``
             Mean over the final K timesteps, e.g. ``"last_N:20"``.
             Equivalent to passing ``readout_window=K`` to :func:`train`.
+        ``"images:K"``
+            K snapshots evenly spaced over the beat, the last at its final timestep
+            (``"images:4"``: timesteps T/4, T/2, 3T/4 and T), one after another.
     x : np.ndarray
         Input sequence for this instance (not used by the current modes).
     """
@@ -88,9 +91,21 @@ def _aggregate_states(states: np.ndarray, mode: str, x: np.ndarray) -> np.ndarra
         k = min(k, len(states))
         return states[-k:].mean(axis=0, keepdims=True)
 
+    if mode.startswith("images:"):
+        try:
+            k = int(mode.split(":")[1])
+        except (IndexError, ValueError) as exc:
+            raise ValueError(
+                f"Invalid images mode '{mode}'; expected 'images:K' e.g. 'images:4'"
+            ) from exc
+        if not 1 <= k <= len(states):
+            raise ValueError(f"'{mode}' needs between 1 and {len(states)} images.")
+        steps = np.arange(1, k + 1) * len(states) // k - 1
+        return states[steps].reshape(1, -1)
+
     raise ValueError(
         f"Unknown readout_aggregation mode '{mode}'. "
-        "Choose from: 'final', 'mean', 'signal_mean', 'first_N:K', 'last_N:K'."
+        "Choose from: 'final', 'mean', 'signal_mean', 'first_N:K', 'last_N:K', 'images:K'."
     )
 
 

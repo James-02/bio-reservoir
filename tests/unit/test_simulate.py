@@ -7,7 +7,8 @@ import pytest
 from optimization.reservoirs import build_reservoir
 from training import run as run_module
 from training.cross_validate import _iter_folds, cross_validate_features
-from training.pipeline import train
+from training.observation import calibration_gains, image_count, measure, observed_columns
+from training.pipeline import _aggregate_states, train
 from training.simulate import beat_seed, reseed_noise, simulate_beats
 
 PARAMS = {
@@ -122,3 +123,60 @@ def test_cross_validated_features_test_every_beat_once_with_a_fitted_readout_per
                                       model.predict(features[fold.val_idx]))
         assert artifact.train_states.shape == (len(fold.train_idx), 1, 6)
     assert result["f1"] == pytest.approx(np.mean([a.metrics.f1 for a in artifacts]))
+
+
+def test_test_gains_multiply_only_the_test_rows_of_their_fold():
+    rng = np.random.default_rng(1)
+    labels = np.repeat([0, 1], 9)
+    features = rng.normal(size=(18, 4)) + labels[:, None]
+    Y = np.eye(2)[labels][:, None, :]
+    readout = run_module.make_readout({"classifier": "Ridge", "params": {}, "scale": True})
+    gains = [np.full(4, 1.0 + fold) for fold in range(3)]
+    _, artifacts = cross_validate_features(features, Y, readout, folds=3, seed=0,
+                                           save_states=True, test_gains=gains)
+    for artifact, fold in zip(artifacts, _iter_folds(features, Y, folds=3, seed=0),
+                              strict=True):
+        np.testing.assert_array_equal(artifact.test_states[:, 0],
+                                      features[fold.val_idx] * gains[fold.fold_index])
+        np.testing.assert_array_equal(artifact.train_states[:, 0], features[fold.train_idx])
+
+
+def test_images_are_evenly_spaced_and_end_at_the_last_timestep():
+    states = np.arange(187 * 2).reshape(187, 2)
+    np.testing.assert_array_equal(_aggregate_states(states, "images:4", None),
+                                  states[[45, 92, 139, 186]].reshape(1, -1))
+    np.testing.assert_array_equal(_aggregate_states(states, "images:1", None), states[-1:])
+    with pytest.raises(ValueError, match="between 1 and 187"):
+        _aggregate_states(states, "images:188", None)
+    assert (image_count("images:4"), image_count("final")) == (4, 1)
+
+
+def test_observed_columns_take_the_variables_of_every_colony():
+    np.testing.assert_array_equal(observed_columns(("I", "He"), ["I"], 3), [0, 2, 4])
+    np.testing.assert_array_equal(observed_columns(("I", "He"), ["He", "I"], 2), [1, 0, 3, 2])
+    with pytest.raises(ValueError, match="output variables"):
+        observed_columns(("I", "He"), ["A"], 3)
+    columns = observed_columns(("I", "He"), ["I"], PARAMS["units"])
+    X = _beats()
+    reservoir = _reservoir()
+    np.testing.assert_array_equal(
+        simulate_beats(reservoir, X, noise_seed=5, aggregation="images:3", columns=columns),
+        simulate_beats(reservoir, X, noise_seed=5, aggregation="images:3").reshape(
+            len(X), 3, -1)[:, :, columns].reshape(len(X), -1))
+
+
+def test_each_beat_is_measured_with_its_own_draws():
+    features = np.random.default_rng(0).uniform(1, 2, size=(400, 50))
+    assert measure(features, 0.0, seed=1) is features
+    measured = measure(features, 0.1, seed=1)
+    np.testing.assert_array_equal(measured[5:9], measure(features[5:9], 0.1, seed=1,
+                                                         first_index=5))
+    assert np.std(measured / features) == pytest.approx(0.1, rel=0.05)
+    assert not np.array_equal(measured, measure(features, 0.1, seed=2))
+
+
+def test_a_channel_has_one_calibration_gain_in_every_image():
+    gains = calibration_gains(1000, 3, 0.05, seed=1, fold=0).reshape(3, 1000)
+    np.testing.assert_array_equal(gains[0], gains[2])
+    assert np.std(gains[0]) == pytest.approx(0.05, rel=0.1)
+    assert not np.array_equal(gains[0], calibration_gains(1000, 1, 0.05, seed=1, fold=1))
