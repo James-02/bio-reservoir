@@ -22,7 +22,7 @@ import hashlib
 import json
 import subprocess
 from collections.abc import Iterable, Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +41,7 @@ ENVIRONMENT_KEYS = (
 
 
 def _utc(moment: datetime | None = None) -> str:
-    return (moment or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return (moment or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def sha256_file(path: Path) -> str:
@@ -88,7 +88,7 @@ def require_clean(git: dict[str, Any], allow_dirty: bool = False) -> bool:
 
 def make_run_id(exp_id: str, spec: dict, commit: str, moment: datetime | None = None) -> str:
     """``<UTC>-<exp_id>-<short SHA>-<spec hash8>``."""
-    stamp = (moment or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
+    stamp = (moment or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
     return f"{stamp}-{exp_id}-{commit[:7]}-{spec_hash(spec)[:8]}"
 
 

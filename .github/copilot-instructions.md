@@ -10,8 +10,8 @@ Key reminders (see `AGENTS.md` for detail):
   agree them before implementing.
 - Anchor dependencies are **reservoirpy** and **optuna**; follow their patterns.
 - **Never modify `archive/`** (frozen results of released versions), never tune on the
-  held-out draws, or change the pinned scientific dependency versions; new results go to
-  `results/`, logs to `logs/`.
+  held-out draws, or upgrade scientific dependencies without re-running the results
+  they affect; new results go to `results/`, logs to `logs/`.
 - Write for the people who use and extend the framework: describe what the code does
   and why, and cite the paper, releases, public issues or PRs, or the literature.
 - Name options after what they do; behaviour kept only to reproduce an earlier release

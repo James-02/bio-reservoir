@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -95,6 +95,6 @@ def logs_dir() -> Path:
 
 def log_file(name: str) -> Path:
     """Return a new log file path ``logs/<name>-<UTC timestamp>.log``."""
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     safe = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-") or "run"
     return logs_dir() / f"{safe}-{stamp}.log"

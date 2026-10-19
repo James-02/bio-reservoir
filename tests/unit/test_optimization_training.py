@@ -104,7 +104,11 @@ class TestStudyParameters:
         with pytest.raises(RuntimeError, match="build_reservoir"):
             training_mod._build_topology({}, seed=1)
 
-    def test_parameter_names_stand_in_when_importances_fail(self):
+    def test_parameter_names_stand_in_when_importances_fail(self, monkeypatch):
+        def fail(study):
+            raise RuntimeError("no importances")
+
+        monkeypatch.setattr("optuna.importance.get_param_importances", fail)
         study = optuna.create_study()
         study.add_trial(create_trial(params={"b": 1.0, "a": 2.0, "fixed_c": 1.0},
                                      distributions={k: FloatDistribution(0, 5)

@@ -48,7 +48,7 @@ import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import PurePosixPath
 
 from utils import config
@@ -463,7 +463,7 @@ def inventory(deployer: Deployer, hosts: Sequence[str]) -> None:
             continue
         info = json.loads(out.splitlines()[-1])
         info["problems"] = check_requirements(info)
-        info["checked_utc"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        info["checked_utc"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         record["hosts"][host] = info
         print(f"  {host:<8} {info['cpu_model']}, {info['sockets']} socket(s), "
               f"{info['physical_cores']} cores / {info['logical_cpus']} threads, "
