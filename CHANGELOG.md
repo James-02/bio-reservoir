@@ -63,7 +63,8 @@ Each entry is marked **[science]** if it changes a reported number, or
   as `training.run run` and records its resolved config, code version and fold scores;
   `python -m training.run study` runs a study one trial at a time and resumes it, and
   `study-best` writes the best trial as a plain run config. A seeded study runs the same
-  trials again.
+  trials again. Search paths must name settings the run reads, and a study keeps its
+  definition: rerunning it with another config (other than `study.trials`) is refused.
 - [engineering] `--archive VERSION` reads frozen studies from `archive/<version>/`.
 - [engineering] `optimization/deploy.py` and `optimization/collect.py` are now part of the
   repository. Host addresses, user, remote workspace, pip proxy and service come from

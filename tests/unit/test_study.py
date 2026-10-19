@@ -1,6 +1,7 @@
 """Unit tests for training.study (Optuna studies defined in run configs)."""
 
 import importlib
+from pathlib import Path
 
 import numpy as np
 import optuna
@@ -66,13 +67,33 @@ def test_values_go_in_at_their_dotted_paths():
 
 @pytest.mark.parametrize("path, message", [
     ("model.units", "must start with"),
-    ("reservoir.params.unknown", "has no parameter"),
+    ("reservoir.params.unknown", "no such parameter"),
     ("reservoir.params.units.size", "goes through a value"),
+    ("features.aggregations", "no setting"),
+    ("cv.fold", "no setting"),
+    ("reservoir.units", "no setting"),
 ])
 def test_search_paths_the_run_would_ignore_are_refused(path, message):
     cfg = _config(search={path: {"type": "int", "low": 1, "high": 4}})
     with pytest.raises(ValueError, match=message):
         study_module.run_study(cfg)
+
+
+@pytest.mark.parametrize("spec, study, message", [
+    ({"type": "float", "low": 1.0}, {}, "low < high"),
+    ({"type": "float", "low": 2.0, "high": 1.0}, {}, "low < high"),
+    ({"type": "categorical"}, {}, "needs choices"),
+    ({"type": "float", "low": 1.0, "high": 2.0}, {"sampler": {"type": "grid"}},
+     "needs choices"),
+    ({"type": "float", "low": 1.0, "high": 2.0}, {"metric": "auc"}, "not a run metric"),
+])
+def test_incomplete_specs_and_unknown_metrics_are_refused_before_any_trial(spec, study,
+                                                                          message):
+    cfg = _config(search={"reservoir.params.input_scaling": spec}, **study)
+    with pytest.raises(ValueError, match=message):
+        study_module.run_study(cfg)
+    assert not list(Path(study_module.storage_url(cfg).removeprefix("sqlite:///")).parent
+                    .glob("*.db"))
 
 
 def test_a_grid_runs_every_point_once_and_records_resolved_configs():
@@ -106,6 +127,38 @@ def test_enqueued_points_run_first_and_a_study_resumes():
     study = study_module.run_study(_config(enqueue=[point]), trials=3)
     assert len(study.trials) == 3
     assert sum(t.params == point for t in study.trials) == 1
+
+
+def test_a_partly_given_point_is_enqueued_once():
+    point = {"reservoir.params.input_scaling": 1.5}
+    for trials in (1, 2, 3):
+        study = study_module.run_study(_config(enqueue=[point]), trials=trials)
+    assert sum(t.params["reservoir.params.input_scaling"] == 1.5 for t in study.trials) == 1
+
+
+def test_a_study_keeps_its_definition_but_may_run_more_trials():
+    study_module.run_study(_config(), trials=1)
+    assert len(study_module.run_study(_config(trials=7), trials=2).trials) == 2
+    changed = _config()
+    changed["cv"] = {"folds": 4}
+    with pytest.raises(ValueError, match="another config"):
+        study_module.run_study(changed, trials=3)
+
+
+def test_each_trial_runs_on_the_pool_of_its_own_task(monkeypatch):
+    loaded = []
+
+    def load_task(task):
+        loaded.append(task["rows"])
+        return (*_pool(n_per_class=task["rows"] // 2), [])
+
+    monkeypatch.setattr(run_module, "load_task", load_task)
+    cfg = _config(search={"task.rows": {"type": "int", "choices": [18, 24]}},
+                  sampler={"type": "grid"})
+    study = study_module.run_study(cfg)
+    assert sorted(loaded) == [18, 24]
+    hashes = {t.params["task.rows"]: t.user_attrs["data_pool_sha256"] for t in study.trials}
+    assert len(set(hashes.values())) == 2
 
 
 def test_the_best_trial_becomes_a_plain_run_config(tmp_path):

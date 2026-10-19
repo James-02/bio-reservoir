@@ -26,7 +26,10 @@ reported numbers.
 ``n_startup_trials``, ``constant_liar``), ``random`` (``seed``) and ``grid`` (every
 combination of ``choices``, which every parameter then needs). Trials run one at a time,
 each with ``--processes`` workers, so a study with a seeded sampler runs the same trials
-again; several processes can share one study through its storage.
+again. Run one process per study: several processes sharing a study would run more trials
+than asked and could repeat points. The trial count includes failed trials; a trial that
+raises stops the study, and running the command again resumes it. Only ``study.trials``
+may change between runs of a study.
 
     python -m training.run study CONFIG.yaml [--processes N] [--trials N] [--storage URL]
     python -m training.run study-best CONFIG.yaml [--out BEST.yaml] [--storage URL]
@@ -35,6 +38,7 @@ again; several processes can share one study through its storage.
 from __future__ import annotations
 
 import copy
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -47,6 +51,13 @@ from utils import provenance
 logger = logging.getLogger(__name__)
 
 SECTIONS = ("task", "reservoir", "features", "readout", "cv")
+
+# Settings a search may set in the sections without defaults (task, features and cv take
+# the keys of training.run.DEFAULTS).
+_SETTINGS = {"reservoir": ("params", "seed", "trial"),
+             "readout": ("classifier", "params", "scale", "search", "inner_folds", "seed",
+                         "trial")}
+_EXTRA_SETTINGS = {"task": ("seed", "data_sha256"), "cv": ("seed",)}
 
 
 def split(cfg: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -75,20 +86,34 @@ def apply(cfg: dict[str, Any], values: dict[str, Any]) -> dict[str, Any]:
 
 
 def check(run_cfg: dict[str, Any], study: dict[str, Any]) -> None:
-    """Refuse search paths the run would ignore, and incomplete grids."""
-    from training.run import RESERVOIR_KEYS, resolve
+    """Refuse search paths the run would ignore, incomplete specs and unknown metrics."""
+    from training.run import DEFAULTS, RESERVOIR_KEYS, SCALAR_METRICS, resolve
 
+    metric = str(study.get("metric", "f1"))
+    if metric not in SCALAR_METRICS:
+        raise ValueError(f"study.metric {metric!r} is not a run metric; choose from "
+                         f"{', '.join(SCALAR_METRICS)}.")
     kind = resolve(run_cfg)["reservoir"].get("type")
     for path, spec in study["search"].items():
         apply(run_cfg, {path: None})
         keys = path.split(".")
-        if keys[:2] == ["reservoir", "params"] and keys[2] not in RESERVOIR_KEYS.get(kind, ()):
-            raise ValueError(f"Search path {path!r}: the {kind} builder has no "
-                             f"parameter {keys[2]!r}.")
+        known = (set(DEFAULTS[keys[0]]) | set(_EXTRA_SETTINGS.get(keys[0], ()))
+                 if keys[0] in DEFAULTS else set(_SETTINGS[keys[0]]))
+        if keys[1] not in known:
+            raise ValueError(f"Search path {path!r}: {keys[0]} has no setting {keys[1]!r}.")
+        if keys[:2] == ["reservoir", "params"] and (
+                len(keys) < 3 or keys[2] not in RESERVOIR_KEYS.get(kind, ())):
+            raise ValueError(f"Search path {path!r}: the {kind} builder has no such "
+                             "parameter.")
         if spec.get("type") not in ("float", "int", "categorical"):
             raise ValueError(f"Search path {path!r}: type must be float, int or categorical.")
-        if _sampler_type(study) == "grid" and "choices" not in spec:
-            raise ValueError(f"Search path {path!r}: a grid needs choices.")
+        if "choices" in spec:
+            continue
+        if _sampler_type(study) == "grid" or spec["type"] == "categorical":
+            raise ValueError(f"Search path {path!r}: needs choices.")
+        if not ("low" in spec and "high" in spec
+                and float(spec["low"]) < float(spec["high"])):
+            raise ValueError(f"Search path {path!r}: needs low < high.")
 
 
 def _sampler_type(study: dict[str, Any]) -> str:
@@ -148,28 +173,42 @@ def run_study(cfg: dict[str, Any], *, processes: int = 1, trials: int | None = N
     check(run_cfg, study_cfg)
     git = provenance.git_info()
     citable = provenance.require_clean(git, allow_dirty)
-    template = resolve(run_cfg)
-    X, Y, _ = load_task(template["task"])
+    pools: dict[str, tuple] = {}
+
+    def pool(task: dict[str, Any]) -> tuple:
+        key = json.dumps(task, sort_keys=True)
+        if key not in pools:
+            X, Y, _ = load_task(task)
+            pools[key] = (X, Y, _pool_sha256(X, Y))
+        return pools[key]
+
     metric = str(study_cfg.get("metric", "f1"))
+    url = storage_url(cfg, storage)
     study = optuna.create_study(
-        study_name=name(cfg), storage=storage_url(cfg, storage), load_if_exists=True,
+        study_name=name(cfg), storage=url, load_if_exists=True,
         direction=str(study_cfg.get("direction", "maximize")), sampler=make_sampler(study_cfg))
+    stored = study.user_attrs.get("config")
+    if stored is not None and _definition(yaml.safe_load(stored)) != _definition(cfg):
+        raise ValueError(f"Study {name(cfg)!r} in {url} was run with another config; only "
+                         "study.trials may change. Give the study a new name.")
     study.set_user_attr("config", dump_config(cfg))
-    study.set_user_attr("data_pool_sha256", _pool_sha256(X, Y))
+    study.set_user_attr("data_pool_sha256", pool(resolve(run_cfg)["task"])[2])
     queued = [t.params or getattr(t, "system_attrs", {}).get("fixed_params", {})
               for t in study.trials]
     for point in study_cfg.get("enqueue") or []:
-        if point not in queued:
+        if not any(all(q.get(k) == v for k, v in point.items()) for q in queued):
             study.enqueue_trial(point)
 
     def objective(trial) -> float:
         resolved = resolve(apply(run_cfg, suggest(trial, study_cfg["search"])))
+        X, Y, pool_sha256 = pool(resolved["task"])
         result, artifacts = _simulate(resolved, X, Y, processes)
         metrics = summarise(artifacts, resolved["cv"]["primary_average"])
         trial.set_user_attr("config", dump_config(resolved))
         trial.set_user_attr("summary", metrics["summary"])
         trial.set_user_attr("fold_f1", [f["f1"] for f in metrics["folds"]])
         trial.set_user_attr("code", {"commit": git.get("commit"), "citable": citable})
+        trial.set_user_attr("data_pool_sha256", pool_sha256)
         if "simulation" in result:
             trial.set_user_attr("simulation", result["simulation"])
         return float(metrics["mean"][metric])
@@ -190,6 +229,16 @@ def _grid_size(study: dict[str, Any]) -> int:
     for spec in study["search"].values():
         size *= len(spec["choices"])
     return size
+
+
+def _definition(cfg: dict[str, Any]) -> dict[str, Any]:
+    """The parts of a study config that its trials depend on (all but trials and text)."""
+    from training.run import dump_config
+
+    cfg = yaml.safe_load(dump_config(cfg))
+    cfg.pop("description", None)
+    cfg.get("study", {}).pop("trials", None)
+    return cfg
 
 
 def best_config(cfg: dict[str, Any], storage: str | None = None) -> dict[str, Any]:
