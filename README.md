@@ -242,7 +242,7 @@ Run these locally in the same Python environment as the optimisation CLI.
 
 ### Remote Deployment
 
-[optimization/deploy.py](optimization/deploy.py) runs studies or commands on remote hosts in a detached session, and [optimization/collect.py](optimization/collect.py) copies the databases, run folders and logs back. Each host needs RHEL 9 (or a compatible distribution) with Python 3.12, `ssh` and `rsync`, and key-based SSH login. Host addresses, the SSH user and the remote workspace are set in `config.env` (see [config.env.example](config.env.example)); hosts are otherwise referred to by label (`host1`, ...), and every remote run records its label, CPU model, core counts and RAM with its results.
+[optimization/deploy.py](optimization/deploy.py) runs studies or commands on remote hosts in a detached session, and [optimization/collect.py](optimization/collect.py) copies the databases, run folders and logs back. Each host needs Linux with glibc 2.17 or newer (2.28 or newer to draw figures), `ssh` and `rsync`, and key-based SSH login; its own Python is not used. Setting up a host (`--setup`, and before every launch) copies the code, the configs and `uv.lock` to its workspace with your local `uv`, which installs Python 3.12 and the locked packages there. Host addresses, the SSH user and the remote workspace (shared, or one per host) are set in `config.env` (see [config.env.example](config.env.example)); hosts are otherwise referred to by label (`host1`, ...), and every remote run records its label, CPU model, core counts and RAM with its results.
 
 ```bash
 python -m optimization.deploy --inventory          # hardware per host -> results/metrics/hosts.json

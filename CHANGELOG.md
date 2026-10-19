@@ -9,6 +9,15 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Changed
 
+- [engineering] `optimization/deploy.py` installs each host's environment from `uv.lock`:
+  it copies the local `uv` to the host's workspace, and uv installs Python 3.12 and the
+  locked packages there, so the host's own Python version no longer matters. The code
+  copy includes `experiments/`, `uv.lock` and `README.md`; remote commands clear
+  `PYTHONPATH` and `PYTHONHOME`; a host can have its own workspace
+  (`BIORESERVOIR_DEPLOY_WORKSPACES`); SSH waits up to 60 s to connect and never prompts.
+  Hosts with glibc older than 2.28 get the environment without the plotting packages,
+  which have no wheels for them, so runs there cannot draw figures; `--inventory` checks
+  the glibc version instead of the system Python.
 - [engineering] Python 3.12, and current releases of the tools: ReservoirPy 0.3.16, Optuna
   5.0.0, joblib 1.6.0, matplotlib 3.11.2, pillow 13.0.0 and psutil 7.2.2 (wfdb, which
   nothing imports, is no longer installed). The numerical libraries stay at the versions
@@ -281,6 +290,10 @@ coupling the hyperparameters were tuned for, so the studies need re-tuning.
   directory, or script, output and interpreter paths, and the platform string keeps only
   the OS, numeric kernel release and architecture. Trials now record the full git SHA, a
   dirty flag, the OS name and version, and an optional machine label from `config.env`.
+- [engineering] `optimization.deploy --cleanup` stops the remote session with every
+  process it started (the session runs in its own process group). It used to stop the
+  shell running the cleanup itself, whose command line matched its `pkill` pattern, so
+  the workspace was not deleted.
 
 ## [0.1] - 2026-09-24
 

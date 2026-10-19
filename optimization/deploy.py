@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 """Deploy optimisation studies and experiment commands to remote Linux hosts.
 
-Host requirements: RHEL 9 (or a compatible distribution) with Python 3.10-3.12, plus
-the standard ``ssh`` and ``rsync`` tools and key-based SSH login.
+Host requirements: Linux with glibc 2.17 or newer (2.28 or newer to draw figures), the
+standard ``ssh`` and ``rsync`` tools and key-based SSH login.  The host's own Python is
+not used: setting up a host (``--setup``, and before every launch) copies the local
+``uv`` to the workspace, and uv installs Python 3.12 and the packages locked in
+``uv.lock`` there.
 
 Nothing host-specific is stored in the repository.  Host addresses, the SSH user, the
-remote workspace, an optional pip proxy and an optional systemd unit to pause during
-runs are read from the gitignored ``config.env`` (see ``config.env.example``)::
+remote workspace (shared, or one per host), an optional proxy and an optional systemd
+unit to pause during runs are read from the gitignored ``config.env`` (see
+``config.env.example``)::
 
     BIORESERVOIR_DEPLOY_HOSTS=host1=<address>,host2=<address>
     BIORESERVOIR_DEPLOY_USER=<ssh user>
     BIORESERVOIR_DEPLOY_WORKSPACE=<absolute remote path>
+    BIORESERVOIR_DEPLOY_WORKSPACES=host2=<absolute remote path>
 
 Hosts are referred to by label only (``host1``, ...).  Every remote run records its
 label as the machine label, with the CPU model, core counts, RAM, OS and the local git
@@ -40,14 +45,16 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import re
 import shlex
+import shutil
 import subprocess
 import textwrap
 import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
 
@@ -58,10 +65,13 @@ log = logging.getLogger("deploy")
 q = shlex.quote
 
 SYNC_SOURCES = ("bioreservoir/", "optimization/", "training/", "utils/", "scripts/",
-                "pyproject.toml")
-SSH_OPTIONS = ("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15")
+                "experiments/", "pyproject.toml", "uv.lock", "README.md")
+SSH_OPTIONS = ("-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
+               "-o", "ConnectTimeout=60", "-o", "ServerAliveInterval=30")
 RSYNC = ("rsync", "-az", "--exclude=__pycache__", "--exclude=*.pyc", "--exclude=*.egg-info")
-PYTHON_RANGE = ((3, 10), (3, 12))
+# pillow and contourpy have no wheels for glibc older than 2.28; matplotlib and seaborn need them.
+PLOTTING_PACKAGES = ("matplotlib", "seaborn", "pillow", "contourpy")
+GLIBC_MIN, GLIBC_PLOTTING = (2, 17), (2, 28)
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
@@ -77,41 +87,56 @@ class Settings:
     python: str
     pip_proxy: str | None
     service: str | None
+    workspaces: dict[str, str] = field(default_factory=dict)
 
-    @property
-    def venv(self) -> str:
-        return f"{self.workspace}/venv"
+    def workspace_of(self, host: str) -> str:
+        """The host's own workspace if it has one, else the shared one."""
+        return self.workspaces.get(host, self.workspace)
+
+    def venv_of(self, host: str) -> str:
+        return f"{self.workspace_of(host)}/venv"
 
 
-def parse_hosts(value: str | None) -> dict[str, str]:
-    """Parse ``label=address`` pairs separated by commas or white space."""
+def parse_hosts(value: str | None, setting: str = "BIORESERVOIR_DEPLOY_HOSTS") -> dict[str, str]:
+    """Parse ``label=value`` pairs separated by commas or white space."""
     hosts: dict[str, str] = {}
     for item in (value or "").replace(",", " ").split():
         label, sep, address = item.partition("=")
         if not (sep and NAME_PATTERN.match(label) and address):
-            raise SystemExit(f"BIORESERVOIR_DEPLOY_HOSTS: expected label=address, got {item!r}")
+            raise SystemExit(f"{setting}: expected label=value pairs, got {item!r}")
         hosts[label] = address
     return hosts
+
+
+def _workspace(value: str, setting: str) -> str:
+    workspace = value.rstrip("/")
+    path = PurePosixPath(workspace)
+    if not path.is_absolute() or len(path.parts) < 3 or ".." in path.parts:
+        raise SystemExit(f"{setting} must hold absolute paths at least two levels deep "
+                         "(they are deleted by --cleanup).")
+    return workspace
 
 
 def load_settings() -> Settings:
     """Read the deployment settings (environment, then ``config.env``)."""
     hosts = parse_hosts(config.get("BIORESERVOIR_DEPLOY_HOSTS"))
-    workspace = (config.get("BIORESERVOIR_DEPLOY_WORKSPACE") or "").rstrip("/")
+    workspace = config.get("BIORESERVOIR_DEPLOY_WORKSPACE")
     if not hosts or not workspace:
         raise SystemExit("Set BIORESERVOIR_DEPLOY_HOSTS and BIORESERVOIR_DEPLOY_WORKSPACE in "
                          "config.env (see config.env.example).")
-    path = PurePosixPath(workspace)
-    if not path.is_absolute() or len(path.parts) < 3 or ".." in path.parts:
-        raise SystemExit("BIORESERVOIR_DEPLOY_WORKSPACE must be an absolute path at least two "
-                         "levels deep (it is deleted by --cleanup).")
+    workspaces = parse_hosts(config.get("BIORESERVOIR_DEPLOY_WORKSPACES"),
+                             "BIORESERVOIR_DEPLOY_WORKSPACES")
+    for label in set(workspaces) - set(hosts):
+        raise SystemExit(f"BIORESERVOIR_DEPLOY_WORKSPACES: {label!r} is not a configured host")
     return Settings(
         hosts=hosts,
         user=config.get("BIORESERVOIR_DEPLOY_USER"),
-        workspace=workspace,
+        workspace=_workspace(workspace, "BIORESERVOIR_DEPLOY_WORKSPACE"),
         python=config.get("BIORESERVOIR_DEPLOY_PYTHON", "python3"),
         pip_proxy=config.get("BIORESERVOIR_DEPLOY_PIP_PROXY"),
         service=config.get("BIORESERVOIR_DEPLOY_SERVICE"),
+        workspaces={label: _workspace(path, "BIORESERVOIR_DEPLOY_WORKSPACES")
+                    for label, path in workspaces.items()},
     )
 
 
@@ -149,6 +174,8 @@ class Deployer:
         return f"{self.target(host)}:{path}"
 
     def ssh(self, host: str, script: str, *, capture: bool = False, check: bool = True) -> str:
+        # Hosts may set these for their system Python; they break the workspace's Python.
+        script = f"unset PYTHONPATH PYTHONHOME\n{script}"
         cmd = ["ssh", *SSH_OPTIONS, self.target(host), script]
         self.commands.append(cmd)
         if self.dry_run:
@@ -177,7 +204,7 @@ class Deployer:
 
     def sync(self, host: str) -> None:
         """Copy the code (replacing older copies) and any missing data files."""
-        ws, root = self.settings.workspace, config.PROJECT_ROOT
+        ws, root = self.settings.workspace_of(host), config.PROJECT_ROOT
         self.ssh(host, f"mkdir -p {q(ws)}/logs {q(ws)}/results")
         for source in SYNC_SOURCES:
             self.rsync(host, "--delete", f"{root}/{source}", self.remote(host, f"{ws}/{source}"))
@@ -186,7 +213,7 @@ class Deployer:
 
     def push(self, host: str, paths: Sequence[str]) -> None:
         """Copy local ``results/`` or ``archive/`` paths to the same place on *host*."""
-        ws = self.settings.workspace
+        ws = self.settings.workspace_of(host)
         for path in paths:
             rel = PurePosixPath(path)
             if rel.is_absolute() or ".." in rel.parts or rel.parts[0] not in ("results", "archive"):
@@ -199,22 +226,33 @@ class Deployer:
             self.rsync(host, f"{local}{slash}", self.remote(host, f"{ws}/{rel}{slash}"))
 
     def setup_venv(self, host: str) -> None:
-        """Check the remote Python version, then create or refresh the venv."""
-        s = self.settings
-        proxy = f" --proxy {q(s.pip_proxy)}" if s.pip_proxy else ""
-        (low, high) = PYTHON_RANGE
-        check = (f"import sys; v = sys.version_info[:2]; sys.exit(0 if {low} <= v <= {high} "
-                 f"else 'Python 3.10-3.12 required, found %d.%d' % v)")
+        """Copy the local uv to *host*; it installs Python and the locked environment there."""
+        s, ws, venv = self.settings, self.settings.workspace_of(host), self.settings.venv_of(host)
+        uv = shutil.which("uv")
+        if not uv:
+            raise SystemExit("uv is not installed here; it is copied to the hosts to install "
+                             "the environment (https://docs.astral.sh/uv/).")
+        self.ssh(host, f"mkdir -p {q(ws)}/bin")
+        self.rsync(host, os.path.realpath(uv), self.remote(host, f"{ws}/bin/uv"))
+        proxy = (f"export HTTPS_PROXY={q(s.pip_proxy)} HTTP_PROXY={q(s.pip_proxy)}\n"
+                 if s.pip_proxy else "")
+        low = ".".join(map(str, GLIBC_PLOTTING))
+        skip = " ".join(f"--no-install-package {name}" for name in PLOTTING_PACKAGES)
         self.ssh(host, f"""
 set -e
-{q(s.python)} -c {q(check)}
-if [ ! -x {q(s.venv)}/bin/python ]; then
-    {q(s.python)} -m venv {q(s.venv)}
-    {q(s.venv)}/bin/pip install --quiet --upgrade pip{proxy}
+{proxy}export UV_CACHE_DIR={q(ws)}/uv-cache UV_PYTHON_INSTALL_DIR={q(ws)}/python \\
+    UV_PYTHON_INSTALL_BIN=0 UV_PROJECT_ENVIRONMENT={q(venv)}
+cd {q(ws)}
+GLIBC=$(getconf GNU_LIBC_VERSION | cut -d ' ' -f 2)
+SKIP=
+if [ "$(printf '%s\\n' {low} "$GLIBC" | sort -V | head -n 1)" != {low} ]; then
+    echo "glibc $GLIBC: no plotting packages, so runs on this host cannot draw figures" >&2
+    SKIP="{skip}"
 fi
-{q(s.venv)}/bin/pip install --quiet{proxy} --editable {q(s.workspace)}
+bin/uv sync --frozen --quiet $SKIP
+{q(venv)}/bin/python -c "import numba, optuna, reservoirpy, sklearn"
 """)
-        log.info("[%s] venv ready", host)
+        log.info("[%s] environment ready", host)
 
     def stop_service(self, host: str) -> None:
         if self.settings.service:
@@ -233,16 +271,17 @@ fi
         """Run *jobs* (log name, shell command) one after another in a detached session.
 
         Each job logs to ``<workspace>/logs/run-<name>.log``.  The session exports the
-        host label and the local git SHA so that every trial records them.
+        host label and the local git SHA so that every trial records them, and runs in its
+        own process group, which ``--cleanup`` stops.
         """
-        s, ws = self.settings, self.settings.workspace
+        ws = self.settings.workspace_of(host)
         sha, dirty = git_state()
         if dirty == "true":
             log.warning("Uncommitted local changes: runs will record git_dirty=true.")
         lines = [
             "set -o pipefail",
             f"cd {q(ws)}",
-            f"source {q(s.venv)}/bin/activate",
+            f"source {q(self.settings.venv_of(host))}/bin/activate",
             f"export BIORESERVOIR_MACHINE_LABEL={q(host)} BIORESERVOIR_GIT_COMMIT={q(sha)} "
             f"BIORESERVOIR_GIT_DIRTY={q(dirty)}",
             "NPROC=$(nproc)",
@@ -270,7 +309,7 @@ fi
             f"cat > {session} << 'BIORESERVOIR_SESSION'",
             *lines,
             "BIORESERVOIR_SESSION",
-            f"nohup bash {session} > {q(f'{ws}/logs/session.log')} 2>&1 &",
+            f"setsid nohup bash {session} > {q(f'{ws}/logs/session.log')} 2>&1 < /dev/null &",
             f"echo $! > {pid}",
             f'echo "session started (PID $(cat {pid}))"',
         ])
@@ -278,18 +317,20 @@ fi
         self.ssh(host, script)
 
     def session_alive(self, host: str) -> bool:
-        pid = q(f"{self.settings.workspace}/logs/session.pid")
+        pid = q(f"{self.settings.workspace_of(host)}/logs/session.pid")
         out = self.ssh(host, f'[ -f {pid} ] && kill -0 "$(cat {pid})" 2>/dev/null '
                              f"&& echo alive || echo idle", capture=True, check=False)
         return out.strip() == "alive"
 
     def cleanup(self, host: str) -> None:
-        """Stop the session and its Python processes, then delete the remote workspace."""
-        ws = self.settings.workspace
+        """Stop the session and every process it started, then delete the remote workspace."""
+        ws = self.settings.workspace_of(host)
         pid = q(f"{ws}/logs/session.pid")
         self.ssh(host, f"""
-if [ -f {pid} ]; then kill "$(cat {pid})" 2>/dev/null || true; sleep 1; fi
-pkill -f {q(f'{self.settings.venv}/bin/python')} 2>/dev/null || true
+if [ -f {pid} ]; then
+    kill -- -"$(cat {pid})" 2>/dev/null || kill "$(cat {pid})" 2>/dev/null || true
+    sleep 1
+fi
 rm -rf -- {q(ws)}
 """)
         log.info("[%s] workspace removed", host)
@@ -371,7 +412,7 @@ for name in sys.argv[2:]:
 """
 
 _INVENTORY_SCRIPT = """
-import json, platform, re, shutil, subprocess
+import json, os, platform, re, shutil, subprocess
 info, release = {}, {}
 try:
     with open("/etc/os-release") as f:
@@ -387,6 +428,10 @@ info["os_family"] = " ".join([release.get("ID", "")] + release.get("ID_LIKE", ""
 match = re.match(r"[0-9]+(?:[.][0-9]+){0,2}", platform.release())
 info["kernel"] = match.group(0) if match else ""
 info["arch"] = platform.machine()
+try:
+    info["glibc"] = os.confstr("CS_GNU_LIBC_VERSION").split()[-1]
+except (AttributeError, OSError, ValueError):
+    info["glibc"] = ""
 model, sockets, cores, logical, socket_id = "", set(), set(), 0, None
 with open("/proc/cpuinfo") as f:
     for line in f:
@@ -425,16 +470,18 @@ def _python_heredoc(python: str, script: str, *args: str) -> str:
 
 
 def check_requirements(info: dict) -> list[str]:
-    """Return the ways a host inventory falls short of RHEL 9 + Python 3.10-3.12."""
-    problems = []
-    if "rhel" not in info.get("os_family", "").split() or not str(
-            info.get("os_version", "")).startswith("9"):
-        problems.append(f"expected RHEL 9 or compatible, found {info.get('os_name')} "
-                        f"{info.get('os_version')}")
-    version = tuple(int(x) for x in info.get("configured_python", "0.0").split(".")[:2])
-    if not PYTHON_RANGE[0] <= version <= PYTHON_RANGE[1]:
-        problems.append(f"Python {info.get('configured_python')} is outside 3.10-3.12")
-    return problems
+    """Return the ways a host inventory falls short of the glibc the environment needs."""
+    found = info.get("glibc") or "unknown"
+    try:
+        glibc = tuple(int(x) for x in found.split(".")[:2])
+    except ValueError:
+        glibc = (0, 0)
+    if glibc < GLIBC_MIN:
+        return [f"glibc {found}: uv's Python 3.12 needs glibc 2.17 or newer"]
+    if glibc < GLIBC_PLOTTING:
+        return [f"glibc {found}: the plotting packages need glibc 2.28 or newer, so runs "
+                "on this host cannot draw figures"]
+    return []
 
 
 def for_hosts(hosts: Sequence[str], action: Callable[[str], object]) -> dict[str, object]:
@@ -450,7 +497,7 @@ def for_hosts(hosts: Sequence[str], action: Callable[[str], object]) -> dict[str
 
 
 def inventory(deployer: Deployer, hosts: Sequence[str]) -> None:
-    """Record CPU, memory, OS and Python versions per host label in hosts.json."""
+    """Record CPU, memory, OS, glibc and Python versions per host label in hosts.json."""
     s = deployer.settings
     outputs = for_hosts(hosts, lambda h: deployer.ssh(
         h, _python_heredoc(s.python, _INVENTORY_SCRIPT), capture=True))
@@ -468,7 +515,7 @@ def inventory(deployer: Deployer, hosts: Sequence[str]) -> None:
         print(f"  {host:<8} {info['cpu_model']}, {info['sockets']} socket(s), "
               f"{info['physical_cores']} cores / {info['logical_cpus']} threads, "
               f"{info['ram_gb']} GB RAM, {info['os_name']} {info['os_version']}, "
-              f"Python {info['configured_python']}")
+              f"glibc {info.get('glibc')}, Python {info['configured_python']}")
         for problem in info["problems"]:
             print(f"           requirement not met: {problem}")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -477,9 +524,10 @@ def inventory(deployer: Deployer, hosts: Sequence[str]) -> None:
 
 
 def show_status(deployer: Deployer, hosts: Sequence[str]) -> None:
-    ws = deployer.settings.workspace
-    pid = q(f"{ws}/logs/session.pid")
-    script = f"""
+    def status(host: str) -> str:
+        ws = deployer.settings.workspace_of(host)
+        pid = q(f"{ws}/logs/session.pid")
+        return deployer.ssh(host, f"""
 if [ -f {pid} ] && kill -0 "$(cat {pid})" 2>/dev/null; then
     SECS=$(ps -o etimes= -p "$(cat {pid})" | tr -d ' ')
     printf 'running|%dh%02dm|' $((SECS / 3600)) $((SECS % 3600 / 60))
@@ -487,8 +535,9 @@ else
     printf 'idle|-|'
 fi
 tail -q -n 30 {q(ws)}/logs/run-*.log 2>/dev/null | grep -v -e '^$' -e '^==>' | tail -n 1
-"""
-    outputs = for_hosts(hosts, lambda h: deployer.ssh(h, script, capture=True, check=False))
+""", capture=True, check=False)
+
+    outputs = for_hosts(hosts, status)
     print(f"\n  {'Host':<8} {'Session':<8} {'Up':>7}  Last log line")
     for host in hosts:
         parts = (outputs.get(host) or "unreachable|-|").split("|", 2)
@@ -498,9 +547,9 @@ tail -q -n 30 {q(ws)}/logs/run-*.log 2>/dev/null | grep -v -e '^$' -e '^==>' | t
 
 def show_progress(deployer: Deployer, hosts: Sequence[str], studies: Sequence[str]) -> None:
     s = deployer.settings
-    script = _python_heredoc(f"{s.venv}/bin/python", _PROGRESS_SCRIPT,
-                             f"{s.workspace}/results/optuna", *studies)
-    outputs = for_hosts(hosts, lambda h: deployer.ssh(h, script, capture=True, check=False))
+    outputs = for_hosts(hosts, lambda h: deployer.ssh(h, _python_heredoc(
+        f"{s.venv_of(h)}/bin/python", _PROGRESS_SCRIPT, f"{s.workspace_of(h)}/results/optuna",
+        *studies), capture=True, check=False))
     for host in hosts:
         print(f"\n  [{host}]\n  {'Study':<32} {'Done':>5} {'Run':>5} {'Fail':>5} {'Prnd':>5}  Best")
         for line in (outputs.get(host) or "").splitlines():
@@ -511,10 +560,13 @@ def show_progress(deployer: Deployer, hosts: Sequence[str], studies: Sequence[st
 
 
 def show_logs(deployer: Deployer, hosts: Sequence[str], n_lines: int) -> None:
-    script = (f"for f in {q(deployer.settings.workspace)}/logs/run-*.log; do "
-              f'[ -f "$f" ] || continue; echo "--- $(basename "$f")"; tail -n {int(n_lines)} "$f"; '
-              "done")
-    outputs = for_hosts(hosts, lambda h: deployer.ssh(h, script, capture=True, check=False))
+    def logs(host: str) -> str:
+        return deployer.ssh(host, (
+            f"for f in {q(deployer.settings.workspace_of(host))}/logs/run-*.log; do "
+            f'[ -f "$f" ] || continue; echo "--- $(basename "$f")"; tail -n {int(n_lines)} "$f"; '
+            "done"), capture=True, check=False)
+
+    outputs = for_hosts(hosts, logs)
     for host in hosts:
         print(f"\n=== {host} ===\n{outputs.get(host) or '(no logs)'}")
 
@@ -522,9 +574,10 @@ def show_logs(deployer: Deployer, hosts: Sequence[str], n_lines: int) -> None:
 def reset_running(deployer: Deployer, hosts: Sequence[str], studies: Sequence[str]) -> None:
     """Mark orphaned RUNNING trials as FAIL (e.g. after workers were killed)."""
     s = deployer.settings
-    script = _python_heredoc(f"{s.venv}/bin/python", _RESET_SCRIPT,
-                             f"{s.workspace}/results/optuna", *studies)
-    for host, out in for_hosts(hosts, lambda h: deployer.ssh(h, script, capture=True)).items():
+    outputs = for_hosts(hosts, lambda h: deployer.ssh(h, _python_heredoc(
+        f"{s.venv_of(h)}/bin/python", _RESET_SCRIPT, f"{s.workspace_of(h)}/results/optuna",
+        *studies), capture=True))
+    for host, out in outputs.items():
         print(f"  [{host}] {out or ''}")
 
 
@@ -552,9 +605,10 @@ def build_parser() -> argparse.ArgumentParser:
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     mode = p.add_mutually_exclusive_group()
     mode.add_argument("--inventory", action="store_true",
-                      help="Record each host's CPU, memory, OS and Python in "
+                      help="Record each host's CPU, memory, OS, glibc and Python in "
                            "results/metrics/hosts.json and check the requirements.")
-    mode.add_argument("--setup", action="store_true", help="Sync code and data, build the venv.")
+    mode.add_argument("--setup", action="store_true",
+                      help="Sync code and data; install Python and the locked environment.")
     mode.add_argument("--status", action="store_true", help="Session state and last log line.")
     mode.add_argument("--progress", action="store_true", help="Trial counts per remote study.")
     mode.add_argument("--logs", nargs="?", const=30, type=int, metavar="N",
