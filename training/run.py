@@ -387,7 +387,7 @@ def _simulate(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray,
     reservoir_cfg = dict(cfg["reservoir"]["params"], reservoir_type=cfg["reservoir"]["type"])
     reservoir, _ = build_reservoir(reservoir_cfg, seed=int(cfg["reservoir"]["seed"]))
     if cfg["cv"]["simulate"] == "once":
-        features, timing = _features(cfg, X, processes)
+        features, timing = _features(cfg, X, reservoir, processes)
         result, artifacts = cross_validate_features(
             features, Y, make_readout(cfg["readout"]), folds=int(cfg["cv"]["folds"]),
             seed=int(cfg["cv"]["seed"]), primary_average=str(cfg["cv"]["primary_average"]),
@@ -414,9 +414,10 @@ def _classes(Y: np.ndarray) -> np.ndarray:
     return np.argmax(np.asarray(Y).reshape(len(Y), -1), axis=1)
 
 
-def _features(cfg: dict[str, Any], X: np.ndarray,
+def _features(cfg: dict[str, Any], X: np.ndarray, reservoir,
               processes: int) -> tuple[np.ndarray, dict[str, Any]]:
-    """Scale the beats and simulate each once; return the features and the timing."""
+    """Scale the beats and simulate each once on the run's ``reservoir``; return the
+    features and the timing."""
     import time
 
     from training.simulate import simulate_beats
@@ -425,8 +426,7 @@ def _features(cfg: dict[str, Any], X: np.ndarray,
     X_scaled, _ = standardize_data(X, X[:1], scaler_type=str(cfg["task"]["scaler"]))
     started = time.perf_counter()
     features = simulate_beats(
-        dict(cfg["reservoir"]["params"], reservoir_type=cfg["reservoir"]["type"]),
-        int(cfg["reservoir"]["seed"]), X_scaled, noise_seed=int(cfg["reservoir"]["seed"]),
+        reservoir, X_scaled, noise_seed=int(cfg["reservoir"]["seed"]),
         aggregation=str(cfg["features"]["aggregation"]),
         window=int(cfg["features"]["window"]), processes=processes)
     elapsed = time.perf_counter() - started
@@ -440,8 +440,10 @@ def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: n
                     Y_test: np.ndarray, beat_ids: np.ndarray, processes: int = 1):
     """Fit the readout on the whole pool and evaluate it on a held-out split, as fold 0.
 
-    The pool is augmented and scaled as a cross-validation training fold, and the metrics
-    average over the classes of the split.
+    The metrics average over the classes of the split. With ``cv.simulate: per_fold`` the
+    pool is augmented (``cv.noise_rate``, ``cv.noise_ratio``) and scaled as a training fold.
+    Augmentation needs ``per_fold``: its noisy copies are extra training beats of one fold,
+    which a feature row per beat, shared by every fold, cannot hold.
     """
     from optimization.reservoirs import build_reservoir
     from training.cross_validate import Fold, _prepare_fold_data, run_fold
@@ -459,7 +461,7 @@ def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: n
     if cfg["cv"]["simulate"] == "once":
         from training.cross_validate import fit_on_features
 
-        features, _ = _features(cfg, X_all, processes)
+        features, _ = _features(cfg, X_all, reservoir, processes)
         artifact = fit_on_features(features, Y_all, make_readout(cfg["readout"]), fold,
                                    save_states=bool(cfg["outputs"]["save_states"]),
                                    primary_average=str(cfg["cv"]["primary_average"]),

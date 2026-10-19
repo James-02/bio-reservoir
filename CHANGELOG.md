@@ -22,7 +22,8 @@ Each entry is marked **[science]** if it changes a reported number, or
   features (`cv.simulate: once`, the new default; `training.simulate`). The folds and the
   readouts are the same as before, the simulation is done once instead of once per fold,
   and `--processes` runs beats in worker processes with one thread each, which keeps every
-  core busy. Each beat draws its noise from its own seed (the reservoir seed and the beat's
+  core busy; the reservoir warms up once per run and each worker gets a copy of it. Each
+  beat draws its noise from its own seed (the reservoir seed and the beat's
   position), so a beat's features no longer depend on its fold or on the beats run before
   it; a reservoir with noise therefore gives slightly different numbers than before.
   `cv.simulate: per_fold` keeps the previous path, and the `v0.1` preset and configs that

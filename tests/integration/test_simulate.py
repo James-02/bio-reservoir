@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from optimization.reservoirs import build_reservoir
 from training.simulate import simulate_beats
 
 PARAMS = {
@@ -16,6 +17,7 @@ PARAMS = {
 
 def test_worker_processes_give_the_features_of_one_process():
     X = np.random.default_rng(0).normal(size=(9, 10, 1))
-    here = simulate_beats(PARAMS, 2, X, noise_seed=5, aggregation="mean")
-    workers = simulate_beats(PARAMS, 2, X, noise_seed=5, aggregation="mean", processes=3)
+    reservoir = build_reservoir(PARAMS, seed=2)[0]
+    here = simulate_beats(reservoir, X, noise_seed=5, aggregation="mean")
+    workers = simulate_beats(reservoir, X, noise_seed=5, aggregation="mean", processes=3)
     np.testing.assert_array_equal(here, workers)

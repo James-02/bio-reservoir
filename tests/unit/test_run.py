@@ -292,6 +292,16 @@ class TestSimulation:
         assert metrics["simulation"]["beats"] == 24
         assert "simulation" not in json.loads((per_fold / "metrics.json").read_text())
 
+    def test_a_run_warms_its_reservoir_up_once(self, tmp_path, monkeypatch):
+        from bioreservoir.node import BioReservoir
+
+        warm_ups = []
+        warm_up = BioReservoir._warmup_nodes
+        monkeypatch.setattr(BioReservoir, "_warmup_nodes",
+                            lambda node: warm_ups.append(node) or warm_up(node))
+        _execute(_config(), tmp_path / "run")
+        assert len(warm_ups) == 1
+
     @pytest.mark.parametrize("change, message", [
         ({"cv": {"simulate": "twice"}}, "cv.simulate"),
         ({"cv": {"noise_rate": 0.1, "noise_ratio": 0.2}}, "augmentation"),

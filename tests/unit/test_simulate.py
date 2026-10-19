@@ -24,6 +24,10 @@ def _beats(n=6, steps=10, seed=0):
     return np.random.default_rng(seed).normal(size=(n, steps, 1))
 
 
+def _reservoir(params=PARAMS, seed=2):
+    return build_reservoir(params, seed=seed)[0]
+
+
 def test_beat_seeds_depend_only_on_the_run_seed_and_the_beat():
     assert beat_seed(3, 0) == beat_seed(3, 0)
     assert len({beat_seed(3, 0), beat_seed(3, 1), beat_seed(4, 0)}) == 3
@@ -44,18 +48,32 @@ def test_reseeding_keeps_the_noise_settings_and_repeats_the_draws():
 @pytest.mark.parametrize("aggregation", ["final", "mean"])
 def test_without_noise_the_features_are_those_of_the_per_fold_path(aggregation):
     X = _beats()
-    features = simulate_beats(PARAMS, 2, X, noise_seed=5, aggregation=aggregation)
-    per_fold = train(build_reservoir(PARAMS, seed=2)[0], X, readout_aggregation=aggregation)
+    features = simulate_beats(_reservoir(), X, noise_seed=5, aggregation=aggregation)
+    per_fold = train(_reservoir(), X, readout_aggregation=aggregation)
     np.testing.assert_array_equal(features, np.vstack(per_fold))
 
 
 def test_with_noise_a_beat_gets_the_same_features_in_any_batch():
-    params = dict(PARAMS, noise_in=0.2, noise_rc=0.2)
+    reservoir = _reservoir(dict(PARAMS, noise_in=0.2, noise_rc=0.2))
     X = _beats()
-    whole = simulate_beats(params, 2, X, noise_seed=5)
-    part = simulate_beats(params, 2, X[2:4], noise_seed=5, first_index=2)
+    whole = simulate_beats(reservoir, X, noise_seed=5)
+    part = simulate_beats(reservoir, X[2:4], noise_seed=5, first_index=2)
     np.testing.assert_array_equal(whole[2:4], part)
-    assert not np.array_equal(whole, simulate_beats(params, 2, X, noise_seed=6))
+    assert not np.array_equal(whole, simulate_beats(reservoir, X, noise_seed=6))
+
+
+def test_beats_run_on_a_copy_of_the_warmed_up_reservoir(monkeypatch):
+    from bioreservoir.node import BioReservoir
+
+    warm_ups = []
+    warm_up = BioReservoir._warmup_nodes
+    monkeypatch.setattr(BioReservoir, "_warmup_nodes",
+                        lambda node: warm_ups.append(node) or warm_up(node))
+    reservoir = _reservoir(dict(PARAMS, noise_in=0.2))
+    generator = reservoir.hypers["noise_generator"]
+    simulate_beats(reservoir, _beats(), noise_seed=5)
+    assert len(warm_ups) == 1 and warm_ups[0] is reservoir
+    assert reservoir.hypers["noise_generator"] is generator
 
 
 def test_cross_validated_features_test_every_beat_once_with_a_fitted_readout_per_fold():
