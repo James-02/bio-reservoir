@@ -29,7 +29,9 @@ each with ``--processes`` workers, so a study with a seeded sampler runs the sam
 again. Run one process per study: several processes sharing a study would run more trials
 than asked and could repeat points. The trial count includes failed trials; a trial that
 raises stops the study, and running the command again resumes it. Only ``study.trials``
-may change between runs of a study.
+may change between runs of a study. With ``reservoir.states_from`` the trials refit only the
+readout on the saved states of a run (no simulation), so only ``readout`` settings can be
+searched.
 
     python -m training.run study CONFIG.yaml [--processes N] [--trials N] [--storage URL]
     python -m training.run study-best CONFIG.yaml [--out BEST.yaml] [--storage URL]
@@ -93,10 +95,14 @@ def check(run_cfg: dict[str, Any], study: dict[str, Any]) -> None:
     if metric not in SCALAR_METRICS:
         raise ValueError(f"study.metric {metric!r} is not a run metric; choose from "
                          f"{', '.join(SCALAR_METRICS)}.")
-    kind = resolve(run_cfg)["reservoir"].get("type")
+    resolved = resolve(run_cfg)
+    kind = resolved["reservoir"].get("type")
     for path, spec in study["search"].items():
         apply(run_cfg, {path: None})
         keys = path.split(".")
+        if "states_from" in resolved["reservoir"] and keys[0] != "readout":
+            raise ValueError(f"Search path {path!r}: a study on saved states "
+                             "(reservoir.states_from) can only search readout settings.")
         known = (set(DEFAULTS[keys[0]]) | set(_EXTRA_SETTINGS.get(keys[0], ()))
                  if keys[0] in DEFAULTS else set(_SETTINGS[keys[0]]))
         if keys[1] not in known:
@@ -167,12 +173,24 @@ def run_study(cfg: dict[str, Any], *, processes: int = 1, trials: int | None = N
     """Run the study of ``cfg`` until it has its number of finished trials; return it."""
     import optuna
 
-    from training.run import _pool_sha256, _simulate, dump_config, load_task, resolve, summarise
+    from training.compare import load_folds
+    from training.run import (
+        _pool_sha256,
+        _simulate,
+        dump_config,
+        load_task,
+        refit_readout,
+        resolve,
+        summarise,
+    )
 
     run_cfg, study_cfg = split(cfg)
     check(run_cfg, study_cfg)
     git = provenance.git_info()
     citable = provenance.require_clean(git, allow_dirty)
+    template = resolve(run_cfg)
+    saved = (load_folds(template["reservoir"]["states_from"], states=True)
+             if "states_from" in template["reservoir"] else None)
     pools: dict[str, tuple] = {}
 
     def pool(task: dict[str, Any]) -> tuple:
@@ -192,7 +210,8 @@ def run_study(cfg: dict[str, Any], *, processes: int = 1, trials: int | None = N
         raise ValueError(f"Study {name(cfg)!r} in {url} was run with another config; only "
                          "study.trials may change. Give the study a new name.")
     study.set_user_attr("config", dump_config(cfg))
-    study.set_user_attr("data_pool_sha256", pool(resolve(run_cfg)["task"])[2])
+    if saved is None:
+        study.set_user_attr("data_pool_sha256", pool(template["task"])[2])
     queued = [t.params or getattr(t, "system_attrs", {}).get("fixed_params", {})
               for t in study.trials]
     for point in study_cfg.get("enqueue") or []:
@@ -201,14 +220,17 @@ def run_study(cfg: dict[str, Any], *, processes: int = 1, trials: int | None = N
 
     def objective(trial) -> float:
         resolved = resolve(apply(run_cfg, suggest(trial, study_cfg["search"])))
-        X, Y, pool_sha256 = pool(resolved["task"])
-        result, artifacts = _simulate(resolved, X, Y, processes)
+        if saved is None:
+            X, Y, pool_sha256 = pool(resolved["task"])
+            result, artifacts = _simulate(resolved, X, Y, processes)
+            trial.set_user_attr("data_pool_sha256", pool_sha256)
+        else:
+            result, artifacts = {}, refit_readout(resolved, saved, processes)
         metrics = summarise(artifacts, resolved["cv"]["primary_average"])
         trial.set_user_attr("config", dump_config(resolved))
         trial.set_user_attr("summary", metrics["summary"])
         trial.set_user_attr("fold_f1", [f["f1"] for f in metrics["folds"]])
         trial.set_user_attr("code", {"commit": git.get("commit"), "citable": citable})
-        trial.set_user_attr("data_pool_sha256", pool_sha256)
         if "simulation" in result:
             trial.set_user_attr("simulation", result["simulation"])
         return float(metrics["mean"][metric])

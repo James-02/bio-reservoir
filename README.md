@@ -93,7 +93,7 @@ python -m training.run study my-study.yaml --processes 128   # resumes an existi
 python -m training.run study-best my-study.yaml --out best.yaml
 ```
 
-Trials run one at a time with the beats in parallel, so a study with a seeded sampler runs the same trials again; run one process per study. `sampler: {type: grid}` runs every combination of the `choices`. The study is stored in `results/optuna/optuna-<name>.db` (or `--storage`). Running the command again resumes the study; only `study.trials` may change between runs, and every search path must name a setting the run reads.
+Trials run one at a time with the beats in parallel, so a study with a seeded sampler runs the same trials again; run one process per study. `sampler: {type: grid}` runs every combination of the `choices`. The study is stored in `results/optuna/optuna-<name>.db` (or `--storage`). Running the command again resumes the study; only `study.trials` may change between runs, and every search path must name a setting the run reads. A study whose config takes its states from another run (`reservoir: {states_from: <run folder>}`, a run made with `outputs.save_states: true`) refits only the readout on the saved states of each fold, so readout settings can be tuned without simulating the reservoir again.
 
 ### Held-out evaluation
 

@@ -65,6 +65,8 @@ Each entry is marked **[science]** if it changes a reported number, or
   `study-best` writes the best trial as a plain run config. A seeded study runs the same
   trials again. Search paths must name settings the run reads, and a study keeps its
   definition: rerunning it with another config (other than `study.trials`) is refused.
+  With `reservoir.states_from` a study refits only the readout on the saved states of a
+  run, to tune readout settings without simulating again.
 - [engineering] `--archive VERSION` reads frozen studies from `archive/<version>/`.
 - [engineering] `optimization/deploy.py` and `optimization/collect.py` are now part of the
   repository. Host addresses, user, remote workspace, pip proxy and service come from

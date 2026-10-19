@@ -171,6 +171,35 @@ def test_the_best_trial_becomes_a_plain_run_config(tmp_path):
     assert (run_dir / "metrics.json").is_file()
 
 
+def _readout_study(states_from, search):
+    return {"name": "readout-study", "reservoir": {"states_from": str(states_from)},
+            "readout": {"classifier": "Ridge", "params": {"alpha": 1e-3}},
+            "study": {"trials": 2, "sampler": {"type": "grid"}, "search": search}}
+
+
+def test_a_study_on_saved_states_refits_only_the_readout(tmp_path, monkeypatch):
+    from training.compare import load_folds
+
+    source_cfg = {k: v for k, v in _config().items() if k != "study"}
+    source = run_module.execute(dict(source_cfg, outputs={"save_states": True}),
+                                out=tmp_path / "source", allow_dirty=True)
+    monkeypatch.setattr(run_module, "_simulate", lambda *args: pytest.fail("simulated"))
+    search = {"readout.params.alpha": {"type": "float", "choices": [1e-3, 1.0]}}
+    study = study_module.run_study(_readout_study(source, search))
+    assert len(study.trials) == 2
+    for trial in study.trials:
+        cfg = run_module.resolve(study_module.apply(
+            study_module.split(_readout_study(source, search))[0], trial.params))
+        refit = run_module.refit_readout(cfg, load_folds(source, states=True))
+        assert trial.value == pytest.approx(run_module.summarise(refit)["mean"]["f1"])
+
+
+def test_a_study_on_saved_states_only_searches_the_readout(tmp_path):
+    search = {"reservoir.params.input_scaling": {"type": "float", "low": 0.1, "high": 1.0}}
+    with pytest.raises(ValueError, match="only search readout settings"):
+        study_module.run_study(_readout_study(tmp_path, search))
+
+
 def test_the_command_line_runs_a_study_and_writes_its_best_config(tmp_path, capsys):
     path = tmp_path / "study.yaml"
     path.write_text(yaml.safe_dump(_config()))
