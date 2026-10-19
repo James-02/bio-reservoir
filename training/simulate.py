@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import os
-import pickle
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import partial
@@ -67,9 +66,9 @@ def _run_beats(node, noise_seed: int, mode: str, beats: np.ndarray,
     return np.asarray(rows)
 
 
-def _receive_reservoir(pickled: bytes) -> None:
+def _receive_reservoir(reservoir) -> None:
     global _worker_reservoir
-    _worker_reservoir = pickle.loads(pickled)
+    _worker_reservoir = reservoir
 
 
 def _simulate_chunk(job) -> tuple[np.ndarray, np.ndarray]:
@@ -124,7 +123,7 @@ def simulate_beats(reservoir, X: np.ndarray, *, noise_seed: int, aggregation: st
     features = None
     with _one_thread_per_process():
         pool = mp.get_context("spawn").Pool(processes, initializer=_receive_reservoir,
-                                            initargs=(pickle.dumps(reservoir),))
+                                            initargs=(reservoir,))
     try:
         for done, rows in pool.imap_unordered(_simulate_chunk, jobs):
             if features is None:
