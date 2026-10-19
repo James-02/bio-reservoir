@@ -140,6 +140,7 @@ class TestResolve:
         assert resolved["features"] == {"aggregation": "last_N", "window": 5}
         assert resolved["task"]["rows"] == 4015
         assert resolved["cv"]["noise_rate"] == 0.0 and resolved["cv"]["noise_ratio"] > 0
+        assert resolved["cv"]["simulate"] == "per_fold"
         assert resolved["readout"]["classifier"] == "KNN"
         assert resolved["readout"]["params"] == {"n_neighbors": 3, "weights": "distance",
                                                  "p": 2.0}
@@ -274,6 +275,44 @@ class TestExecute:
         run_dir = run_module.execute(_config(), allow_dirty=True)
         assert run_dir.parent == isolated / "results" / "runs"
         assert run_dir.name.startswith("unit-")
+
+
+class TestSimulation:
+    def test_beats_are_simulated_once_except_in_the_v0_1_preset(self):
+        assert run_module.resolve(_config())["cv"]["simulate"] == "once"
+        assert run_module.resolve(_config(preset="v0.1"))["cv"]["simulate"] == "per_fold"
+
+    def test_without_noise_both_paths_give_the_same_predictions(self, tmp_path):
+        once = _execute(_config(), tmp_path / "once")
+        per_fold = _execute(_config(cv={"folds": 3, "simulate": "per_fold"}),
+                            tmp_path / "per_fold")
+        for pa, pb in zip(_predictions(once), _predictions(per_fold), strict=True):
+            np.testing.assert_array_equal(pa, pb)
+        metrics = json.loads((once / "metrics.json").read_text())
+        assert metrics["simulation"]["beats"] == 24
+        assert "simulation" not in json.loads((per_fold / "metrics.json").read_text())
+
+    def test_a_run_warms_its_reservoir_up_once(self, tmp_path, monkeypatch):
+        from bioreservoir.node import BioReservoir
+
+        warm_ups = []
+        warm_up = BioReservoir._warmup_nodes
+        monkeypatch.setattr(BioReservoir, "_warmup_nodes",
+                            lambda node: warm_ups.append(node) or warm_up(node))
+        _execute(_config(), tmp_path / "run")
+        assert len(warm_ups) == 1
+
+    @pytest.mark.parametrize("change, message", [
+        ({"cv": {"simulate": "twice"}}, "cv.simulate"),
+        ({"cv": {"noise_rate": 0.1, "noise_ratio": 0.2}}, "augmentation"),
+        ({"task": {"rows": 24, "scaler": "standard"}}, "fitted on a training fold"),
+    ])
+    def test_settings_that_need_the_per_fold_path_are_rejected(self, change, message):
+        with pytest.raises(ValueError, match=message):
+            run_module.resolve(_config(**change))
+        per_fold = {**change, "cv": {**change.get("cv", {}), "simulate": "per_fold"}}
+        if change.get("cv", {}).get("simulate") != "twice":
+            run_module.resolve(_config(**per_fold))
 
 
 def test_load_task_subsamples_to_the_requested_rows(monkeypatch):
