@@ -56,6 +56,14 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Added
 
+- [engineering] Optuna studies defined in a run config (`training.study`): a `study`
+  section names the values to search by their dotted paths in the config
+  (`reservoir.params.input_scaling`, `readout.params.alpha`, ...), the metric, the sampler
+  (seeded TPE, random or grid) and points to try first. Every trial runs the same pipeline
+  as `training.run run` and records its resolved config, code version and fold scores;
+  `python -m training.run study` runs a study one trial at a time and resumes it, and
+  `study-best` writes the best trial as a plain run config. A seeded study runs the same
+  trials again.
 - [engineering] `--archive VERSION` reads frozen studies from `archive/<version>/`.
 - [engineering] `optimization/deploy.py` and `optimization/collect.py` are now part of the
   repository. Host addresses, user, remote workspace, pip proxy and service come from

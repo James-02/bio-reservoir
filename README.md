@@ -72,6 +72,29 @@ Each run writes `results/runs/<name>-<UTC time>/`: the resolved `config.yaml`, `
 
 A reservoir starts every beat from the same state, so a beat's features do not depend on the fold. A run therefore simulates each beat once and every fold fits its readout on these features (`cv.simulate: once`, the default); `--processes` sets the number of worker processes that simulate beats in parallel, each with one thread. Each beat draws its noise from its own seed, so the features do not depend on how the beats are shared between processes. `cv.simulate: per_fold` simulates the beats of every fold, as `v0.1` did, with `--processes` folds in parallel; the `v0.1` preset uses it, and so does augmentation (`cv.noise_rate`, `cv.noise_ratio`), whose noisy copies of a fold's training beats belong to that fold only.
 
+### Studies
+
+A run config with a `study` section is an Optuna search over its own values. Each trial puts the sampled values into the config at their dotted paths and runs it through the same pipeline as a single run; the trials record their resolved configs, and `study-best` writes the best one as a plain config to run for the reported numbers.
+
+```yaml
+study:
+  trials: 300
+  metric: f1                  # mean cross-validation F1 (cv.primary_average)
+  sampler: {type: tpe, seed: 6337, multivariate: true, n_startup_trials: 20}
+  enqueue:
+    - {reservoir.params.input_scaling: 0.083}
+  search:
+    reservoir.params.input_scaling: {type: float, low: 0.005, high: 0.5, log: true}
+    reservoir.params.units: {type: categorical, choices: [256, 1024]}
+```
+
+```bash
+python -m training.run study my-study.yaml --processes 128   # resumes an existing study
+python -m training.run study-best my-study.yaml --out best.yaml
+```
+
+Trials run one at a time with the beats in parallel, so a study with a seeded sampler runs the same trials again. `sampler: {type: grid}` runs every combination of the `choices`. The study is stored in `results/optuna/optuna-<name>.db` (or `--storage`); several processes can share it.
+
 ### Held-out evaluation
 
 Besides the cross-validation pool, three held-out splits of the five-class dataset hold beats (N, S, V and Q) that no `v0.1` optimisation study used: `validation-1` and `validation-2` (803 beats per class each) and `test` (370 beats per class). Their beat IDs and checksums are tracked in [data/splits/heldout.json](data/splits/heldout.json); `python -m utils.heldout --check` rebuilds them from the data and verifies them. Select models by cross-validation on the pool; use the validation splits to check how a choice generalises, and the `test` split once, for the final evaluation.
