@@ -9,6 +9,11 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Changed
 
+- [engineering] Worker processes read the run's reservoir from a temporary file when they
+  start. It used to travel with each worker's start-up, so the workers started one after
+  another (about 0.5 s each): simulating the 4,015 beats of the balanced pool with a
+  1,000-node reservoir and 120 workers took 74 s, 63 s of it starting the workers, and
+  now takes 16 s. The features are unchanged.
 - [engineering] `optimization/deploy.py` installs each host's environment from `uv.lock`:
   it copies the local `uv` to the host's workspace, and uv installs Python 3.12 and the
   locked packages there, so the host's own Python version no longer matters. The code
