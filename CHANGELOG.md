@@ -65,6 +65,12 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Added
 
+- [engineering] A `RidgeCV` readout: ridge whose strength is chosen by leave-one-out on
+  each training fold (scikit-learn's `RidgeClassifierCV`, from `params.alphas`, by default
+  10^-4 to 10^6, two per decade). One decomposition of the training features gives the
+  leave-one-out errors for every alpha, so the choice costs about one fit, where
+  `readout.search` fits once per alpha and inner fold. Each fold's alpha is recorded in
+  `metrics.json`.
 - [engineering] Optuna studies defined in a run config (`training.study`): a `study`
   section names the values to search by their dotted paths in the config
   (`reservoir.params.input_scaling`, `readout.params.alpha`, ...), the metric, the sampler

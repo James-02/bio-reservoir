@@ -579,12 +579,37 @@ class TestReadoutSelection:
         ).fit(np.vstack(states[:40]), np.argmax(Y[:40, 0], axis=1))
         assert readout._fitted_sklearn.best_params_ == reference.best_params_
 
-    def test_runs_record_the_hyperparameters_chosen_in_each_fold(self, tmp_path):
-        cfg = _config(readout={"classifier": "Ridge", "params": {},
-                               "search": {"alpha": [0.01, 1.0, 100.0]}})
-        metrics = json.loads((_execute(cfg, tmp_path / "run") / "metrics.json").read_text())
+    def test_ridge_cv_chooses_alpha_by_leave_one_out_on_the_training_fold(self):
+        from sklearn.linear_model import RidgeClassifierCV
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+
+        from training.pipeline import fit_readout, predict, selected_readout_params
+
+        states, Y = _two_scales()
+        cfg = run_module.resolve(_config(readout={"classifier": "RidgeCV"}))
+        assert cfg["readout"]["params"] == {"alphas": list(run_module.RIDGE_ALPHAS)}
+        readout = run_module.make_readout(cfg["readout"])
+        fit_readout(readout, states[:40], Y[:40])
+        reference = make_pipeline(StandardScaler(),
+                                  RidgeClassifierCV(alphas=run_module.RIDGE_ALPHAS))
+        reference.fit(np.vstack(states[:40]), np.argmax(Y[:40, 0], axis=1))
+        assert selected_readout_params(readout) == {"alpha": reference[-1].alpha_}
+        np.testing.assert_array_equal(
+            np.argmax(np.vstack(predict(readout, states[40:])), axis=1),
+            reference.predict(np.vstack(states[40:])))
+
+    @pytest.mark.parametrize("readout, chosen", [
+        ({"classifier": "Ridge", "params": {}, "search": {"alpha": [0.01, 1.0, 100.0]}},
+         "classifier__alpha"),
+        ({"classifier": "RidgeCV", "params": {"alphas": [0.01, 1.0, 100.0]}}, "alpha"),
+    ])
+    def test_runs_record_the_hyperparameters_chosen_in_each_fold(self, tmp_path, readout,
+                                                                 chosen):
+        metrics = json.loads((_execute(_config(readout=readout), tmp_path / "run")
+                              / "metrics.json").read_text())
         for fold in metrics["folds"]:
-            assert set(fold["selected"]) == {"classifier__alpha"}
+            assert set(fold["selected"]) == {chosen}
 
 
 class TestOptimizeCommands:

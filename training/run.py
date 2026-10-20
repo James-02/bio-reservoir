@@ -88,6 +88,9 @@ RESERVOIR_KEYS = {
 SCALAR_METRICS = ("f1", "f1_macro", "f1_weighted", "accuracy", "precision", "recall",
                   "mcc", "kappa")
 
+# Ridge strengths a RidgeCV readout chooses from: 10^-4 to 10^6, two per decade.
+RIDGE_ALPHAS = tuple(float(a) for a in np.logspace(-4, 6, 21))
+
 # Settings that reproduce the v0.1 code path; explicit config values win.
 PRESETS: dict[str, dict[str, dict[str, Any]]] = {
     "v0.1": {
@@ -121,17 +124,23 @@ def dump_config(cfg: dict[str, Any]) -> str:
 
 
 def classifier_class(name: str):
-    """The scikit-learn class behind a readout name (the Phase 4 readout-study names)."""
+    """The scikit-learn class behind a readout name (the Phase 4 readout-study names, and
+    RidgeCV: ridge with its strength chosen by leave-one-out on the training data)."""
     from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
-    from sklearn.linear_model import LogisticRegression, Perceptron, RidgeClassifier
+    from sklearn.linear_model import (
+        LogisticRegression,
+        Perceptron,
+        RidgeClassifier,
+        RidgeClassifierCV,
+    )
     from sklearn.naive_bayes import GaussianNB
     from sklearn.neighbors import KNeighborsClassifier
     from sklearn.neural_network import MLPClassifier
     from sklearn.svm import SVC
     from sklearn.tree import DecisionTreeClassifier
 
-    table = {"Ridge": RidgeClassifier, "LR": LogisticRegression, "SVM": SVC,
-             "KNN": KNeighborsClassifier, "RF": RandomForestClassifier,
+    table = {"Ridge": RidgeClassifier, "RidgeCV": RidgeClassifierCV, "LR": LogisticRegression,
+             "SVM": SVC, "KNN": KNeighborsClassifier, "RF": RandomForestClassifier,
              "DT": DecisionTreeClassifier, "GB": GradientBoostingClassifier,
              "MLP": MLPClassifier, "Bayes": GaussianNB, "Perceptron": Perceptron}
     if name not in table:
@@ -258,6 +267,8 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
         classifier_class(readout["classifier"])
         resolved_readout = {"classifier": readout["classifier"],
                             "params": dict(readout.get("params") or {})}
+        if readout["classifier"] == "RidgeCV":
+            resolved_readout["params"].setdefault("alphas", list(RIDGE_ALPHAS))
         if readout.get("source"):
             resolved_readout["source"] = readout["source"]
     else:
@@ -507,7 +518,7 @@ def refit_readout(cfg: dict[str, Any], source_folds: list, processes: int = 1) -
 def _refit_fold(cfg: dict[str, Any], source):
     import time
 
-    from training.pipeline import fit_readout, predict
+    from training.pipeline import fit_readout, predict, selected_readout_params
     from utils.analysis import evaluate_performance
     from utils.results import FoldArtifact
 
@@ -520,7 +531,7 @@ def _refit_fold(cfg: dict[str, Any], source):
     fit_readout(readout, list(train_states), list(Y_train))
     Y_pred = np.stack(predict(readout, list(test_states)))
     runtime = round(time.perf_counter() - started, 4)
-    selected = getattr(getattr(readout, "_fitted_sklearn", None), "best_params_", None)
+    selected = selected_readout_params(readout)
     return FoldArtifact(
         trial_name=source.trial_name, fold_index=source.fold_index,
         Y_train=source.Y_train, Y_test=source.Y_test, Y_pred=Y_pred,

@@ -32,6 +32,7 @@ from training.pipeline import (
     _stack_runs,
     fit_readout,
     predict,
+    selected_readout_params,
     train,
 )
 from training.profiling import Profiler, _merge_profiles
@@ -293,7 +294,7 @@ def run_fold(
     fold_metrics: Metrics = evaluate_performance(
         Y_val, Y_pred, runtime, primary_average=primary_average, labels=labels
     )
-    selected = getattr(getattr(readout, "_fitted_sklearn", None), "best_params_", None)
+    selected = selected_readout_params(readout)
 
     return FoldArtifact(
         trial_name   = trial_name,
@@ -486,7 +487,7 @@ def fit_on_features(features: np.ndarray, Y: np.ndarray, readout: Node, fold: Fo
     fit_readout(readout, train_rows, Y_train)
     Y_pred = _stack_runs(predict(readout, test_rows))
     runtime = round(time.perf_counter() - started, 4)
-    selected = getattr(getattr(readout, "_fitted_sklearn", None), "best_params_", None)
+    selected = selected_readout_params(readout)
     return FoldArtifact(
         trial_name="",
         fold_index=fold.fold_index,

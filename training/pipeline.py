@@ -269,6 +269,16 @@ def predict(readout: Node, states: list[np.ndarray]) -> list[np.ndarray]:
     return [readout.run(state, reset=True) for state in states]
 
 
+def selected_readout_params(readout: Node) -> dict | None:
+    """The readout settings chosen on the training data: the best parameters of a grid
+    search, or the ridge strength a RidgeCV readout chose by leave-one-out."""
+    fitted = getattr(readout, "_fitted_sklearn", None)
+    if hasattr(fitted, "best_params_"):
+        return fitted.best_params_
+    final = fitted[-1] if hasattr(fitted, "steps") else fitted
+    return {"alpha": float(final.alpha_)} if hasattr(final, "alpha_") else None
+
+
 def _stack_runs(outputs: list[np.ndarray]) -> np.ndarray:
     """Stack a list of ReservoirPy readout outputs into ``(N, 1, C)``.
 
