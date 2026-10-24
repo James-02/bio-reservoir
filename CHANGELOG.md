@@ -74,6 +74,11 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Added
 
+- [engineering] `python -m training.run study-table CONFIG [CONFIG ...] [--group]
+  [--csv FILE]`: one row per trial of a study (searched values, reservoir seed, the
+  metric's mean and SD over folds, wall time, simulation time, commit); `--group` averages
+  each point over its reservoir seeds, and over several studies that differ only in their
+  seeds (`training.study.trials_table`, `seed_table`).
 - [engineering] A `RidgeCV` readout: ridge whose strength is chosen by leave-one-out on
   each training fold (scikit-learn's `RidgeClassifierCV`, from `params.alphas`, by default
   10^-4 to 10^6, two per decade). One decomposition of the training features gives the

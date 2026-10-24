@@ -35,6 +35,13 @@ searched.
 
     python -m training.run study CONFIG.yaml [--processes N] [--trials N] [--storage URL]
     python -m training.run study-best CONFIG.yaml [--out BEST.yaml] [--storage URL]
+    python -m training.run study-table CONFIG.yaml [CONFIG.yaml ...] [--group] [--csv FILE]
+
+``study-table`` lists the trials of one or more studies (:func:`trials_table`): the searched
+values, the metric's mean and SD over the folds, the reservoir seed and the trial's wall
+time. ``--group`` averages the trials that differ only in ``reservoir.seed``, or only in the
+study they belong to (:func:`seed_table`), so a grid run at three seeds reads as one row per
+point with the spread over seeds.
 """
 
 from __future__ import annotations
@@ -284,3 +291,130 @@ def write_best(cfg: dict[str, Any], out: str | Path | None = None,
     if out:
         Path(out).write_text(text)
     return text
+
+
+# ---------------------------------------------------------------------------
+# Tables of trials
+# ---------------------------------------------------------------------------
+
+SEED_PATH = "reservoir.seed"
+
+
+def trials_table(cfg: dict[str, Any], storage: str | None = None):
+    """The trials of the study of ``cfg``, one row each, as a pandas DataFrame.
+
+    Columns: ``trial``, ``state``, the searched values (one column per dotted path),
+    ``reservoir.seed`` (from the trial's resolved config when the search does not set it),
+    the study metric's mean over the folds (the trial's value, named after the metric), its
+    sample SD over the folds (``<metric>_sd``; trials record it for ``f1``), ``seconds``
+    (the trial's wall time), ``simulate_s`` (of which simulating the beats) and ``commit``.
+    """
+    import optuna
+    import pandas as pd
+
+    run_cfg, study_cfg = split(cfg)
+    metric = str(study_cfg.get("metric", "f1"))
+    if storage is None:
+        path = settings.optuna_db(name(cfg))
+        if not path.is_file():
+            raise FileNotFoundError(f"No Optuna database for study {name(cfg)!r}: {path}")
+        storage = f"sqlite:///{path}"
+    study = optuna.load_study(study_name=name(cfg), storage=storage)
+    paths = [p for p in study_cfg["search"] if p != SEED_PATH]
+    fixed_seed = (run_cfg.get("reservoir") or {}).get("seed", run_cfg.get("seed", settings.SEED))
+    rows = []
+    for trial in study.trials:
+        attrs = trial.user_attrs
+        seed = trial.params.get(SEED_PATH, fixed_seed)
+        if "config" in attrs:
+            seed = yaml.safe_load(attrs["config"])["reservoir"].get("seed")
+        started, ended = trial.datetime_start, trial.datetime_complete
+        rows.append({
+            "trial": trial.number, "state": trial.state.name,
+            **{p: trial.params.get(p) for p in paths}, SEED_PATH: seed,
+            metric: trial.value,
+            f"{metric}_sd": (attrs.get("summary") or {}).get(f"{metric}_sd"),
+            "seconds": (ended - started).total_seconds() if started and ended else None,
+            "simulate_s": (attrs.get("simulation") or {}).get("simulate_s"),
+            "commit": (attrs.get("code") or {}).get("commit"),
+        })
+    columns = ["trial", "state", *paths, SEED_PATH, metric, f"{metric}_sd", "seconds",
+               "simulate_s", "commit"]
+    frame = pd.DataFrame(rows, columns=columns)
+    for column in (metric, f"{metric}_sd", "seconds", "simulate_s"):
+        frame[column] = frame[column].astype(float)
+    return frame
+
+
+def seed_table(trials, metric: str = "f1"):
+    """The finished trials of :func:`trials_table` averaged over reservoir seeds.
+
+    One row per point: a combination of the searched values other than ``reservoir.seed``.
+    Trials of several studies with the same searched paths group together, so studies that
+    differ only in their seeds read as one. Columns: the searched values, ``n`` (trials
+    averaged), the metric's mean over them, its sample SD over them (``<metric>_seed_sd``),
+    the mean of their SDs over folds (``<metric>_fold_sd``), their reservoir ``seeds`` and
+    their mean ``seconds``.
+    """
+    import pandas as pd
+
+    done = trials[trials["state"] == "COMPLETE"]
+    keys = [c for c in trials.columns if "." in c and c != SEED_PATH]
+    groups = done.groupby(keys, sort=True, dropna=False) if keys else [((), done)]
+    rows = []
+    for key, part in groups:
+        if not len(part):
+            continue
+        values = part[metric].astype(float)
+        seeds = sorted({int(s) for s in part[SEED_PATH].dropna()})
+        rows.append({
+            **dict(zip(keys, key if isinstance(key, tuple) else (key,), strict=True)),
+            "n": len(part),
+            metric: values.mean(),
+            f"{metric}_seed_sd": values.std(ddof=1) if len(part) > 1 else float("nan"),
+            f"{metric}_fold_sd": part[f"{metric}_sd"].astype(float).mean(),
+            "seeds": " ".join(str(s) for s in seeds), "seconds": part["seconds"].mean(),
+        })
+    return pd.DataFrame(rows, columns=[*keys, "n", metric, f"{metric}_seed_sd",
+                                       f"{metric}_fold_sd", "seeds", "seconds"])
+
+
+def study_table(cfgs: list[dict[str, Any]], storage: str | None = None, group: bool = False):
+    """:func:`trials_table` of each config, one after another (with a ``study`` column when
+    there are several), or with ``group`` their :func:`seed_table`."""
+    import pandas as pd
+
+    metrics = {str(split(cfg)[1].get("metric", "f1")) for cfg in cfgs}
+    if len(metrics) != 1:
+        raise ValueError(f"The studies score different metrics: {sorted(metrics)}.")
+    frames = [trials_table(cfg, storage) for cfg in cfgs]
+    if len(frames) > 1:
+        for cfg, frame in zip(cfgs, frames, strict=True):
+            frame.insert(0, "study", name(cfg))
+    frame = pd.concat(frames, ignore_index=True)
+    return seed_table(frame, metrics.pop()) if group else frame
+
+
+def format_table(frame) -> str:
+    """``frame`` as text: dotted paths shown by their last key when that is unique, metrics
+    to four decimals, times to 0.1 s, commits to seven characters."""
+    import math
+
+    last = [c.rsplit(".", 1)[-1] for c in frame.columns]
+    shown = frame.rename(columns={c: s for c, s in zip(frame.columns, last, strict=True)
+                                  if last.count(s) == 1})
+
+    def number(digits: str):
+        return lambda v: "" if v is None or (isinstance(v, float) and math.isnan(v)) \
+            else format(v, digits)
+
+    formatters = {}
+    for column, label in zip(frame.columns, shown.columns, strict=True):
+        if column in ("seconds", "simulate_s"):
+            formatters[label] = number(".1f")
+        elif column == "commit":
+            formatters[label] = lambda v: str(v)[:7] if v else ""
+        elif frame[column].dtype.kind == "f":
+            # undotted float columns are the metric's mean and SDs; dotted ones searched values
+            formatters[label] = number(".6g" if "." in column else ".4f")
+    return shown.to_string(index=False, formatters=formatters)
