@@ -7,8 +7,9 @@ on the cached rows (:func:`training.cross_validate.cross_validate_features`): th
 cross-validation as simulating the beats of every fold, for the cost of one pass over the
 pool. The reservoir warms up once, when the run builds it, and each worker process gets a
 copy of the warmed-up reservoir. The beats run in worker processes with one thread each,
-which keeps every core busy, and each beat draws its noise from its own seed, so the
-features do not depend on how the beats are shared between the processes.
+which keeps every core busy, and each beat draws its noise (and the perturbation of its
+starting state, ``reset_noise``) from its own seed, so the features do not depend on how
+the beats are shared between the processes.
 """
 
 from __future__ import annotations
@@ -44,8 +45,13 @@ def reseed_noise(node, seed: int) -> None:
     """Give ``node`` a new noise generator seeded with ``seed`` (same distribution settings).
 
     BioReservoir and ReservoirPy's reservoirs draw their noise from the
-    ``noise_generator`` hyperparameter; nodes without one are left unchanged.
+    ``noise_generator`` hyperparameter; nodes without one are left unchanged. A
+    BioReservoir also draws its reset perturbation (``reset_noise``) from a stream of
+    ``seed`` (:meth:`~bioreservoir.node.BioReservoir.reseed_reset`).
     """
+    reseed_reset = getattr(node, "reseed_reset", None)
+    if reseed_reset is not None:
+        reseed_reset(seed)
     generator = node.hypers.get("noise_generator")
     if generator is None:
         return
