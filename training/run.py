@@ -25,6 +25,11 @@ By default every beat is simulated once and the folds share its features
 simulating beats; ``cv.simulate: per_fold`` simulates the beats of every fold again, with
 ``--processes`` folds in parallel (the ``v0.1`` code path).
 
+The ``features`` section also sets what a measurement sees (:mod:`training.observation`):
+the observed variables (``variables: [I]`` for the LuxI reporter alone), K images over the
+beat (``aggregation: images:K``), multiplicative measurement noise and the calibration
+error of the test fold's colonies.
+
 A config with a ``study`` section defines an Optuna search over its own values:
 ``study`` runs the trials through this runner's pipeline and ``study-best`` writes the best
 trial as a plain config (:mod:`training.study`).
@@ -61,7 +66,8 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     "task": {"labels": "five-class", "rows": 4015, "balance_classes": True,
              "max_per_class": None, "cap_includes_test": True, "scaler": "sequence_zscore",
              "data_file": None},
-    "features": {"aggregation": "final", "window": 1},
+    "features": {"aggregation": "final", "window": 1, "variables": None,
+                 "measurement_noise": 0.0, "calibration_error": 0.0},
     "cv": {"folds": 5, "primary_average": "macro", "noise_rate": 0.0, "noise_ratio": 0.0,
            "profile": False, "simulate": "once"},
     "outputs": {"save_states": False},
@@ -287,6 +293,7 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
     if sections["task"]["labels"] not in ("five-class", "binary"):
         raise ValueError("task.labels must be 'five-class' or 'binary'.")
     _check_simulation(sections, resolved_reservoir)
+    _check_observation(sections, resolved_reservoir)
     split = (cfg.get("test") or {}).get("split")
     if split is not None:
         from utils.heldout import SPLITS
@@ -328,6 +335,40 @@ def _check_simulation(sections: dict[str, Any], reservoir: dict[str, Any]) -> No
         raise ValueError(f"task.scaler {sections['task']['scaler']!r} is fitted on a training "
                          "fold; cv.simulate: once needs a scaling of each beat on its own "
                          f"({', '.join(PER_BEAT_SCALERS)}).")
+
+
+def _check_observation(sections: dict[str, Any], reservoir: dict[str, Any]) -> None:
+    features = sections["features"]
+    aggregation = str(features["aggregation"])
+    if aggregation.startswith("images:"):
+        count = aggregation.split(":")[1]
+        if not count.isdigit() or int(count) < 1:
+            raise ValueError(f"features.aggregation {aggregation!r}: expected images:K, K >= 1.")
+        if int(features["window"]) > 1:
+            raise ValueError("features.window averages the last steps instead of taking "
+                             f"images; it cannot be combined with {aggregation!r}.")
+    for key in ("measurement_noise", "calibration_error"):
+        if float(features[key]) < 0:
+            raise ValueError(f"features.{key} must be 0 or more.")
+    variables = features["variables"]
+    if variables is not None:
+        if (isinstance(variables, str) or not variables
+                or not set(variables) <= {"A", "I", "Hi", "He"}
+                or len(set(variables)) != len(variables)):
+            raise ValueError("features.variables must list variables of A, I, Hi and He, "
+                             "each once.")
+        if reservoir.get("type", "bioreservoir") != "bioreservoir":
+            raise ValueError("features.variables needs a bioreservoir.")
+    if variables is None and not features["measurement_noise"] \
+            and not features["calibration_error"]:
+        return
+    if "states_from" in reservoir:
+        raise ValueError("A refit reads the features of another run as they were measured; "
+                         "features.variables, measurement_noise and calibration_error "
+                         "cannot change them.")
+    if sections["cv"]["simulate"] != "once":
+        raise ValueError("features.variables, measurement_noise and calibration_error need "
+                         "cv.simulate: once.")
 
 
 # ---------------------------------------------------------------------------
@@ -404,11 +445,13 @@ def _simulate(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray,
     reservoir_cfg = dict(cfg["reservoir"]["params"], reservoir_type=cfg["reservoir"]["type"])
     reservoir, _ = build_reservoir(reservoir_cfg, seed=int(cfg["reservoir"]["seed"]))
     if cfg["cv"]["simulate"] == "once":
+        folds = int(cfg["cv"]["folds"])
         features, timing = _features(cfg, X, reservoir, processes)
         result, artifacts = cross_validate_features(
-            features, Y, make_readout(cfg["readout"]), folds=int(cfg["cv"]["folds"]),
+            features, Y, make_readout(cfg["readout"]), folds=folds,
             seed=int(cfg["cv"]["seed"]), primary_average=str(cfg["cv"]["primary_average"]),
-            save_states=bool(cfg["outputs"]["save_states"]), model_hypers=reservoir.hypers)
+            save_states=bool(cfg["outputs"]["save_states"]), model_hypers=reservoir.hypers,
+            test_gains=_test_gains(cfg, features, folds))
         result["simulation"] = timing
         return result, artifacts
     return cross_validate(
@@ -433,24 +476,42 @@ def _classes(Y: np.ndarray) -> np.ndarray:
 
 def _features(cfg: dict[str, Any], X: np.ndarray, reservoir,
               processes: int) -> tuple[np.ndarray, dict[str, Any]]:
-    """Scale the beats and simulate each once on the run's ``reservoir``; return the
-    features and the timing."""
+    """Scale the beats, simulate each once on the run's ``reservoir`` and measure it; return
+    the features and the timing."""
     import time
 
+    from training.observation import measure, observed_columns
     from training.simulate import simulate_beats
     from utils.preprocessing import standardize_data
 
+    columns = None
+    if cfg["features"]["variables"] is not None:
+        columns = observed_columns(reservoir.hypers["output_variables"],
+                                   cfg["features"]["variables"], int(reservoir.hypers["units"]))
     X_scaled, _ = standardize_data(X, X[:1], scaler_type=str(cfg["task"]["scaler"]))
     started = time.perf_counter()
     features = simulate_beats(
         reservoir, X_scaled, noise_seed=int(cfg["reservoir"]["seed"]),
         aggregation=str(cfg["features"]["aggregation"]),
-        window=int(cfg["features"]["window"]), processes=processes)
+        window=int(cfg["features"]["window"]), columns=columns, processes=processes)
     elapsed = time.perf_counter() - started
     logger.info("Simulated %d beats once in %.1f s (%d processes)", len(X), elapsed, processes)
+    features = measure(features, float(cfg["features"]["measurement_noise"]), int(cfg["seed"]))
     return features, {"beats": int(len(X)), "processes": int(processes),
                       "simulate_s": round(elapsed, 3),
                       "beats_per_s": round(len(X) / elapsed, 2) if elapsed else None}
+
+
+def _test_gains(cfg: dict[str, Any], features: np.ndarray, folds: int) -> list | None:
+    """Calibration gains of each test fold, or None without calibration error."""
+    from training.observation import calibration_gains, image_count
+
+    error = float(cfg["features"]["calibration_error"])
+    if not error:
+        return None
+    images = image_count(str(cfg["features"]["aggregation"]))
+    return [calibration_gains(features.shape[1] // images, images, error, int(cfg["seed"]),
+                              fold) for fold in range(folds)]
 
 
 def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: np.ndarray,
@@ -479,11 +540,13 @@ def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: n
         from training.cross_validate import fit_on_features
 
         features, _ = _features(cfg, X_all, reservoir, processes)
+        gains = _test_gains(cfg, features, folds=1)
         artifact = fit_on_features(features, Y_all, make_readout(cfg["readout"]), fold,
                                    save_states=bool(cfg["outputs"]["save_states"]),
                                    primary_average=str(cfg["cv"]["primary_average"]),
                                    labels=np.unique(_classes(Y_test)),
-                                   model_hypers=reservoir.hypers)
+                                   model_hypers=reservoir.hypers,
+                                   test_gains=None if gains is None else gains[0])
         artifact.test_index = np.asarray(beat_ids, dtype=np.int64)
         return artifact
     data = _prepare_fold_data(X_all, Y_all, fold, noise_rate=float(cfg["cv"]["noise_rate"]),

@@ -81,7 +81,8 @@ class TestResolve:
                                     "max_per_class": None, "cap_includes_test": True,
                                     "scaler": "sequence_zscore", "data_file": None, "seed": 3}
         assert resolved["cv"]["seed"] == resolved["reservoir"]["seed"] == 3
-        assert resolved["features"] == {"aggregation": "final", "window": 1}
+        assert resolved["features"] == {"aggregation": "final", "window": 1, "variables": None,
+                                        "measurement_noise": 0.0, "calibration_error": 0.0}
         assert resolved["outputs"] == {"save_states": False}
         assert "noise_rate" not in resolved["reservoir"]["params"]
         assert any("Ignoring reservoir parameters" in r.getMessage()
@@ -137,7 +138,8 @@ class TestResolve:
         assert resolved["reservoir"]["params"]["topology_type"] == "distance"
         assert resolved["reservoir"]["source"] == {"study": "P2-distance", "trial": 0,
                                                    "archive": None}
-        assert resolved["features"] == {"aggregation": "last_N", "window": 5}
+        assert (resolved["features"]["aggregation"], resolved["features"]["window"]) == (
+            "last_N", 5)
         assert resolved["task"]["rows"] == 4015
         assert resolved["cv"]["noise_rate"] == 0.0 and resolved["cv"]["noise_ratio"] > 0
         assert resolved["cv"]["simulate"] == "per_fold"
@@ -176,7 +178,8 @@ class TestResolve:
             40, 44, 16.28)
         assert params["output_variables"] == "all" and params["signed"] is False
         assert params["input_scaling"] == 0.08
-        assert resolved["features"] == {"aggregation": "final", "window": 1}
+        assert (resolved["features"]["aggregation"], resolved["features"]["window"]) == (
+            "final", 1)
         assert (resolved["cv"]["noise_rate"], resolved["cv"]["noise_ratio"]) == (0.0825, 0.2348)
         assert resolved["task"]["labels"] == "binary" and resolved["task"]["rows"] == 600
         assert resolved["task"]["max_per_class"] is None
@@ -313,6 +316,77 @@ class TestSimulation:
         per_fold = {**change, "cv": {**change.get("cv", {}), "simulate": "per_fold"}}
         if change.get("cv", {}).get("simulate") != "twice":
             run_module.resolve(_config(**per_fold))
+
+
+def _reporter_config(**features):
+    cfg = _config(features=features, outputs={"save_states": True})
+    cfg["reservoir"]["params"]["output_variables"] = "IHe"
+    return cfg
+
+
+def _states(run_dir, kind):
+    return [np.load(p, allow_pickle=True)[f"{kind}_states"][:, 0]
+            for p in sorted(run_dir.glob("fold-*.npz"))]
+
+
+class TestObservation:
+    def test_the_reporter_alone_is_observed(self, tmp_path):
+        both = _execute(_reporter_config(), tmp_path / "both")
+        reporter = _execute(_reporter_config(variables=["I"]), tmp_path / "reporter")
+        for whole, part in zip(_states(both, "test"), _states(reporter, "test"), strict=True):
+            np.testing.assert_array_equal(whole[:, 0::2], part)
+
+    def test_images_are_snapshots_ending_with_the_final_state(self, tmp_path):
+        two = _execute(_reporter_config(variables=["I"], aggregation="images:2"),
+                       tmp_path / "two")
+        final = _execute(_reporter_config(variables=["I"]), tmp_path / "final")
+        for images, last in zip(_states(two, "test"), _states(final, "test"), strict=True):
+            assert images.shape[1] == 6
+            np.testing.assert_array_equal(images[:, 3:], last)
+
+    def test_measurement_noise_is_multiplicative_and_repeatable(self, tmp_path):
+        clean = _states(_execute(_reporter_config(), tmp_path / "clean"), "train")
+        noisy = [_states(_execute(_reporter_config(measurement_noise=0.05), tmp_path / name),
+                         "train") for name in ("a", "b")]
+        for c, a, b in zip(clean, *noisy, strict=True):
+            np.testing.assert_array_equal(a, b)
+            ratio = a / c
+            assert 0.03 < np.std(ratio) < 0.07 and abs(np.mean(ratio) - 1) < 0.02
+
+    def test_calibration_error_changes_only_the_test_beats(self, tmp_path):
+        clean = _execute(_reporter_config(), tmp_path / "clean")
+        biased = _execute(_reporter_config(calibration_error=0.1), tmp_path / "biased")
+        for c, b in zip(_states(clean, "train"), _states(biased, "train"), strict=True):
+            np.testing.assert_array_equal(c, b)
+        for c, b in zip(_states(clean, "test"), _states(biased, "test"), strict=True):
+            gains = b / c
+            np.testing.assert_allclose(gains, np.broadcast_to(gains[0], gains.shape))
+            assert not np.allclose(gains[0], 1.0)
+
+    @pytest.mark.parametrize("change, message", [
+        ({"features": {"variables": ["I"]}, "cv": {"simulate": "per_fold"}},
+         "cv.simulate: once"),
+        ({"features": {"measurement_noise": 0.01}, "cv": {"simulate": "per_fold"}},
+         "cv.simulate: once"),
+        ({"features": {"measurement_noise": -0.01}}, "0 or more"),
+        ({"features": {"calibration_error": -1}}, "0 or more"),
+        ({"features": {"variables": "I"}}, "variables"),
+        ({"features": {"variables": ["LuxI"]}}, "variables"),
+        ({"features": {"variables": ["I", "I"]}}, "each once"),
+        ({"features": {"aggregation": "images:0"}}, "images:K"),
+        ({"features": {"aggregation": "images:4", "window": 5}}, "window"),
+        ({"features": {"variables": ["I"]},
+          "reservoir": {"params": {"units": 3, "reservoir_type": "esn"}}}, "bioreservoir"),
+        ({"features": {"calibration_error": 0.1}, "reservoir": {"states_from": "run"}},
+         "refit"),
+    ])
+    def test_invalid_observations_are_rejected(self, change, message):
+        with pytest.raises(ValueError, match=message):
+            run_module.resolve(_config(**change))
+
+    def test_variables_the_reservoir_does_not_output_are_reported(self, tmp_path):
+        with pytest.raises(ValueError, match="output variables"):
+            _execute(_config(features={"variables": ["I"]}), tmp_path / "run")
 
 
 def test_load_task_subsamples_to_the_requested_rows(monkeypatch):

@@ -74,6 +74,18 @@ A reservoir starts every beat from the same state, so a beat's features do not d
 
 Readouts are fitted on standardised features (`readout.scale`, on by default). A readout can choose its hyperparameters on each training fold: `classifier: RidgeCV` picks the ridge strength by leave-one-out (from `params.alphas`, by default 10^-4 to 10^6, two per decade), and `readout.search` runs a grid search over inner folds (`readout.inner_folds`). `metrics.json` records each fold's choice.
 
+The `features` section also sets what a measurement sees ([training/observation.py](training/observation.py)). In a device a microscope images the colonies' reporter, so a readout can be restricted to some variables, a few images, measurement noise and calibration error:
+
+```yaml
+features:
+  variables: [I]            # LuxI only (default: every variable the reservoir outputs)
+  aggregation: images:4     # four snapshots evenly spaced over the beat; final is one
+  measurement_noise: 0.01   # each value times 1 + 0.01 N(0, 1), drawn per beat
+  calibration_error: 0.01   # each test-fold channel times its own 1 + 0.01 N(0, 1)
+```
+
+The draws depend only on the run seed and the beat (measurement) or the fold (calibration), so runs with the same seed and the same feature layout are compared under the same errors. The noise multiplies the feature row after aggregation: each image gets its own draws, and an average over the beat (`mean`, `last_N:K`) is one noisy measurement of the average.
+
 ### Studies
 
 A run config with a `study` section is an Optuna search over its own values. Each trial puts the sampled values into the config at their dotted paths and runs it through the same pipeline as a single run; the trials record their resolved configs, and `study-best` writes the best one as a plain config to run for the reported numbers.

@@ -87,6 +87,15 @@ Each entry is marked **[science]** if it changes a reported number, or
   definition: rerunning it with another config (other than `study.trials`) is refused.
   With `reservoir.states_from` a study refits only the readout on the saved states of a
   run, to tune readout settings without simulating again.
+- [engineering] Run configs set what a measurement of the reservoir sees
+  (`training.observation`): `features.variables` lists the observed variables (`[I]` for
+  the LuxI reporter alone), `features.aggregation: images:K` takes K snapshots evenly
+  spaced over the beat, `features.measurement_noise` multiplies each measured value by
+  1 + σ·N(0, 1) with draws of the beat's own (after aggregation: one draw per image, or one
+  per average over the beat), and `features.calibration_error` gives the
+  channels of each test fold a gain error the readout does not see in training. They need
+  `cv.simulate: once`; the defaults observe every output variable without error, as
+  before.
 - [engineering] `--archive VERSION` reads frozen studies from `archive/<version>/`.
 - [engineering] `optimization/deploy.py` and `optimization/collect.py` are now part of the
   repository. Host addresses, user, remote workspace, pip proxy and service come from
