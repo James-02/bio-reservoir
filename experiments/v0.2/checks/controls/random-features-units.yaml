@@ -1,0 +1,51 @@
+# D5 controls validation (experiments/v0.2/checks/controls). Random features at matched feature counts.
+name: d5-random-features-units
+description: 'Random tanh features at the feature counts of trap arrays (256, 576 and 1,024
+  units; P has one reporter per trap), for the comparison at matched feature counts with the
+  P efficiency frontier; scaled RidgeCV. Grid: three reservoir seeds x one or four images,
+  all with 1% measurement noise.'
+seed: 6337
+task:
+  labels: five-class
+  rows: 4015
+  balance_classes: true
+  max_per_class: null
+  cap_includes_test: false
+  scaler: sequence_zscore
+  data_file: null
+reservoir:
+  type: random_features
+  seed: 6337
+  params:
+    units: 8000
+features:
+  measurement_noise: 0.01
+readout:
+  classifier: RidgeCV
+  scale: true
+cv:
+  folds: 5
+  simulate: once
+study:
+  trials: 18
+  metric: f1
+  sampler:
+    type: grid
+  search:
+    reservoir.params.units:
+      type: categorical
+      choices:
+      - 256
+      - 576
+      - 1024
+    reservoir.seed:
+      type: categorical
+      choices:
+      - 6337
+      - 6338
+      - 6339
+    features.aggregation:
+      type: categorical
+      choices:
+      - final
+      - images:4
