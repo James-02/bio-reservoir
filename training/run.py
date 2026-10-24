@@ -257,6 +257,12 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
     reservoir = dict(cfg.get("reservoir") or {})
     if "states_from" in reservoir:
         resolved_reservoir = {"states_from": str(reservoir["states_from"])}
+        if reservoir.get("surrogate") is not None:
+            from training.surrogate import check_surrogate
+            resolved_reservoir["surrogate"] = check_surrogate(reservoir["surrogate"])
+    elif reservoir.get("surrogate") is not None:
+        raise ValueError("reservoir.surrogate imitates the saved features of another run: it "
+                         "needs reservoir.states_from.")
     elif reservoir.get("type") == "none":
         other = sorted(set(reservoir) - {"type"})
         if other:
@@ -426,9 +432,13 @@ def _check_observation(sections: dict[str, Any], reservoir: dict[str, Any]) -> N
             and not features["calibration_error"]:
         return
     if "states_from" in reservoir:
+        if reservoir.get("surrogate") and variables is None \
+                and not features["calibration_error"]:
+            return  # training.surrogate measures the surrogate's features
         raise ValueError("A refit reads the features of another run as they were measured; "
                          "features.variables, measurement_noise and calibration_error "
-                         "cannot change them.")
+                         "cannot change them (a surrogate, reservoir.surrogate, takes "
+                         "measurement_noise).")
     if sections["cv"]["simulate"] != "once":
         raise ValueError("features.variables, measurement_noise and calibration_error need "
                          "cv.simulate: once.")
@@ -643,6 +653,9 @@ def refit_readout(cfg: dict[str, Any], source_folds: list, processes: int = 1) -
         if source.train_states is None or source.test_states is None:
             raise SystemExit(f"Fold {source.fold_index} of {cfg['reservoir']['states_from']} "
                              "has no saved states.")
+    if cfg["reservoir"].get("surrogate"):
+        from training.surrogate import surrogate_folds
+        source_folds = surrogate_folds(cfg, source_folds)
     if processes > 1:
         from joblib import Parallel, delayed
 
@@ -819,6 +832,8 @@ def execute(cfg: dict[str, Any], *, out: str | Path | None = None, processes: in
         if "states_from" in cfg["reservoir"]:
             artifacts = refit_readout(cfg, load_folds(cfg["reservoir"]["states_from"],
                                                       states=True), processes)
+            if cfg["reservoir"].get("surrogate"):
+                timings = {"surrogate": [a.model_hypers["surrogate"] for a in artifacts]}
         else:
             X, Y, data_files = load_task(cfg["task"])
             pool_sha256 = _pool_sha256(X, Y)
