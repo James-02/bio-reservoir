@@ -37,18 +37,18 @@ CONTROL_DEFAULTS: dict[str, dict[str, Any]] = {
 class _SequenceMemory(Node):
     """A node whose state at step t depends on the inputs up to t through a memory of its own.
 
-    ReservoirPy resets a node to its current state before every step of a sequence; any other
-    reset (``run(..., reset=True)``, or a start from another state) begins a new sequence, with
-    an empty memory.
+    Within a sequence, ReservoirPy resets a node to its own current state object before every
+    step (and when ``run`` continues without ``reset``); any other reset (``run(...,
+    reset=True)``, ``initialize``, a start from another state) begins a new sequence, with an
+    empty memory. The test is on the object, not its values: a state can be exactly zero
+    within a sequence.
     """
 
     def _clear_memory(self) -> None:
         raise NotImplementedError
 
     def reset(self, to_state: np.ndarray | None = None) -> Node:
-        current = self.__dict__.get("_state")
-        if (to_state is None or current is None or not np.any(to_state)
-                or not np.array_equal(to_state, current)):
+        if to_state is None or to_state is not self.__dict__.get("_state"):
             self._clear_memory()
         return super().reset(to_state=to_state)
 

@@ -100,6 +100,24 @@ class TestRandomFeatures:
         z = _beats(n=1)[0]
         np.testing.assert_array_equal(node.copy().run(z, reset=True), node.run(z, reset=True))
 
+    @pytest.mark.parametrize("activation", ["tanh", "linear"])
+    def test_leading_zero_inputs_without_bias_keep_the_beat_aligned_with_W(self, activation):
+        # The state is exactly zero after the leading zeros; the node must not start over.
+        z = np.array([0.0, 0.0, 1.0, 2.0, -1.0])
+        node = RandomFeatures(4, length=5, activation=activation, bias_scaling=0.0, seed=0)
+        states = node.run(z[:, None], reset=True)
+        W, _ = _direct_map(0, 4, length=5, bias_scaling=0.0)
+        f = np.tanh if activation == "tanh" else (lambda a: a)
+        np.testing.assert_allclose(states[-1], f(z @ W), rtol=1e-12, atol=1e-15)
+
+    def test_a_run_without_reset_continues_the_sequence(self):
+        z = _beats(n=1, steps=20)[0]
+        whole = RandomFeatures(8, length=20, seed=5).run(z, reset=True)
+        node = RandomFeatures(8, length=20, seed=5)
+        first = node.run(z[:7], reset=True)
+        rest = node.run(z[7:])
+        np.testing.assert_allclose(np.vstack([first, rest]), whole, rtol=1e-12)
+
     def test_several_input_channels_use_one_row_of_W_per_sample_and_channel(self):
         z = np.random.default_rng(1).normal(size=(5, 2))
         states = RandomFeatures(6, length=5, seed=9).run(z, reset=True)
@@ -173,6 +191,13 @@ class TestLeakyBank:
         in_turn = [node.run(z, reset=True) for z in beats]
         for z, states in zip(beats, in_turn, strict=True):
             np.testing.assert_array_equal(states, self._bank().run(z, reset=True))
+
+    def test_a_run_without_reset_continues_the_integration(self):
+        x = _beats(n=1, steps=30)[0]
+        whole = self._bank().run(x, reset=True)
+        node = self._bank()
+        first = node.run(x[:11], reset=True)
+        np.testing.assert_allclose(np.vstack([first, node.run(x[11:])]), whole, rtol=1e-12)
 
     @pytest.mark.parametrize("kwargs", [{"tau_min": 0.5}, {"tau_min": 8.0, "tau_max": 4.0},
                                         {"units": 1}, {"expansion": 0},
