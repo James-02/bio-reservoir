@@ -131,6 +131,18 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Added
 
+- [engineering] Three controls for the mechanism comparison, run through the same folds,
+  observation, readouts and statistics as the colony reservoir (README, "Controls"):
+  `reservoir.type: random_features` (random features `tanh(W h_t + b)` of the beat seen
+  so far, `W ~ N(0, 1/187)`, `b ~ U(-1, 1)`, seeded; `activation: linear` for a random
+  linear map), `reservoir.type: leaky_bank` (leaky integrators of the non-negatively
+  encoded beat, time constants 1 to 256 samples, with band-pass differences and an
+  optional random linear expansion), and `reservoir: {states_from: <run>, surrogate:
+  linear}` (a ridge map from the beat to a saved run's features, fitted on each training
+  fold, whose predictions replace the features; `metrics.json` records each fold's R^2).
+  The two dynamical controls are ReservoirPy nodes in `optimization/controls.py`; the
+  surrogate is in `training/surrogate.py`. `features.variables` is refused for the controls
+  with the reason. No reported number changes.
 - [engineering] A `RidgeCV` readout: ridge whose strength is chosen by leave-one-out on
   each training fold (scikit-learn's `RidgeClassifierCV`, from `params.alphas`, by default
   10^-4 to 10^6, two per decade). One decomposition of the training features gives the

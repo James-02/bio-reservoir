@@ -212,6 +212,34 @@ reservoir:
     reset_noise: 0.01
 ```
 
+## Controls
+
+Three controls ask what the colony array adds to a readout of the beat. They run through the same folds, observation, readouts and statistics as the colony reservoir, so a control and a reservoir run with the same seeds and `features` are compared beat by beat (`training.run compare`). Uncoupled colonies (`coupling: none`) and the echo state network (`reservoir.type: esn`) are the other comparators.
+
+| Question | Control | Config |
+|---|---|---|
+| Does any nonlinear feature map of the beat do as well? | Random features `tanh(W z + b)` | `reservoir: {type: random_features, params: {units: 8000}}` |
+| Is the array more than a bank of timescales? | Leaky integrators of the encoded beat | `reservoir: {type: leaky_bank, params: {units: 24}}` |
+| Would a linear filter of the beat do as well? | Linear surrogate of a saved run | `reservoir: {states_from: <run>, surrogate: linear}` |
+
+`random_features` ([optimization/controls.py](optimization/controls.py)) holds the beat seen so far, `h_t = (z_1, ..., z_t, 0, ..., 0)`, and outputs `tanh(W h_t + b)` at every step, with `W ~ N(0, input_scaling^2 / length)` and `b ~ U(-bias_scaling, bias_scaling)` drawn from `reservoir.seed`. At the last step of a beat (`length`, default 187 samples) this is the random feature map of the whole beat; an earlier image sees only the beat so far. `activation: linear` gives a random linear map of the beat.
+
+`leaky_bank` encodes the beat as the colony reservoir's non-negative input does (clip to `input_range`, default `[-3, 8]`, then shift by its lower end) and drives `units` leaky integrators, `y_k(t) = y_k(t-1) + (u_t - y_k(t-1)) / tau_k`, with time constants spaced geometrically from `tau_min` to `tau_max` samples (default 1 to 256). Its state adds the band-pass differences of neighbouring integrators (`band_pass`, on by default): `2 units - 1` features. `expansion: N` maps them with a fixed random matrix (`N(0, 1/n)`, seeded by `reservoir.seed`) to `N` features, to match the feature count of another model.
+
+Both controls output one state per input step, so `features.aggregation` (`final`, `images:K`, `mean`, `last_N:K`), `measurement_noise` and `calibration_error` apply to them as to the reservoir. They have no model variables: `features.variables` is refused.
+
+The linear surrogate ([training/surrogate.py](training/surrogate.py)) imitates a saved run (made with `outputs.save_states: true`) as well as a linear map of the beat can. In each outer fold, a ridge regression (`RidgeCV`, inputs and targets standardised, strength from 10^-2 to 10^4 chosen by leave-one-out) is fitted from the scaled beats of the training fold to their saved features, and its predictions replace the features of the training and test beats. The test beats' features are used only for the R^2 that `metrics.json` reports for each fold (`surrogate`: strength, median and mean R^2 over features). With `features.measurement_noise` the surrogate's features are measured like the reservoir's, with the same draws per beat for the same run seed. The source run must be a cross-validated run that simulated its reservoir; the surrogate rebuilds its pool and folds from its config and checks them against its manifest.
+
+```yaml
+name: surrogate-of-p
+seed: 6337
+reservoir: {states_from: p-clean-final, surrogate: linear}   # a folder in results/runs
+features: {measurement_noise: 0.01}                          # optional
+readout: {classifier: RidgeCV, scale: true}
+```
+
+The validation configs are in [experiments/v0.2/checks/controls](experiments/v0.2/checks/controls).
+
 ## Visualisation
 
 ### Biopixel Reservoir Model
