@@ -1,0 +1,136 @@
+# Realism options (D3, v0.2): input levels with the mean input matched to the P centre, three
+# reservoir seeds. K levels k/K have mean (K + 1)/2K of the full level (1/2 for continuous),
+# so input_scaling is raised by 2K/(K + 1); with d3-p-input-levels-ridge this separates the
+# effect of distinct levels from that of a lower mean input. The study runs exactly its
+# enqueued points (trials = number of points), so the random sampler draws nothing.
+# The heterogeneity seed follows the reservoir seed (param_heterogeneity_seed: null).
+#   python -m training.run study experiments/v0.2/checks/realism-options/d3-p-input-levels-matched-ridge.yaml --processes N
+name: d3-p-input-levels-matched-ridge
+description: Input levels of the induced traps at the P centre with input_scaling raised by
+  2K/(K+1) (2 for continuous), so the mean input level equals the single-level P centre; one
+  LuxI image with 1% measurement noise, scaled RidgeCV; reservoir seeds 6337-6339.
+seed: 6337
+task:
+  labels: five-class
+  rows: 4015
+  balance_classes: true
+  max_per_class: null
+  cap_includes_test: false
+  scaler: sequence_zscore
+  seed: 6337
+reservoir:
+  type: bioreservoir
+  seed: 6337
+  params:
+    units: 1024
+    warmup: 800
+    rk4_substeps: 16
+    input_scaling: 0.155113
+    input_connectivity: 0.66
+    input_bias: false
+    bias_scaling: 0.1
+    rc_scaling: 0.007036187544739917
+    dde_scaling: 0.0006439480590749527
+    cell_coupling: 12.74579065885262
+    noise_in: 0.01442
+    noise_rc: 0.2397
+    output_variables: IHe
+    param_heterogeneity_cv: 0.065
+    param_heterogeneity_seed: null
+    heterogeneity_mean_preserving: true
+    heterogeneity_density_cv: 0.0
+    heterogeneity_dilution_cv: 0.0
+    input_levels: 1
+    reset_noise: 0.0
+    topology_type: lattice
+    interaction_diameters: 8.2
+    fade_alpha: 2.80278092396274e-05
+    sparsity: 1.0
+    signed: false
+    p_excite: 1.0
+    geometry: per_node
+    delay_scheme: substep
+    normalize_after_masks: true
+    coupling: diffusion
+    diffusion_rate: 0.6
+    input_encoding: nonnegative
+    input_sign: positive
+features:
+  aggregation: final
+  variables:
+  - I
+  measurement_noise: 0.01
+readout:
+  classifier: RidgeCV
+  scale: true
+cv:
+  folds: 5
+  primary_average: macro
+  simulate: once
+  seed: 6337
+outputs:
+  save_states: false
+study:
+  trials: 12
+  metric: f1
+  sampler:
+    type: random
+    seed: 6337
+  search:
+    reservoir.params.input_levels:
+      type: categorical
+      choices:
+      - 2
+      - 3
+      - 4
+      - continuous
+    reservoir.params.input_scaling:
+      type: categorical
+      choices:
+      - 0.206817
+      - 0.23267
+      - 0.248181
+      - 0.310226
+    reservoir.seed:
+      type: categorical
+      choices:
+      - 6337
+      - 6338
+      - 6339
+  enqueue:
+  - reservoir.params.input_levels: 2
+    reservoir.params.input_scaling: 0.206817
+    reservoir.seed: 6337
+  - reservoir.params.input_levels: 2
+    reservoir.params.input_scaling: 0.206817
+    reservoir.seed: 6338
+  - reservoir.params.input_levels: 2
+    reservoir.params.input_scaling: 0.206817
+    reservoir.seed: 6339
+  - reservoir.params.input_levels: 3
+    reservoir.params.input_scaling: 0.23267
+    reservoir.seed: 6337
+  - reservoir.params.input_levels: 3
+    reservoir.params.input_scaling: 0.23267
+    reservoir.seed: 6338
+  - reservoir.params.input_levels: 3
+    reservoir.params.input_scaling: 0.23267
+    reservoir.seed: 6339
+  - reservoir.params.input_levels: 4
+    reservoir.params.input_scaling: 0.248181
+    reservoir.seed: 6337
+  - reservoir.params.input_levels: 4
+    reservoir.params.input_scaling: 0.248181
+    reservoir.seed: 6338
+  - reservoir.params.input_levels: 4
+    reservoir.params.input_scaling: 0.248181
+    reservoir.seed: 6339
+  - reservoir.params.input_levels: continuous
+    reservoir.params.input_scaling: 0.310226
+    reservoir.seed: 6337
+  - reservoir.params.input_levels: continuous
+    reservoir.params.input_scaling: 0.310226
+    reservoir.seed: 6338
+  - reservoir.params.input_levels: continuous
+    reservoir.params.input_scaling: 0.310226
+    reservoir.seed: 6339
