@@ -72,6 +72,8 @@ Each run writes `results/runs/<name>-<UTC time>/`: the resolved `config.yaml`, `
 
 A reservoir starts every beat from the same state, so a beat's features do not depend on the fold. A run therefore simulates each beat once and every fold fits its readout on these features (`cv.simulate: once`, the default); `--processes` sets the number of worker processes that simulate beats in parallel, each with one thread. Each beat draws its noise from its own seed, so the features do not depend on how the beats are shared between processes. `cv.simulate: per_fold` simulates the beats of every fold, as `v0.1` did, with `--processes` folds in parallel; the `v0.1` preset uses it, and so does augmentation (`cv.noise_rate`, `cv.noise_ratio`), whose noisy copies of a fold's training beats belong to that fold only.
 
+Readouts are fitted on standardised features (`readout.scale`, on by default). A readout can choose its hyperparameters on each training fold: `classifier: RidgeCV` picks the ridge strength by leave-one-out (from `params.alphas`, by default 10^-4 to 10^6, two per decade), and `readout.search` runs a grid search over inner folds (`readout.inner_folds`). `metrics.json` records each fold's choice.
+
 ### Studies
 
 A run config with a `study` section is an Optuna search over its own values. Each trial puts the sampled values into the config at their dotted paths and runs it through the same pipeline as a single run; the trials record their resolved configs, and `study-best` writes the best one as a plain config to run for the reported numbers.
