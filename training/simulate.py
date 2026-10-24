@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import os
+import pickle
+import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import partial
@@ -29,7 +31,7 @@ PER_BEAT_SCALERS = ("sequence_zscore", "sequence_minmax", "sequence_minmax_pos",
 _THREAD_SETTINGS = ("NUMBA_NUM_THREADS", "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS",
                     "MKL_NUM_THREADS")
 
-# The reservoir of a worker process, received once when the process starts.
+# The reservoir of a worker process, read once when the process starts.
 _worker_reservoir: Any = None
 
 
@@ -66,9 +68,10 @@ def _run_beats(node, noise_seed: int, mode: str, beats: np.ndarray,
     return np.asarray(rows)
 
 
-def _receive_reservoir(reservoir) -> None:
+def _load_reservoir(path: str) -> None:
     global _worker_reservoir
-    _worker_reservoir = reservoir
+    with open(path, "rb") as f:
+        _worker_reservoir = pickle.load(f)
 
 
 def _simulate_chunk(job) -> tuple[np.ndarray, np.ndarray]:
@@ -121,15 +124,20 @@ def simulate_beats(reservoir, X: np.ndarray, *, noise_seed: int, aggregation: st
               if len(c)]
     jobs = [(noise_seed, mode, X[c], indices[c]) for c in chunks]
     features = None
-    with _one_thread_per_process():
-        pool = mp.get_context("spawn").Pool(processes, initializer=_receive_reservoir,
-                                            initargs=(reservoir,))
-    try:
-        for done, rows in pool.imap_unordered(_simulate_chunk, jobs):
-            if features is None:
-                features = np.empty((len(X), rows.shape[1]))
-            features[done - first_index] = rows
-    finally:
-        pool.close()
-        pool.join()
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "reservoir.pkl")
+        with open(path, "wb") as f:
+            pickle.dump(reservoir, f)
+        # Passed as an initializer argument, the reservoir makes the workers start one at a time.
+        with _one_thread_per_process():
+            pool = mp.get_context("spawn").Pool(processes, initializer=_load_reservoir,
+                                                initargs=(path,))
+        try:
+            for done, rows in pool.imap_unordered(_simulate_chunk, jobs):
+                if features is None:
+                    features = np.empty((len(X), rows.shape[1]))
+                features[done - first_index] = rows
+        finally:
+            pool.close()
+            pool.join()
     return features

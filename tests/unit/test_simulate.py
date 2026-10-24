@@ -76,6 +76,29 @@ def test_beats_run_on_a_copy_of_the_warmed_up_reservoir(monkeypatch):
     assert reservoir.hypers["noise_generator"] is generator
 
 
+def test_workers_read_the_reservoir_from_a_file(monkeypatch):
+    import multiprocessing
+
+    initargs = []
+    get_context = multiprocessing.get_context
+
+    class Context:
+        def __init__(self, method):
+            self.context = get_context(method)
+
+        def Pool(self, processes, **kwargs):
+            initargs.append(kwargs["initargs"])
+            return self.context.Pool(processes, **kwargs)
+
+    monkeypatch.setattr(multiprocessing, "get_context", Context)
+    reservoir = _reservoir(dict(PARAMS, noise_in=0.2))
+    X = _beats()
+    np.testing.assert_array_equal(simulate_beats(reservoir, X, noise_seed=5, processes=2),
+                                  simulate_beats(reservoir, X, noise_seed=5))
+    # sent with each worker's start-up, the reservoir made the workers start one at a time
+    assert [type(arg) for args in initargs for arg in args] == [str]
+
+
 def test_cross_validated_features_test_every_beat_once_with_a_fitted_readout_per_fold():
     from sklearn.linear_model import RidgeClassifier
     from sklearn.pipeline import make_pipeline
