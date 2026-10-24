@@ -84,7 +84,7 @@ features:
   calibration_error: 0.01   # each test-fold channel times its own 1 + 0.01 N(0, 1)
 ```
 
-The draws depend only on the run seed and the beat (measurement) or the fold (calibration), so configurations run with the same seed are compared under the same errors.
+The draws depend only on the run seed and the beat (measurement) or the fold (calibration), so runs with the same seed and the same feature layout are compared under the same errors. The noise multiplies the feature row after aggregation: each image gets its own draws, and an average over the beat (`mean`, `last_N:K`) is one noisy measurement of the average.
 
 ### Studies
 

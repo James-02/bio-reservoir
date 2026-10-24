@@ -344,14 +344,19 @@ def _check_observation(sections: dict[str, Any], reservoir: dict[str, Any]) -> N
         count = aggregation.split(":")[1]
         if not count.isdigit() or int(count) < 1:
             raise ValueError(f"features.aggregation {aggregation!r}: expected images:K, K >= 1.")
+        if int(features["window"]) > 1:
+            raise ValueError("features.window averages the last steps instead of taking "
+                             f"images; it cannot be combined with {aggregation!r}.")
     for key in ("measurement_noise", "calibration_error"):
         if float(features[key]) < 0:
             raise ValueError(f"features.{key} must be 0 or more.")
     variables = features["variables"]
     if variables is not None:
         if (isinstance(variables, str) or not variables
-                or not set(variables) <= {"A", "I", "Hi", "He"}):
-            raise ValueError("features.variables must list variables of A, I, Hi and He.")
+                or not set(variables) <= {"A", "I", "Hi", "He"}
+                or len(set(variables)) != len(variables)):
+            raise ValueError("features.variables must list variables of A, I, Hi and He, "
+                             "each once.")
         if reservoir.get("type", "bioreservoir") != "bioreservoir":
             raise ValueError("features.variables needs a bioreservoir.")
     if variables is None and not features["measurement_noise"] \

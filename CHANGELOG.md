@@ -91,7 +91,8 @@ Each entry is marked **[science]** if it changes a reported number, or
   (`training.observation`): `features.variables` lists the observed variables (`[I]` for
   the LuxI reporter alone), `features.aggregation: images:K` takes K snapshots evenly
   spaced over the beat, `features.measurement_noise` multiplies each measured value by
-  1 + σ·N(0, 1) with draws of the beat's own, and `features.calibration_error` gives the
+  1 + σ·N(0, 1) with draws of the beat's own (after aggregation: one draw per image, or one
+  per average over the beat), and `features.calibration_error` gives the
   channels of each test fold a gain error the readout does not see in training. They need
   `cv.simulate: once`; the defaults observe every output variable without error, as
   before.

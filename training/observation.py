@@ -3,10 +3,12 @@ and calibration error.
 
 In a device the colonies' fluorescent reporter (LuxI) is imaged, so the readout sees one
 variable of each colony rather than its whole state (``features.variables``), at one or a
-few times (``features.aggregation: images:K``). Each measured value carries multiplicative
-noise, drawn once per beat (``features.measurement_noise``), and the colonies of a test fold
-are read with gains calibrated to a relative error (``features.calibration_error``), which
-the readout never sees during training.
+few times (``features.aggregation: images:K``). Each measured value is multiplied by its own
+1 + sigma N(0, 1) (``features.measurement_noise``), drawn from a generator of the beat's own.
+The noise applies to the feature row, after aggregation: an image is one noisy snapshot,
+and an average over the beat (``mean``, ``last_N:K``) one noisy measurement of the average.
+The colonies of a test fold are read with gains calibrated to a relative error
+(``features.calibration_error``), which the readout never sees during training.
 """
 
 from __future__ import annotations
