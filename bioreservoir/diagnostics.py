@@ -89,3 +89,26 @@ def drive_shares(reservoir, inputs: Iterable[np.ndarray]) -> dict[str, float]:
 
 def _dense(matrix) -> np.ndarray:
     return matrix.toarray() if sparse.issparse(matrix) else np.asarray(matrix)
+
+
+def oscillation_amplitudes(reservoir, steps: int = 200, variable: str = "I") -> np.ndarray:
+    """Relative peak-to-peak amplitude of each colony's ``variable`` without input.
+
+    Continues the warm-up of a copy of ``reservoir`` (zero drive, from its warm-up state) for
+    ``steps`` input steps and returns ``(max - min) / mean`` of ``variable`` over those steps,
+    one value per colony. A colony that oscillates has an amplitude of order 1; one that
+    has settled to a steady state has an amplitude near 0. NaN marks a colony whose mean is
+    not positive (or a state that is not finite).
+    """
+    node = reservoir.copy()
+    node.states = node._warmup_states.copy()
+    if getattr(node, "_warmup_ring", None) is not None:
+        node._ring, node._ring_pos = node._warmup_ring[0].copy(), node._warmup_ring[1]
+    index = STATE_NAMES.index(variable)
+    zero = np.zeros(node.states.shape[1])
+    trace = np.empty((int(steps), node.states.shape[1]))
+    with np.errstate(all="ignore"):
+        for t in range(int(steps)):
+            trace[t] = node._step(zero)[:, index]
+        mean = trace.mean(axis=0)
+        return np.where(mean > 0, np.ptp(trace, axis=0) / mean, np.nan)
