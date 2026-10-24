@@ -195,6 +195,31 @@ Each step from the `v0.1` model towards a chemically realisable one is one confi
 
 The diffusive solver advances all colonies together and runs on one thread (a parallel region per RK4 stage costs more than the stage itself); run folds or beats in parallel processes instead (`--processes`). The exchange is integrated explicitly, so an RK4 step must be short compared with the fastest exchange; the node refuses a step that is too long (16 substeps allow lattice rates up to about 16). A lattice (`lattice_matrix`, a near-square grid) is for the diffusive coupling: its weights are not normalised, so the abstract coupling refuses it. `bioreservoir.topology.relative_asymmetry` measures how far a coupling matrix is from symmetric.
 
+## Realism Options
+
+Three options of the `BioReservoir` (`reservoir.params` in a run config) model how a device departs from the nominal model (`bioreservoir.realism`). Each is off by default, and at its default every result is unchanged, bit for bit.
+
+- **Heterogeneity by group.** Colonies differ in three groups of parameters, each with its own coefficient of variation. The factors are mean-preserving log-normal (mean 1):
+  - `param_heterogeneity_cv`: the strain, meaning the 13 intracellular kinetic constants (as before);
+  - `heterogeneity_density_cv`: the cell density `d` of each colony (the volume fraction of cells in its trap), clipped to `[0.05, 0.99 d0]`. The growth factor `1 - (d/d0)^4` of both promoters, and the cell/medium volume ratio `d/(1-d)` that turns the membrane flux `D (Hi - He)` into a change of He, follow each colony's density. Clipping at the carrying capacity lowers the mean density at large CVs: 1% of the colonies are clipped at a CV of 0.1, and 19% at 0.3;
+  - `heterogeneity_dilution_cv`: the washout rate `mu` of extracellular AHL in each trap.
+
+  Each group draws from its own random stream of the heterogeneity seed (`param_heterogeneity_seed`, by default the reservoir seed), so adding a group leaves the draws of the others unchanged. A dense colony exchanges AHL with the medium faster (`d/(1-d) D` grows from 2.3 `D` at the nominal `d = 0.7` to 6.8 `D` at `0.99 d0`), so with the diffusive coupling the step check above may ask for more substeps.
+- **Input levels.** `input_levels: K` gives the input connections `K` levels evenly spaced in `(0, 1] x input_scaling` (`k/K` for k = 1 to K), assigned at random with the reservoir seed; `input_levels: continuous` draws each level uniformly on `(0, 1]`. The default, 1, is one level: with `input_sign: positive` every induced trap receives `input_scaling`. Levels lower the mean input to `(K + 1) / 2K` of the full level (1/2 for `continuous`). Needs `geometry: per_node`.
+- **Imperfect reset.** `reset_noise: cv` starts every beat from the warm-up state multiplied by log-normal factors of mean 1 and coefficient of variation `cv`: one factor per colony and variable (A, I, Hi, He), and Hi's factor also scales the delayed-Hi history. Each beat draws its factors from its own seed, like its input noise, so the features do not depend on the number of worker processes or on the order of the beats. Needs `cv.simulate: once`; the per-fold path (`cv.simulate: per_fold`, the `v0.1` preset) refuses it.
+
+```yaml
+reservoir:
+  params:
+    param_heterogeneity_cv: 0.065     # strain (kinetics)
+    heterogeneity_density_cv: 0.1     # cell density, with its growth factor
+    heterogeneity_dilution_cv: 0.1    # washout of extracellular AHL
+    input_levels: 3                   # or continuous
+    reset_noise: 0.01                 # imperfect reset between beats
+```
+
+Trials record the options (`res_heterogeneity_density_cv`, `res_heterogeneity_dilution_cv`, `res_input_levels`, `res_reset_noise`). The grids that evaluate them at the P centre are in `experiments/v0.2/checks/realism-options/`.
+
 ## Visualisation
 
 ### Biopixel Reservoir Model
