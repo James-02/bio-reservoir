@@ -387,7 +387,8 @@ def generate_node_params(
     Parameters that are physical properties of the colony (cell density
     fraction ``d``, derived ``decay``) or the environment (extracellular
     decay ``mu``) are NOT varied—only intracellular kinetic rates are
-    heterogeneous.
+    heterogeneous. :func:`bioreservoir.realism.vary_colonies` varies density and
+    washout, from their own random streams.
 
     Parameters
     ----------
