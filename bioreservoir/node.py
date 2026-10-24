@@ -16,13 +16,18 @@ from reservoirpy.utils.validation import is_array
 from scipy import sparse
 
 from bioreservoir.dde import (
+    _NP_D_COEFF,
+    _NP_D_FRAC,
+    _NP_MU,
     generate_node_params,
     get_dde_params,
     log_dde_params,
+    prepare_conductances,
     solve_dde_rk4,
     solve_dde_substep,
     substep_history,
 )
+from bioreservoir.topology import scale_conductances
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +71,36 @@ class BioReservoir(Node):
         geometry: str = "per_node",
         couple_vars: Sequence[float] | None = None,
         delay_scheme: str = "substep",
+        coupling: str = "abstract",
+        diffusion_rate: float = 1.0,
+        input_encoding: str = "signed",
+        input_range: Sequence[float] = (-3.0, 8.0),
+        input_sign: str = "mixed",
         **kwargs,
     ):
         """Genetic-oscillator reservoir node (one DDE oscillator per unit).
+
+        ``coupling`` sets how the oscillators (colonies) interact.
+
+        * ``"abstract"`` (the v0.1 model): once per input step, each oscillator receives
+          ``rc_scaling * W r`` from the observed states of the previous step, added to its
+          input drive; ``W`` is a signed kernel.
+        * ``"diffusion"``: colonies exchange extracellular AHL through the medium. At every
+          RK4 stage, ``dHe_i/dt`` gains ``sum_j G_ij (He_j - He_i)``, a graph Laplacian
+          over non-negative conductances ``G``. ``W`` gives the kernel (for example
+          ``distance_matrix(signed=False)`` or ``lattice_matrix()``), scaled so that a
+          colony's conductances sum to ``diffusion_rate`` on average (per model time
+          unit); symmetric conductances conserve AHL. ``rc_scaling`` and ``noise_rc``
+          are not used. The exchange is integrated explicitly, so an exchange too fast for
+          the RK4 step (``1 / rk4_substeps``) is refused.
+        * ``"none"``: independent oscillators.
+
+        ``input_encoding="nonnegative"`` delivers the input as a non-negative inducer
+        level: each sample is clipped to ``input_range`` and shifted by its lower end (a
+        fixed, causal offset), and input noise cannot take it below 0;
+        ``"signed"`` uses the samples as they are. ``input_sign="positive"`` makes the
+        input weights (and bias) non-negative, so every colony that receives the input
+        is induced by it; ``"mixed"`` keeps the random signs.
 
         ``geometry`` sets how the recurrent term is built when several variables are
         observed. ``"per_node"``: one ``units x units`` kernel over ``units``
@@ -95,6 +127,23 @@ class BioReservoir(Node):
         if delay_scheme not in ("substep", "frozen"):
             raise ValueError(
                 f"delay_scheme must be 'substep' or 'frozen', got {delay_scheme!r}.")
+        if coupling not in ("abstract", "diffusion", "none"):
+            raise ValueError(
+                f"coupling must be 'abstract', 'diffusion' or 'none', got {coupling!r}.")
+        if coupling == "diffusion" and (geometry, delay_scheme) != ("per_node", "substep"):
+            raise ValueError("coupling='diffusion' needs geometry='per_node' and "
+                             "delay_scheme='substep'.")
+        if input_encoding not in ("signed", "nonnegative"):
+            raise ValueError(f"input_encoding must be 'signed' or 'nonnegative', "
+                             f"got {input_encoding!r}.")
+        if input_sign not in ("mixed", "positive"):
+            raise ValueError(f"input_sign must be 'mixed' or 'positive', got {input_sign!r}.")
+        if input_sign == "positive" and geometry != "per_node":
+            raise ValueError("input_sign='positive' needs geometry='per_node'.")
+        low, high = (float(v) for v in input_range)
+        if not low < high:
+            raise ValueError(f"input_range must be (low, high) with low < high, got "
+                             f"{tuple(input_range)}.")
 
         rng = rand_generator(seed)
         noise_kwargs = noise_kwargs or {}
@@ -133,6 +182,11 @@ class BioReservoir(Node):
         self.output_indices = np.array([var_index_map[v] for v in output_variables], dtype=np.int64)
         self.geometry = geometry
         self.delay_scheme = delay_scheme
+        self.coupling = coupling
+        self.diffusion_rate = float(diffusion_rate)
+        self.input_encoding = input_encoding
+        self.input_range = (low, high)
+        self.input_sign = input_sign
         if couple_vars is None:
             couple_vars = np.ones(len(self.output_indices))
         self.couple_vars = np.asarray(couple_vars, dtype=float).reshape(-1)
@@ -240,6 +294,28 @@ class BioReservoir(Node):
         if self.delay_scheme == "substep":
             self._ring, self._ring_pos = substep_history(
                 self.states, self.dde_kwargs["delay"], self.rk4_substeps)
+
+        # Conductances are built before the warm-up, so that the warm-up is coupled too.
+        self.conductance = None
+        self._conductances = None
+        if self.coupling == "diffusion":
+            kernel = W if is_array(W) else W(units, units, sr=sr, connectivity=rc_connectivity,
+                                              dtype=self.dtype, seed=seed)
+            self.conductance = scale_conductances(kernel, self.diffusion_rate)
+            self._conductances = prepare_conductances(self.conductance)
+            # The exchange is integrated explicitly, and RK4 is stable on a mode decaying at
+            # rate r only for steps below about 2.78 / r. He's fastest mode decays at most at
+            # its washout and membrane exchange, mu + d/(1-d) D, plus twice the colony's
+            # total conductance (Gershgorin's bound on the graph Laplacian).
+            table = self._param_table
+            D, d, mu = table[:, _NP_D_COEFF], table[:, _NP_D_FRAC], table[:, _NP_MU]
+            fastest = float(np.max(d / (1 - d) * D + mu + 2 * self._conductances.row_sum))
+            if fastest > 2.7 * self.rk4_substeps:
+                raise ValueError(
+                    f"The AHL exchange is too fast for {self.rk4_substeps} RK4 substeps: "
+                    f"He's fastest mode decays at up to {fastest:.3g} per time unit, so the "
+                    f"explicit solver needs at least {int(np.ceil(fastest / 2.7))} substeps "
+                    f"(or a lower diffusion_rate).")
 
         logger.info(
             "Initialized BioReservoir(units=%s, warmup=%s, rk4_substeps=%s, output_variables=%s)",
@@ -400,6 +476,7 @@ class BioReservoir(Node):
                 self.rk4_substeps,
                 parallel=self.parallel,
                 node_params=self._param_table,
+                conductance=self._conductances,
                 **self.dde_kwargs,
             )
             self._update_history(next_state)
@@ -479,23 +556,27 @@ def _initialize_per_node(
 
     Builds the ``units x units`` kernel ``K``, the operator ``K (x) couple_vars`` from the
     observed state (variables of oscillator j adjacent) to the ``units`` drives, and
-    ``Win`` and the bias with one row per oscillator.
+    ``Win`` and the bias with one row per oscillator. With diffusive coupling ``W`` is the
+    conductance matrix instead (the drive has no recurrent term).
     """
     if x is None:
         return
     reservoir.set_input_dim(x.shape[1])
     dtype = reservoir.dtype
     n = int(reservoir.hypers["units"])
-    K = W_init if is_array(W_init) else W_init(
-        n, n, sr=sr, connectivity=rc_connectivity, dtype=dtype, seed=seed)
-    if K.shape != (n, n):
-        raise ValueError(f"The recurrent kernel must be {n} x {n} (one row per oscillator), "
-                         f"got {K.shape}.")
-    if len(reservoir.couple_vars) == 1 and reservoir.couple_vars[0] == 1.0:
-        W = K  # identical to the v0.1 construction
+    if reservoir.coupling == "diffusion":
+        W = reservoir.conductance
     else:
-        weights = sparse.csr_matrix(reservoir.couple_vars.reshape(1, -1))
-        W = sparse.kron(sparse.csr_matrix(K), weights, format="csr")
+        K = W_init if is_array(W_init) else W_init(
+            n, n, sr=sr, connectivity=rc_connectivity, dtype=dtype, seed=seed)
+        if K.shape != (n, n):
+            raise ValueError(f"The recurrent kernel must be {n} x {n} (one row per "
+                             f"oscillator), got {K.shape}.")
+        if len(reservoir.couple_vars) == 1 and reservoir.couple_vars[0] == 1.0:
+            W = K  # identical to the v0.1 construction
+        else:
+            weights = sparse.csr_matrix(reservoir.couple_vars.reshape(1, -1))
+            W = sparse.kron(sparse.csr_matrix(K), weights, format="csr")
 
     Win = Win_init if is_array(Win_init) else Win_init(
         n, x.shape[1], input_scaling=input_scaling, connectivity=input_connectivity,
@@ -508,6 +589,8 @@ def _initialize_per_node(
             seed=seed)
     else:
         bias = rpy_zeros(n, 1, dtype=dtype)
+    if reservoir.input_sign == "positive":
+        Win, bias = abs(Win), abs(bias)
 
     reservoir.set_param("W", W.astype(dtype))
     reservoir.set_param("Win", Win.astype(dtype))
@@ -541,9 +624,11 @@ def _forward(reservoir: BioReservoir, x: np.ndarray) -> np.ndarray:
 def _compute_input(reservoir: BioReservoir, x: np.ndarray) -> np.ndarray:
     # Raw input at this timestep, typically normalized ECG in [0, 1] or [-1, 1]
     u = x.reshape(-1, 1)          # shape (input_dim, 1)
-    r = reservoir.state().T       # previous reservoir state, shape (units, 1)
+    nonnegative = reservoir.input_encoding == "nonnegative"
+    if nonnegative:
+        low, high = reservoir.input_range
+        u = np.clip(u, low, high) - low
     # print("Input u: ", u.T)
-    # print("Previous state r (index 0): ", r[0])
 
     # ===== 1. Input term: Win @ u (+ noise, optional bias) =====
     # Avoid noise generation/allocation when gain is 0.
@@ -554,6 +639,8 @@ def _compute_input(reservoir: BioReservoir, x: np.ndarray) -> np.ndarray:
             gain=reservoir.noise_in,
         )
         u_eff = u + noise_in
+        if nonnegative:
+            u_eff = np.maximum(u_eff, 0.0)  # noise cannot make a concentration negative
     else:
         u_eff = u
 
@@ -565,23 +652,24 @@ def _compute_input(reservoir: BioReservoir, x: np.ndarray) -> np.ndarray:
     inp_term = inp_term + reservoir.bias
     # print("Input term after bias (index 0): ", inp_term[0])
 
-    # ===== 2. Recurrent term: W @ r (+ noise) =====
-    if reservoir.noise_rc and reservoir.noise_rc != 0.0:
-        noise_rc = reservoir.noise_generator(
-            dist=reservoir.noise_type,
-            shape=r.shape,
-            gain=reservoir.noise_rc,
-        )
-        r_eff = r + noise_rc
+    # ===== 2. Recurrent term: W @ r (+ noise), the abstract coupling only =====
+    if reservoir.coupling != "abstract":
+        rec_term = np.zeros_like(inp_term)
     else:
-        r_eff = r
+        r = reservoir.state().T       # previous reservoir state, shape (units, 1)
+        if reservoir.noise_rc and reservoir.noise_rc != 0.0:
+            noise_rc = reservoir.noise_generator(
+                dist=reservoir.noise_type,
+                shape=r.shape,
+                gain=reservoir.noise_rc,
+            )
+            r_eff = r + noise_rc
+        else:
+            r_eff = r
 
-    rec_term = reservoir.W @ r_eff     # (units, 1)
-    # print("Recurrent term before gain (index 0): ", rec_term[0])
-
-    # Use `rc_scaling` as RECURRENT GAIN (pre-normalization)
-    rec_term *= reservoir.rc_scaling
-    # print("Recurrent term after applying rc_scaling gain (index 0): ", rec_term[0])
+        rec_term = reservoir.W @ r_eff     # (units, 1)
+        # Use `rc_scaling` as RECURRENT GAIN (pre-normalization)
+        rec_term *= reservoir.rc_scaling
 
     # ===== 3. Combine into pre-drive =====
     # Combine into pre-drive

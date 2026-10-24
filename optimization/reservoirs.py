@@ -13,7 +13,7 @@ from typing import Any
 from reservoirpy.node import Node
 from reservoirpy.nodes import Reservoir
 
-from bioreservoir import BioReservoir, distance_matrix, random_gaussian_weights
+from bioreservoir import BioReservoir, distance_matrix, lattice_matrix, random_gaussian_weights
 
 
 def normalize_reservoir_type(value: str | None) -> str:
@@ -61,8 +61,10 @@ def _build_bioreservoir_topology(params: dict[str, Any], seed: int):
             p_excite=float(params.get("p_excite", 0.5)),
             seed=seed,
         )
+    if topo == "lattice":
+        return lattice_matrix()
     raise ValueError(
-        f"Unknown topology_type {topo!r}. Choose 'distance' or 'random'."
+        f"Unknown topology_type {topo!r}. Choose 'distance', 'random' or 'lattice'."
     )
 
 
@@ -72,6 +74,15 @@ def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, 
     units = int(params["units"])
 
     if reservoir_type == "bioreservoir":
+        coupling = str(params.get("coupling", "abstract"))
+        if coupling == "abstract" and params.get("topology_type") == "lattice":
+            raise ValueError(
+                "topology_type 'lattice' needs coupling 'diffusion' or 'none': the abstract "
+                "coupling expects a kernel normalised to unit spectral radius ('distance' or "
+                "'random'), and the lattice is not normalised.")
+        # Only the abstract coupling has a recurrent drive (gain and noise).
+        recurrent = {k: float(params[k] if coupling == "abstract" else params.get(k, 0.0))
+                     for k in ("rc_scaling", "noise_rc")}
         W = _build_bioreservoir_topology(params, seed)
         het_cv = float(params.get("param_heterogeneity_cv", 0.0))
         het_seed_raw = params.get("param_heterogeneity_seed")
@@ -80,7 +91,7 @@ def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, 
             units=units,
             warmup=int(params["warmup"]),
             rk4_substeps=int(params["rk4_substeps"]),
-            rc_scaling=float(params["rc_scaling"]),
+            rc_scaling=recurrent["rc_scaling"],
             input_scaling=float(params["input_scaling"]),
             input_connectivity=float(params["input_connectivity"]),
             input_bias=bool(params["input_bias"]),
@@ -88,7 +99,7 @@ def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, 
             cell_coupling=float(params["cell_coupling"]),
             dde_scaling=float(params["dde_scaling"]),
             noise_in=float(params["noise_in"]),
-            noise_rc=float(params["noise_rc"]),
+            noise_rc=recurrent["noise_rc"],
             output_variables=str(params.get("output_variables", "all")),
             param_heterogeneity_cv=het_cv,
             param_heterogeneity_seed=het_seed,
@@ -97,6 +108,11 @@ def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, 
             geometry=str(params.get("geometry", "per_node")),
             couple_vars=params.get("couple_vars"),
             delay_scheme=str(params.get("delay_scheme", "substep")),
+            coupling=coupling,
+            diffusion_rate=float(params.get("diffusion_rate", 1.0)),
+            input_encoding=str(params.get("input_encoding", "signed")),
+            input_range=tuple(params.get("input_range", (-3.0, 8.0))),
+            input_sign=str(params.get("input_sign", "mixed")),
             W=W,
             seed=seed,
         )
@@ -105,14 +121,19 @@ def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, 
             "res_units": units,
             "res_geometry": str(params.get("geometry", "per_node")),
             "res_delay_scheme": str(params.get("delay_scheme", "substep")),
+            "res_coupling": coupling,
+            "res_diffusion_rate": float(params.get("diffusion_rate", 1.0)),
+            "res_input_encoding": str(params.get("input_encoding", "signed")),
+            "res_input_range": [float(v) for v in params.get("input_range", (-3.0, 8.0))],
+            "res_input_sign": str(params.get("input_sign", "mixed")),
             "res_warmup": params["warmup"],
             "res_rk4_substeps": params["rk4_substeps"],
             "res_input_scaling": params["input_scaling"],
-            "res_rc_scaling": params["rc_scaling"],
+            "res_rc_scaling": recurrent["rc_scaling"],
             "res_dde_scaling": params["dde_scaling"],
             "res_cell_coupling": params["cell_coupling"],
             "res_noise_in": params["noise_in"],
-            "res_noise_rc": params["noise_rc"],
+            "res_noise_rc": recurrent["noise_rc"],
             "res_input_bias": params["input_bias"],
             "res_bias_scaling": params["bias_scaling"],
             "res_input_connectivity": params["input_connectivity"],
@@ -121,11 +142,11 @@ def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, 
             "res_heterogeneity_seed": het_seed,
             "res_heterogeneity_mean_preserving": bool(
                 params.get("heterogeneity_mean_preserving", True)),
-            "topo_type": params["topology_type"],
+            "topo_type": params.get("topology_type", "distance"),
             "topo_sparsity": params.get("sparsity"),
             "topo_rc_connectivity": params.get("rc_connectivity"),
-            "topo_signed": params["signed"],
-            "topo_p_excite": params["p_excite"],
+            "topo_signed": params.get("signed"),
+            "topo_p_excite": params.get("p_excite"),
             "topo_interaction_diameters": params.get("interaction_diameters"),
             "topo_fade_alpha": params.get("fade_alpha"),
             "topo_cutoff_radius": "auto",

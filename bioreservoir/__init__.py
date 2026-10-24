@@ -14,6 +14,10 @@ distance_matrix
     weights and configurable sparsity / spectral normalisation.
     This is the topology used for every result in the paper.
 
+lattice_matrix
+    Nearest-neighbour links of colonies on a regular 2-D grid (a trap array), for
+    diffusive coupling (``BioReservoir(coupling="diffusion")``).
+
 random_gaussian_weights
     Gaussian sparse recurrent weight matrix for the ESN ablation baseline
     (``topology_type='random'``).  ReservoirPy-compatible callable pattern;
@@ -29,11 +33,12 @@ get_dde_params
 
 from bioreservoir.dde import generate_node_params, get_dde_params, solve_dde_rk4
 from bioreservoir.node import BioReservoir
-from bioreservoir.topology import distance_matrix, random_gaussian_weights
+from bioreservoir.topology import distance_matrix, lattice_matrix, random_gaussian_weights
 
 __all__ = [
     "BioReservoir",
     "distance_matrix",
+    "lattice_matrix",
     "random_gaussian_weights",
     "solve_dde_rk4",
     "get_dde_params",

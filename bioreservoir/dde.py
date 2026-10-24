@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 from numba import njit, prange
+from scipy import sparse
 
 logger = logging.getLogger(__name__)
 
@@ -757,6 +758,131 @@ _solve_substep_parallel = njit(parallel=True, fastmath=True)(_substep_kernel)
 _solve_substep_sequential = njit(fastmath=True)(_substep_kernel)
 
 
+# ---------------------------------------------------------------------------
+# Diffusive coupling: AHL exchange between colonies inside every RK4 stage
+# ---------------------------------------------------------------------------
+#
+# Colonies exchange extracellular AHL in proportion to the concentration difference:
+# dHe_i/dt gains sum_j G_ij (He_j - He_i) for conductances G_ij >= 0, a graph Laplacian.
+# The term is evaluated at every RK4 stage from that stage's He, so the oscillators advance
+# together, stage by stage. With symmetric conductances the terms sum to zero: AHL moves
+# between colonies and is neither created nor lost by the exchange.
+#
+# The coupled solver runs on one thread: every stage needs the previous stage of all the
+# oscillators, and a parallel region per stage costs more than the stage itself at the
+# array sizes used here. Simulate several input sequences in parallel processes instead.
+# The conductances are stored as padded rows (:class:`Conductances`), whose fixed length
+# lets the compiler vectorise the exchange sum.
+
+
+@njit(fastmath=True, inline='always')
+def _stage_state(y, k_prev, c, ys, he):
+    """Stage state ``y + c * k_prev`` into ``ys``, and its He into ``he``."""
+    for i in range(y.shape[0]):
+        for v in range(4):
+            ys[i, v] = y[i, v] + c * k_prev[i, v]
+        he[i] = ys[i, 3]
+
+
+@njit(fastmath=True, inline='always')
+def _stage_derivatives(ys, he, ring, pos, length, back, frac, instantaneous, input_vec,
+                       node_params, index, value, row_sum, out):
+    """Derivatives at the stage state ``ys``, with the AHL exchange, into ``out``."""
+    p = node_params
+    width = index.shape[1]
+    for i in range(ys.shape[0]):
+        Hi = ys[i, 2]
+        He = ys[i, 3]
+        lag = Hi if instantaneous else _ring_value(ring, i, pos, length, back, frac)
+        dA, dI, dHi, dHe = _compute_derivatives(
+            ys[i, 0], ys[i, 1], Hi, He, lag, input_vec[i],
+            p[i, 0], p[i, 1], p[i, 2], p[i, 3], p[i, 4], p[i, 5], p[i, 6], p[i, 7],
+            p[i, 8], p[i, 9], p[i, 10], p[i, 11], p[i, 12], p[i, 13], p[i, 14], p[i, 15])
+        exchange = 0.0
+        for q in range(width):
+            exchange += value[i, q] * he[index[i, q]]
+        out[i, 0] = dA
+        out[i, 1] = dI
+        out[i, 2] = dHi
+        out[i, 3] = dHe + exchange - row_sum[i] * He
+
+
+@njit(fastmath=True)
+def _solve_diffusion(state, ring, pos, instantaneous, back0, frac0, back_mid, frac_mid,
+                     back1, frac1, substeps, input_vec, node_params, index, value, row_sum):
+    """RK4 over one input step with the AHL exchange at every stage (see above).
+
+    ``state`` (n_nodes, 4) and ``ring`` (n_nodes, L) are updated in place.
+    """
+    n_nodes = state.shape[0]
+    length = ring.shape[1]
+    dt = 1.0 / substeps
+    y = state.copy()
+    ys = np.empty((n_nodes, 4))
+    he = np.empty(n_nodes)
+    zero = np.zeros((n_nodes, 4))
+    k1 = np.empty((n_nodes, 4))
+    k2 = np.empty((n_nodes, 4))
+    k3 = np.empty((n_nodes, 4))
+    k4 = np.empty((n_nodes, 4))
+    p = pos
+    for _ in range(substeps):
+        _stage_state(y, zero, 0.0, ys, he)
+        _stage_derivatives(ys, he, ring, p, length, back0, frac0, instantaneous, input_vec,
+                           node_params, index, value, row_sum, k1)
+        _stage_state(y, k1, 0.5 * dt, ys, he)
+        _stage_derivatives(ys, he, ring, p, length, back_mid, frac_mid, instantaneous,
+                           input_vec, node_params, index, value, row_sum, k2)
+        _stage_state(y, k2, 0.5 * dt, ys, he)
+        _stage_derivatives(ys, he, ring, p, length, back_mid, frac_mid, instantaneous,
+                           input_vec, node_params, index, value, row_sum, k3)
+        _stage_state(y, k3, dt, ys, he)
+        _stage_derivatives(ys, he, ring, p, length, back1, frac1, instantaneous, input_vec,
+                           node_params, index, value, row_sum, k4)
+        p += 1
+        if p == length:
+            p = 0
+        for i in range(n_nodes):
+            for v in range(4):
+                y[i, v] += (dt / 6.0) * (k1[i, v] + 2.0 * k2[i, v] + 2.0 * k3[i, v] + k4[i, v])
+            ring[i, p] = y[i, 2]
+    state[:, :] = y
+
+
+@dataclass(frozen=True)
+class Conductances:
+    """AHL conductances prepared for the coupled solver (:func:`prepare_conductances`).
+
+    Row i lists the colonies that exchange with colony i (``index``) and the conductances
+    (``value``), padded to a common length with zero conductances; ``row_sum`` is each
+    colony's total conductance.
+    """
+
+    index: np.ndarray
+    value: np.ndarray
+    row_sum: np.ndarray
+
+
+def prepare_conductances(conductance) -> Conductances:
+    """Prepare a non-negative ``n x n`` conductance matrix (dense or sparse) for the solver."""
+    G = sparse.csr_matrix(conductance, dtype=np.float64)
+    n = G.shape[0]
+    if G.shape != (n, n):
+        raise ValueError(f"The conductances must be square, got {G.shape}.")
+    if G.nnz and G.data.min() < 0:
+        raise ValueError("Conductances must be non-negative.")
+    counts = np.diff(G.indptr)
+    width = int(counts.max()) if n else 0
+    index = np.repeat(np.arange(n, dtype=np.int32)[:, None], width, axis=1)
+    value = np.zeros((n, width))
+    rows = np.repeat(np.arange(n), counts)
+    slots = np.arange(G.nnz) - np.repeat(G.indptr[:-1], counts)
+    index[rows, slots] = G.indices
+    value[rows, slots] = G.data
+    return Conductances(index=index, value=value,
+                        row_sum=np.asarray(G.sum(axis=1), dtype=np.float64).reshape(-1))
+
+
 def solve_dde_substep(
     state: np.ndarray,
     ring: np.ndarray,
@@ -765,6 +891,7 @@ def solve_dde_substep(
     substeps: int,
     parallel: bool = False,
     node_params: np.ndarray | None = None,
+    conductance: Any = None,
     **dde_overrides: Any,
 ) -> tuple[np.ndarray, int]:
     """Advance the oscillators by one input step with the delay resolved at every substep.
@@ -782,6 +909,12 @@ def solve_dde_substep(
         RK4 steps per input step.
     node_params : np.ndarray, shape (n_nodes, 16), optional
         Per-node parameters (:func:`generate_node_params`); the nominal ones if omitted.
+    conductance : array, sparse matrix or Conductances, shape (n_nodes, n_nodes), optional
+        AHL conductances between colonies, ``G_ij >= 0`` per unit time: dHe_i/dt gains
+        ``sum_j G_ij (He_j - He_i)`` at every RK4 stage. Without it the oscillators are
+        integrated independently. Pass the result of :func:`prepare_conductances` to
+        prepare the matrix once for many steps. The coupled solver runs on one thread
+        (``parallel`` is ignored).
 
     Returns
     -------
@@ -801,8 +934,17 @@ def solve_dde_substep(
         offsets += [back, float(lag - back)]
 
     new_state = np.array(state, dtype=np.float64)
-    solver = _solve_substep_parallel if parallel else _solve_substep_sequential
-    solver(new_state, ring, int(pos), lags is None, *offsets, int(substeps),
-           np.ascontiguousarray(input_vec, dtype=np.float64).reshape(-1),
-           np.ascontiguousarray(node_params, dtype=np.float64))
+    args = (new_state, ring, int(pos), lags is None, *offsets, int(substeps),
+            np.ascontiguousarray(input_vec, dtype=np.float64).reshape(-1),
+            np.ascontiguousarray(node_params, dtype=np.float64))
+    if conductance is None:
+        solver = _solve_substep_parallel if parallel else _solve_substep_sequential
+        solver(*args)
+    else:
+        if not isinstance(conductance, Conductances):
+            conductance = prepare_conductances(conductance)
+        if conductance.row_sum.shape != (state.shape[0],):
+            raise ValueError(f"The conductances are for {conductance.row_sum.shape[0]} "
+                             f"colonies, not {state.shape[0]}.")
+        _solve_diffusion(*args, conductance.index, conductance.value, conductance.row_sum)
     return new_state, (int(pos) + int(substeps)) % length
