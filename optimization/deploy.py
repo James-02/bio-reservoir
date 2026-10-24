@@ -30,6 +30,8 @@ Usage
   python -m optimization.deploy --host host2 --type baseline --study B1-balanced
   python -m optimization.deploy --host host2 --push results/optuna/optuna-P2-distance.db \\
       --run "python -m optimization.optimize rerun-best --study P2-distance --folds 5"
+  python -m optimization.deploy --host host5 --label tests \\
+      --run "python -m pytest -p no:cacheprovider tests/unit tests/integration"
   python -m optimization.deploy --status | --progress | --logs [N] | --watch [SEC]
   python -m optimization.deploy --wait                 # wait for sessions, then collect
   python -m optimization.deploy --reset-running --host host1 --study P2-distance
@@ -65,7 +67,7 @@ log = logging.getLogger("deploy")
 q = shlex.quote
 
 SYNC_SOURCES = ("bioreservoir/", "optimization/", "training/", "utils/", "scripts/",
-                "experiments/", "pyproject.toml", "uv.lock", "README.md")
+                "experiments/", "tests/", "pyproject.toml", "uv.lock", "README.md")
 SSH_OPTIONS = ("-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
                "-o", "ConnectTimeout=60", "-o", "ServerAliveInterval=30")
 RSYNC = ("rsync", "-az", "--exclude=__pycache__", "--exclude=*.pyc", "--exclude=*.egg-info")
@@ -203,12 +205,17 @@ class Deployer:
     # -- deployment steps ----------------------------------------------------
 
     def sync(self, host: str) -> None:
-        """Copy the code (replacing older copies) and any missing data files."""
+        """Copy the code and tests (replacing older copies) and any missing data files.
+
+        Symbolic links under ``data/`` (a worktree linking to the prepared dataset) are
+        copied as the files they point to.
+        """
         ws, root = self.settings.workspace_of(host), config.PROJECT_ROOT
         self.ssh(host, f"mkdir -p {q(ws)}/logs {q(ws)}/results")
         for source in SYNC_SOURCES:
             self.rsync(host, "--delete", f"{root}/{source}", self.remote(host, f"{ws}/{source}"))
-        self.rsync(host, "--ignore-existing", f"{root}/data/", self.remote(host, f"{ws}/data/"))
+        self.rsync(host, "--ignore-existing", "--copy-links", f"{root}/data/",
+                   self.remote(host, f"{ws}/data/"))
         log.info("[%s] code and data synced", host)
 
     def push(self, host: str, paths: Sequence[str]) -> None:
@@ -226,7 +233,10 @@ class Deployer:
             self.rsync(host, f"{local}{slash}", self.remote(host, f"{ws}/{rel}{slash}"))
 
     def setup_venv(self, host: str) -> None:
-        """Copy the local uv to *host*; it installs Python and the locked environment there."""
+        """Copy the local uv to *host*; it installs Python and the locked environment there.
+
+        The environment includes the ``dev`` extra, so the test suite can run on the host.
+        """
         s, ws, venv = self.settings, self.settings.workspace_of(host), self.settings.venv_of(host)
         uv = shutil.which("uv")
         if not uv:
@@ -249,7 +259,7 @@ if [ "$(printf '%s\\n' {low} "$GLIBC" | sort -V | head -n 1)" != {low} ]; then
     echo "glibc $GLIBC: no plotting packages, so runs on this host cannot draw figures" >&2
     SKIP="{skip}"
 fi
-bin/uv sync --frozen --quiet $SKIP
+bin/uv sync --frozen --extra dev --quiet $SKIP
 {q(venv)}/bin/python -c "import numba, optuna, reservoirpy, sklearn"
 """)
         log.info("[%s] environment ready", host)
