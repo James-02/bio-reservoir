@@ -42,6 +42,10 @@ class TestGetEnvironment:
         assert first is second
 
     def test_records_full_git_sha(self, fresh):
+        try:
+            env_mod._git("rev-parse", "HEAD")
+        except (OSError, subprocess.CalledProcessError):
+            pytest.skip("not a git checkout: deployed copies take the commit from deploy")
         env = get_environment()
         assert re.fullmatch(r"[0-9a-f]{40}", env["git_commit"])
         assert isinstance(env["git_dirty"], bool)
