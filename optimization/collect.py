@@ -23,7 +23,7 @@ import argparse
 import logging
 from collections.abc import Sequence
 
-from optimization.deploy import NAME_PATTERN, Deployer, for_hosts, load_settings
+from optimization.deploy import NAME_PATTERN, Deployer, for_hosts, load_settings, q
 from utils import config
 from utils.logger import setup_logging
 
@@ -36,7 +36,7 @@ def collect_host(deployer: Deployer, host: str, *, studies: Sequence[str] = (),
     for name in (*studies, *runs):
         if not NAME_PATTERN.match(name):
             raise SystemExit(f"Invalid study or run name {name!r}")
-    ws = deployer.settings.workspace
+    ws = deployer.settings.workspace_of(host)
     optuna_dir = config.results_root() / "optuna"
     targets = [optuna_dir] + [config.runs_dir() / run for run in runs]
     if logs:
@@ -84,9 +84,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         deployer.target(host)
 
     if args.list:
-        script = f"ls {deployer.settings.workspace}/results/optuna/ 2>/dev/null || true"
         for host, out in for_hosts(hosts, lambda h: deployer.ssh(
-                h, script, capture=True, check=False)).items():
+                h, f"ls {q(deployer.settings.workspace_of(h))}/results/optuna/ 2>/dev/null || true",
+                capture=True, check=False)).items():
             print(f"  [{host}]\n" + "\n".join(f"    {line}" for line in (out or "").splitlines()
                                              if line.endswith(".db")))
         return

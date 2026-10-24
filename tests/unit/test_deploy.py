@@ -3,6 +3,7 @@ execute nothing, and remote runs are labelled with the host label and git SHA.""
 
 import json
 import logging
+import shutil
 import subprocess
 
 import pytest
@@ -20,10 +21,11 @@ def settings(tmp_path, monkeypatch):
     monkeypatch.setenv("BIORESERVOIR_DEPLOY_USER", "runner")
     monkeypatch.setenv("BIORESERVOIR_DEPLOY_WORKSPACE", "/srv/bioreservoir/")
     for key in ("BIORESERVOIR_DEPLOY_PYTHON", "BIORESERVOIR_DEPLOY_PIP_PROXY",
-                "BIORESERVOIR_DEPLOY_SERVICE"):
+                "BIORESERVOIR_DEPLOY_SERVICE", "BIORESERVOIR_DEPLOY_WORKSPACES"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(deploy, "git_state", lambda: ("0" * 40, "false"))
     monkeypatch.setattr(deploy.subprocess, "run", _no_execution)
+    monkeypatch.setattr(shutil, "which", lambda name: f"/opt/uv/bin/{name}")
     return deploy.load_settings()
 
 
@@ -31,17 +33,36 @@ def _no_execution(*args, **kwargs):
     raise AssertionError("a dry run executed a command")
 
 
-@pytest.mark.parametrize("python, supported", [("3.9.21", False), ("3.10.14", True),
-                                               ("3.12.14", True), ("3.13.1", False)])
-def test_host_python_must_be_3_10_to_3_12(python, supported):
-    info = {"os_family": "rhel centos fedora", "os_version": "9.6", "configured_python": python}
-    assert (deploy.check_requirements(info) == []) is supported
+@pytest.mark.parametrize("glibc, problem", [
+    ("2.12", "needs glibc 2.17"), ("", "needs glibc 2.17"), ("2.17", "cannot draw figures"),
+    ("2.28", None), ("2.34", None)])
+def test_hosts_need_glibc_2_17_and_2_28_for_figures(glibc, problem):
+    problems = deploy.check_requirements({"glibc": glibc, "configured_python": "3.9.21"})
+    assert problems == [] if problem is None else problem in problems[0]
 
 
 def test_settings_come_from_config(settings):
     assert settings.hosts == {"host1": "node1.example.org", "host2": "192.0.2.10"}
     assert settings.workspace == "/srv/bioreservoir"
     assert deploy.Deployer(settings).target("host2") == "runner@192.0.2.10"
+
+
+def test_a_host_can_have_its_own_workspace(settings, monkeypatch):
+    monkeypatch.setenv("BIORESERVOIR_DEPLOY_WORKSPACES", "host2=/root/bioreservoir/")
+    deployer = deploy.Deployer(deploy.load_settings(), dry_run=True)
+    deployer.sync("host1")
+    deployer.sync("host2")
+    copies = [cmd[-1] for cmd in deployer.commands if cmd[0] == "rsync"]
+    assert "runner@node1.example.org:/srv/bioreservoir/uv.lock" in copies
+    assert "runner@192.0.2.10:/root/bioreservoir/uv.lock" in copies
+    collect.collect_host(deployer, "host2", studies=["P2-distance"])
+    assert deployer.commands[-1][-2] == (
+        "runner@192.0.2.10:/root/bioreservoir/results/optuna/optuna-P2-distance.db")
+    for value, message in (("host9=/root/bioreservoir", "not a configured host"),
+                           ("host2=/root", "WORKSPACES")):
+        monkeypatch.setenv("BIORESERVOIR_DEPLOY_WORKSPACES", value)
+        with pytest.raises(SystemExit, match=message):
+            deploy.load_settings()
 
 
 def test_missing_settings_are_an_error(tmp_path, monkeypatch):
@@ -123,7 +144,8 @@ class TestDeployer:
         deployer = deploy.Deployer(settings, dry_run=True)
         deployer.sync("host1")
         mkdir, *copies = deployer.commands
-        assert mkdir[-1] == "mkdir -p /srv/bioreservoir/logs /srv/bioreservoir/results"
+        assert mkdir[-1].endswith("\nmkdir -p /srv/bioreservoir/logs /srv/bioreservoir/results")
+        assert {"experiments/", "uv.lock"} <= set(deploy.SYNC_SOURCES)
         assert len(copies) == len(deploy.SYNC_SOURCES) + 1
         assert all("--delete" in cmd for cmd in copies[:-1])
         assert [cmd[-1] for cmd in copies[:-1]] == [
@@ -145,15 +167,21 @@ class TestDeployer:
             with pytest.raises(SystemExit):
                 deployer.push("host1", [path])
 
-    def test_the_venv_needs_a_supported_python_and_can_use_a_proxy(self, settings,
-                                                                     monkeypatch):
+    def test_uv_installs_python_and_the_locked_environment(self, settings, monkeypatch):
         monkeypatch.setenv("BIORESERVOIR_DEPLOY_PIP_PROXY", "http://proxy.example:3128")
         deployer = deploy.Deployer(deploy.load_settings(), dry_run=True)
         deployer.setup_venv("host1")
+        copy = next(cmd for cmd in deployer.commands if cmd[0] == "rsync")
+        assert copy[-2:] == ["/opt/uv/bin/uv", "runner@node1.example.org:/srv/bioreservoir/bin/uv"]
         script = deployer.commands[-1][-1]
-        assert "(3, 10) <= v <= (3, 12)" in script
-        assert "--proxy http://proxy.example:3128" in script
-        assert "/srv/bioreservoir/venv/bin/pip install" in script
+        assert "bin/uv sync --frozen" in script and "pip install" not in script
+        assert "UV_PYTHON_INSTALL_DIR=/srv/bioreservoir/python" in script
+        assert "UV_PROJECT_ENVIRONMENT=/srv/bioreservoir/venv" in script
+        assert "HTTPS_PROXY=http://proxy.example:3128" in script
+        assert "--no-install-package pillow" in script
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+        with pytest.raises(SystemExit, match="uv is not installed"):
+            deployer.setup_venv("host1")
 
     def test_services_are_paused_and_started_only_when_configured(self, settings,
                                                                   monkeypatch):
@@ -166,15 +194,19 @@ class TestDeployer:
         deployer.stop_service("host1")
         deployer.start_service("host1")
         stop, start = (cmd[-1] for cmd in deployer.commands)
-        assert stop.startswith("systemctl stop worker.service")
-        assert start.startswith("systemctl start worker.service")
+        assert "\nsystemctl stop worker.service" in stop
+        assert "\nsystemctl start worker.service" in start
 
-    def test_cleanup_stops_the_session_and_removes_the_workspace(self, settings):
+    def test_cleanup_stops_everything_the_session_started(self, settings):
         deployer = deploy.Deployer(settings, dry_run=True)
+        deployer.launch("host1", deploy.command_jobs(["sleep 60"], None))
+        assert "setsid nohup bash" in deployer.commands[-1][-1]
         deployer.cleanup("host1")
         script = deployer.commands[-1][-1]
-        assert "pkill -f /srv/bioreservoir/venv/bin/python" in script
+        assert 'kill -- -"$(cat /srv/bioreservoir/logs/session.pid)"' in script
         assert "rm -rf -- /srv/bioreservoir" in script
+        # pkill -f would match the remote shell running this script and stop it
+        assert "pkill" not in script
 
     def test_remote_commands_report_their_output(self, settings, monkeypatch):
         run = _answer("alive\n")
@@ -183,6 +215,8 @@ class TestDeployer:
         assert deployer.session_alive("host1") is True
         assert deployer.rsync("host1", "a", "b") is True
         assert run.commands[0][:2] == ["ssh", "-o"] and run.commands[1][0] == "rsync"
+        assert {"BatchMode=yes", "ConnectTimeout=60"} <= set(run.commands[0])
+        assert run.commands[0][-1].startswith("unset PYTHONPATH PYTHONHOME\n")
         assert deploy.Deployer(settings, dry_run=True).session_alive("host1") is False
 
     def test_failed_copies_stop_or_warn(self, settings, monkeypatch, caplog):
@@ -209,18 +243,11 @@ class TestJobs:
         with pytest.raises(SystemExit, match="Invalid study"):
             deploy.study_jobs(["bad;name"], None, [], study_type="readout")
 
-    def test_requirements_name_each_problem(self):
-        problems = deploy.check_requirements({"os_family": "debian", "os_name": "Debian",
-                                              "os_version": "12",
-                                              "configured_python": "3.9.2"})
-        assert len(problems) == 2
-        assert "RHEL 9" in problems[0] and "3.9.2" in problems[1]
-
 
 class TestMonitoring:
     INFO = {"os_name": "Rocky Linux", "os_version": "9.6", "os_family": "rocky rhel centos",
-            "kernel": "5.14.0", "arch": "x86_64", "cpu_model": "CPU", "sockets": 2,
-            "physical_cores": 48, "logical_cpus": 96, "ram_gb": 754.3,
+            "kernel": "5.14.0", "arch": "x86_64", "glibc": "2.34", "cpu_model": "CPU",
+            "sockets": 2, "physical_cores": 48, "logical_cpus": 96, "ram_gb": 754.3,
             "configured_python": "3.12.1", "pythons": {}}
 
     @staticmethod
