@@ -1,0 +1,70 @@
+# D5 controls validation (experiments/v0.2/checks/controls). ESN reference.
+name: d5-esn-forest
+description: 'The v0.1 echo state network (ESN-balanced trial 239, 850 units) observed like
+  the controls; the v0.1 random forest. Grid: three reservoir seeds x one image (final), four
+  images or the mean over the beat x clean or 1% multiplicative measurement noise.'
+seed: 6337
+task:
+  labels: five-class
+  rows: 4015
+  balance_classes: true
+  max_per_class: null
+  cap_includes_test: false
+  scaler: sequence_zscore
+  data_file: null
+reservoir:
+  type: esn
+  seed: 6337
+  params:
+    units: 850
+    esn_leak_rate: 0.3160238707949273
+    esn_spectral_radius: 1.6955020298458932
+    esn_activation: tanh
+    input_scaling: 0.32714579463608107
+    input_connectivity: 0.6246343669642176
+    input_bias: true
+    bias_scaling: 0.9630661362999436
+    noise_in: 0.005487227657292568
+    noise_rc: 0.0009442056404533605
+    rc_connectivity: 0.17937632730640085
+features: {}
+readout:
+  classifier: RF
+  scale: false
+  params:
+    n_estimators: 326
+    criterion: log_loss
+    max_depth: 23
+    max_features: sqrt
+    min_samples_split: 2
+    min_samples_leaf: 1
+    class_weight: balanced
+    oob_score: true
+    random_state: 6337
+    n_jobs: -1
+cv:
+  folds: 5
+  simulate: once
+study:
+  trials: 18
+  metric: f1
+  sampler:
+    type: grid
+  search:
+    reservoir.seed:
+      type: categorical
+      choices:
+      - 6337
+      - 6338
+      - 6339
+    features.aggregation:
+      type: categorical
+      choices:
+      - final
+      - images:4
+      - mean
+    features.measurement_noise:
+      type: categorical
+      choices:
+      - 0.0
+      - 0.01

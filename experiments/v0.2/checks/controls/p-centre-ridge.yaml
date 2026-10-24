@@ -1,0 +1,84 @@
+# D5 controls validation (experiments/v0.2/checks/controls). P centre reference.
+name: d5-p-centre-ridge
+description: 'The P centre (Phase 1 previews, 19 Oct: 1,024-trap lattice, diffusive AHL exchange
+  at rate 0.6, input x5.6 to 66% of the colonies, heterogeneity 0.065, warm-up 800, 16 substeps),
+  observed through the LuxI reporter; scaled ridge with its strength chosen by leave-one-out
+  (RidgeCV). Grid: three reservoir seeds x one image (final), four images or the mean over
+  the beat x clean or 1% multiplicative measurement noise.'
+seed: 6337
+task:
+  labels: five-class
+  rows: 4015
+  balance_classes: true
+  max_per_class: null
+  cap_includes_test: false
+  scaler: sequence_zscore
+  data_file: null
+reservoir:
+  type: bioreservoir
+  seed: 6337
+  params:
+    units: 1024
+    warmup: 800
+    rk4_substeps: 16
+    input_scaling: 0.155113
+    input_connectivity: 0.66
+    input_bias: false
+    bias_scaling: 0.1
+    rc_scaling: 0.007036187544739917
+    dde_scaling: 0.0006439480590749527
+    cell_coupling: 12.74579065885262
+    noise_in: 0.01442
+    noise_rc: 0.2397
+    output_variables: IHe
+    param_heterogeneity_cv: 0.065
+    param_heterogeneity_seed: 7
+    heterogeneity_mean_preserving: true
+    topology_type: lattice
+    interaction_diameters: 8.2
+    fade_alpha: 2.80278092396274e-05
+    sparsity: 1.0
+    signed: false
+    p_excite: 1.0
+    geometry: per_node
+    delay_scheme: substep
+    normalize_after_masks: true
+    coupling: diffusion
+    diffusion_rate: 0.6
+    input_encoding: nonnegative
+    input_range:
+    - -3.0
+    - 8.0
+    input_sign: positive
+features:
+  variables:
+  - I
+readout:
+  classifier: RidgeCV
+  scale: true
+cv:
+  folds: 5
+  simulate: once
+study:
+  trials: 18
+  metric: f1
+  sampler:
+    type: grid
+  search:
+    reservoir.seed:
+      type: categorical
+      choices:
+      - 6337
+      - 6338
+      - 6339
+    features.aggregation:
+      type: categorical
+      choices:
+      - final
+      - images:4
+      - mean
+    features.measurement_noise:
+      type: categorical
+      choices:
+      - 0.0
+      - 0.01
