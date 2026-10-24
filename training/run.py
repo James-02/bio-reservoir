@@ -91,6 +91,9 @@ RESERVOIR_KEYS = {
         "input_connectivity", "input_bias", "bias_scaling", "noise_in", "noise_rc",
         "rc_connectivity",
     ),
+    # Digital controls (optimization.controls)
+    "random_features": ("units", "length", "activation", "input_scaling", "bias_scaling"),
+    "leaky_bank": ("units", "tau_min", "tau_max", "band_pass", "expansion", "input_range"),
 }
 
 SCALAR_METRICS = ("f1", "f1_macro", "f1_weighted", "accuracy", "precision", "recall",
@@ -275,6 +278,8 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
         kind = str(params.get("reservoir_type", reservoir.get("type", "bioreservoir")))
         from optimization.reservoirs import normalize_reservoir_type
         kind = normalize_reservoir_type(kind)
+        from optimization.controls import CONTROL_DEFAULTS
+        params = {**CONTROL_DEFAULTS.get(kind, {}), **params}
         ignored = sorted(set(reservoir.get("params") or {}) - set(RESERVOIR_KEYS[kind])
                          - {"reservoir_type"})
         if ignored:
@@ -411,8 +416,12 @@ def _check_observation(sections: dict[str, Any], reservoir: dict[str, Any]) -> N
                 or len(set(variables)) != len(variables)):
             raise ValueError("features.variables must list variables of A, I, Hi and He, "
                              "each once.")
-        if reservoir.get("type", "bioreservoir") != "bioreservoir":
-            raise ValueError("features.variables needs a bioreservoir.")
+        kind = reservoir.get("type", "bioreservoir")
+        if kind != "bioreservoir":
+            raise ValueError(f"features.variables needs a bioreservoir: it names variables of "
+                             f"the colony model (A, I, Hi, He), which the {kind} reservoir does "
+                             "not have. Remove features.variables to observe all of its "
+                             "features.")
     if variables is None and not features["measurement_noise"] \
             and not features["calibration_error"]:
         return

@@ -27,10 +27,16 @@ def normalize_reservoir_type(value: str | None) -> str:
         "esn": "esn",
         "echo-state-network": "esn",
         "echo_state_network": "esn",
+        # Digital controls (optimization.controls)
+        "random_features": "random_features",
+        "random-features": "random_features",
+        "leaky_bank": "leaky_bank",
+        "leaky-bank": "leaky_bank",
     }
     if raw not in aliases:
         raise ValueError(
-            f"Unknown reservoir_type {value!r}. Choose 'bioreservoir' or 'esn'."
+            f"Unknown reservoir_type {value!r}. Choose 'bioreservoir', 'esn', "
+            "'random_features' or 'leaky_bank'."
         )
     return aliases[raw]
 
@@ -72,6 +78,10 @@ def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, 
     """Build the requested reservoir and return reproducibility metadata."""
     reservoir_type = normalize_reservoir_type(params.get("reservoir_type", "bioreservoir"))
     units = int(params["units"])
+    from optimization.controls import CONTROL_TYPES, build_control
+
+    if reservoir_type in CONTROL_TYPES:
+        return build_control(reservoir_type, params, seed)
 
     if reservoir_type == "bioreservoir":
         coupling = str(params.get("coupling", "abstract"))
