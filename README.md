@@ -110,7 +110,7 @@ python -m training.run study-table my-study.yaml --group --csv my-study.csv
 
 Trials run one at a time with the beats in parallel, so a study with a seeded sampler runs the same trials again; run one process per study. `sampler: {type: grid}` runs every combination of the `choices`. The study is stored in `results/optuna/optuna-<name>.db` (or `--storage`). Running the command again resumes the study; only `study.trials` may change between runs, and every search path must name a setting the run reads. A study whose config takes its states from another run (`reservoir: {states_from: <run folder>}`, a run made with `outputs.save_states: true`) refits only the readout on the saved states of each fold, so readout settings can be tuned without simulating the reservoir again.
 
-`study-table` prints one row per trial: the searched values, the reservoir seed, the metric's mean and SD over the folds, the trial's wall time, the time spent simulating the beats and the commit. With `--group` it averages the trials that differ only in `reservoir.seed`, or only in the study (several configs may be given), so a grid run at three seeds reads as one row per point, with the SD over seeds and the mean SD over folds. `--csv` writes the table.
+`study-table` prints one row per trial: the searched values, the reservoir seed, the metric's mean and SD over the folds, the trial's wall time, the time spent simulating the beats and the commit. With `--group` it averages the trials that differ only in `reservoir.seed`, or only in the study (several configs may be given), so a grid run at three seeds reads as one row per point, with the SD over seeds and the mean SD over folds. `--csv` writes the table. The configs of the `v0.2` campaign (tracking set, Phase 1 grids, Phase 2 searches) are in [experiments/v0.2](experiments/v0.2/README.md).
 
 ### Held-out evaluation
 
@@ -141,7 +141,7 @@ The code defaults include the fixes listed in the [CHANGELOG](CHANGELOG.md) (one
 - **optimization/** — Optuna hyperparameter studies, study registry, and CLI commands for running/evaluating studies.
 - **utils/** — Preprocessing (ECG loading, augmentation, scaling), analysis metrics, visualisation, and result management.
 - **scripts/** — Standalone experiment scripts and analysis helpers.
-- **experiments/** — Run configs (`benchmarks/v0.1/`: the `v0.1` headline runs).
+- **experiments/** — Run configs (`benchmarks/v0.1/`: the `v0.1` headline runs; `v0.2/`: the `v0.2` campaign studies).
 - **data/ecg/** — MIT-BIH arrhythmia dataset files (not tracked; `python -m utils.preprocessing`).
 - **data/splits/** — Held-out validation and test splits (beat IDs and checksums, tracked).
 - **results/** — Working outputs (gitignored): Optuna studies, fold runs, metrics and figures; see [Results Layout](#results-layout).

@@ -74,6 +74,15 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Added
 
+- [engineering] The `v0.2` campaign configs in `experiments/v0.2/` (index:
+  `experiments/v0.2/README.md`): the tracking set rerun at every tag (the P centre, P
+  lattice #208, A′ #109, U #68 and the `v0.1` ESN, three reservoir seeds each), the Phase 1
+  grids around the P centre (`e1/`: 14 grid studies, 540 trials, three reservoir seeds) and
+  the Phase 2 seeded TPE searches (`e2/`: P lattice 300, A′ 300, U 200 and ESN 200 trials,
+  starting from the exploration optima). `tests/unit/test_experiment_configs.py` checks
+  that every config resolves, searches only settings its run reads, has a unique name with
+  its folder's prefix, runs as many trials as its grid has points, and reaches no coupling
+  that the RK4 stability check refuses. No reported number changes.
 - [engineering] `python -m training.run study-table CONFIG [CONFIG ...] [--group]
   [--csv FILE]`: one row per trial of a study (searched values, reservoir seed, the
   metric's mean and SD over folds, wall time, simulation time, commit); `--group` averages

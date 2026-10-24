@@ -1,0 +1,37 @@
+# Tracking set: ESN, at three reservoir seeds. It is rerun at every tagged code version to
+# follow the model's numbers across versions. Run each version in a fresh workspace, or
+# with --storage, so that the trials of an earlier version are not resumed.
+#    python -m training.run study experiments/v0.2/tracking/esn.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/tracking/esn.yaml --group
+name: tracking-esn
+description: >-
+  Tracking set: the v0.1 ESN (experiments/benchmarks/v0.1/esn.yaml), clean mean of its
+  states over the beat, RidgeCV readout; three reservoir seeds.
+seed: 6337
+task: {labels: five-class, rows: 4015, balance_classes: true, scaler: sequence_zscore, seed: 6337}
+reservoir:
+  type: esn
+  seed: 6337
+  params:
+    units: 850
+    input_scaling: 0.32714579463608107
+    input_connectivity: 0.6246343669642176
+    input_bias: true
+    bias_scaling: 0.9630661362999436
+    noise_in: 0.005487227657292568
+    noise_rc: 0.0009442056404533605
+    rc_connectivity: 0.17937632730640085
+    esn_leak_rate: 0.3160238707949273
+    esn_spectral_radius: 1.6955020298458932
+    esn_activation: tanh
+features: {aggregation: mean}
+readout: {classifier: RidgeCV, scale: true}
+cv: {folds: 5, seed: 6337}
+study:
+  trials: 3
+  metric: f1
+  sampler: {type: grid, seed: 6337}
+  search:
+    reservoir.seed:
+      type: categorical
+      choices: [6337, 6338, 6339]
