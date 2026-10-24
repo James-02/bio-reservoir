@@ -16,6 +16,9 @@ from reservoirpy.utils.validation import is_array
 from scipy import sparse
 
 from bioreservoir.dde import (
+    _NP_D_COEFF,
+    _NP_D_FRAC,
+    _NP_MU,
     generate_node_params,
     get_dde_params,
     log_dde_params,
@@ -88,7 +91,8 @@ class BioReservoir(Node):
           ``distance_matrix(signed=False)`` or ``lattice_matrix()``), scaled so that a
           colony's conductances sum to ``diffusion_rate`` on average (per model time
           unit); symmetric conductances conserve AHL. ``rc_scaling`` and ``noise_rc``
-          are not used.
+          are not used. The exchange is integrated explicitly, so an exchange too fast for
+          the RK4 step (``1 / rk4_substeps``) is refused.
         * ``"none"``: independent oscillators.
 
         ``input_encoding="nonnegative"`` delivers the input as a non-negative inducer
@@ -299,6 +303,19 @@ class BioReservoir(Node):
                                               dtype=self.dtype, seed=seed)
             self.conductance = scale_conductances(kernel, self.diffusion_rate)
             self._conductances = prepare_conductances(self.conductance)
+            # The exchange is integrated explicitly, and RK4 is stable on a mode decaying at
+            # rate r only for steps below about 2.78 / r. He's fastest mode decays at most at
+            # its washout and membrane exchange, mu + d/(1-d) D, plus twice the colony's
+            # total conductance (Gershgorin's bound on the graph Laplacian).
+            table = self._param_table
+            D, d, mu = table[:, _NP_D_COEFF], table[:, _NP_D_FRAC], table[:, _NP_MU]
+            fastest = float(np.max(d / (1 - d) * D + mu + 2 * self._conductances.row_sum))
+            if fastest > 2.7 * self.rk4_substeps:
+                raise ValueError(
+                    f"The AHL exchange is too fast for {self.rk4_substeps} RK4 substeps: "
+                    f"He's fastest mode decays at up to {fastest:.3g} per time unit, so the "
+                    f"explicit solver needs at least {int(np.ceil(fastest / 2.7))} substeps "
+                    f"(or a lower diffusion_rate).")
 
         logger.info(
             "Initialized BioReservoir(units=%s, warmup=%s, rk4_substeps=%s, output_variables=%s)",

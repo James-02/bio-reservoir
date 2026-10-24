@@ -74,14 +74,19 @@ def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, 
     units = int(params["units"])
 
     if reservoir_type == "bioreservoir":
+        coupling = str(params.get("coupling", "abstract"))
+        if coupling == "abstract" and params.get("topology_type") == "lattice":
+            raise ValueError(
+                "topology_type 'lattice' needs coupling 'diffusion' or 'none': the abstract "
+                "coupling expects a kernel normalised to unit spectral radius ('distance' or "
+                "'random'), and the lattice is not normalised.")
+        # Only the abstract coupling has a recurrent drive (gain and noise).
+        recurrent = {k: float(params[k] if coupling == "abstract" else params.get(k, 0.0))
+                     for k in ("rc_scaling", "noise_rc")}
         W = _build_bioreservoir_topology(params, seed)
         het_cv = float(params.get("param_heterogeneity_cv", 0.0))
         het_seed_raw = params.get("param_heterogeneity_seed")
         het_seed = int(het_seed_raw) if het_seed_raw is not None else None
-        coupling = str(params.get("coupling", "abstract"))
-        # Only the abstract coupling has a recurrent drive (gain and noise).
-        recurrent = {k: float(params[k] if coupling == "abstract" else params.get(k, 0.0))
-                     for k in ("rc_scaling", "noise_rc")}
         node = BioReservoir(
             units=units,
             warmup=int(params["warmup"]),

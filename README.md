@@ -184,10 +184,11 @@ Each step from the `v0.1` model towards a chemically realisable one is one confi
 | Corrected abstract coupling | `coupling: abstract` (the defaults) |
 | AHL exchange, non-negative conductances | `coupling: diffusion`, `signed: false` (with `sparsity < 1` the conductances are not symmetric, so AHL is not conserved) |
 | + symmetric conductances, non-negative input | `preset: qs_diffusion` |
-| + reporter readout: LuxI only, one end-point image | `output_variables: I`, `features: {aggregation: final}` |
+| + reporter readout: LuxI only, one end-point image | `features: {variables: [I], aggregation: final}` |
+| + measurement noise | `features: {measurement_noise: 0.01}` |
 | + colony-to-colony variability | `param_heterogeneity_cv` |
 
-The diffusive solver advances all colonies together and runs on one thread (a parallel region per RK4 stage costs more than the stage itself); run folds or beats in parallel processes instead (`--processes`). `bioreservoir.topology.relative_asymmetry` measures how far a coupling matrix is from symmetric.
+The diffusive solver advances all colonies together and runs on one thread (a parallel region per RK4 stage costs more than the stage itself); run folds or beats in parallel processes instead (`--processes`). The exchange is integrated explicitly, so an RK4 step must be short compared with the fastest exchange; the node refuses a step that is too long (16 substeps allow lattice rates up to about 16). A lattice (`lattice_matrix`, a near-square grid) is for the diffusive coupling: its weights are not normalised, so the abstract coupling refuses it. `bioreservoir.topology.relative_asymmetry` measures how far a coupling matrix is from symmetric.
 
 ## Visualisation
 

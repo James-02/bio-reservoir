@@ -420,10 +420,11 @@ def lattice_matrix(m: int | None = None, n: int | None = None,
 
     The ``m`` colonies fill the most nearly square grid of ``rows x columns = m`` sites,
     row by row, and each is linked with weight 1 to its 4 grid neighbours (fewer at the
-    edges). If ``m`` has no factor close to its square root the grid is long and thin; a
-    prime ``m`` gives a chain. Without ``m`` and ``n``, returns the initializer (the
-    ReservoirPy pattern); other keyword arguments (``sr``, ``seed``, ...) are ignored, as
-    the grid has no random part.
+    edges). A number of colonies whose most nearly square grid is more than twice as long
+    as wide (a prime, for example) is refused. The weights are not normalised: the
+    diffusive coupling scales them (:func:`scale_conductances`). Without ``m`` and ``n``,
+    returns the initializer (the ReservoirPy pattern); other keyword arguments (``sr``,
+    ``seed``, ...) are ignored, as the grid has no random part.
     """
     if m is None and n is None:
         return partial(lattice_matrix)
@@ -432,6 +433,11 @@ def lattice_matrix(m: int | None = None, n: int | None = None,
     columns = max(int(round(np.sqrt(m))), 1)
     while m % columns:
         columns -= 1
+    if m // columns > 2 * columns:
+        raise ValueError(
+            f"{m} colonies make a {m // columns} x {columns} lattice; choose a number with "
+            f"a near-square grid (at most twice as long as wide), such as "
+            f"{int(round(np.sqrt(m))) ** 2}.")
     sites = np.arange(m).reshape(m // columns, columns)
     a = np.concatenate([sites[:, :-1].ravel(), sites[:-1, :].ravel()])
     b = np.concatenate([sites[:, 1:].ravel(), sites[1:, :].ravel()])

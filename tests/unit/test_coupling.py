@@ -168,8 +168,13 @@ class TestLayouts:
         assert G[0, 1] == G[0, 3] == 1.0 and G[0, 4] == 0.0
         assert (lattice_matrix()(12, 12, sr=None, seed=3) != G).nnz == 0
 
-    def test_a_prime_number_of_colonies_is_a_chain(self):
-        assert np.diff(lattice_matrix(7, 7).indptr).tolist() == [1, 2, 2, 2, 2, 2, 1]
+    def test_long_thin_lattices_are_refused(self):
+        assert sorted(np.diff(lattice_matrix(8, 8).indptr)) == [2] * 4 + [3] * 4  # 4 x 2
+        assert lattice_matrix(1000, 1000).nnz == 2 * (40 * 24 + 39 * 25)  # 40 x 25
+        with pytest.raises(ValueError, match="7 x 1 lattice.*such as 9"):
+            lattice_matrix(7, 7)
+        with pytest.raises(ValueError, match="25 x 10 lattice"):
+            lattice_matrix(250, 250)
         with pytest.raises(ValueError, match="square"):
             lattice_matrix(4, 5)
 
@@ -232,6 +237,15 @@ class TestNodeCoupling:
     def test_coupling_changes_the_states(self):
         coupled = _node(coupling="diffusion", diffusion_rate=2.0, W=lattice_matrix())
         assert not np.allclose(coupled.run(X), _node(coupling="none").run(X))
+
+    def test_an_exchange_too_fast_for_the_solver_step_is_refused(self):
+        # 10 x 10 lattice, 16 substeps: an interior colony's conductances sum to 1.11 x the
+        # rate, so He's fastest mode decays at 5.83 + 0.6 + 2.22 x the rate; at a rate of 18
+        # (46.4 per time unit) the explicit solver blows up, at 10 (28.7) it is stable.
+        with pytest.raises(ValueError, match="needs at least 18 substeps"):
+            _node(units=100, coupling="diffusion", diffusion_rate=18.0, W=lattice_matrix())
+        stable = _node(units=100, coupling="diffusion", diffusion_rate=10.0, W=lattice_matrix())
+        assert np.abs(stable.run(X, reset=True)).max() < 1e3
 
     def test_drive_shares_need_the_abstract_coupling(self):
         node = _node(coupling="diffusion", W=distance_matrix(**KERNEL))
@@ -307,7 +321,15 @@ class TestBuilder:
 
     def test_the_abstract_coupling_still_needs_its_recurrent_gain(self):
         with pytest.raises(KeyError, match="rc_scaling"):
-            build_reservoir(dict(PARAMS, topology_type="lattice"), seed=1)
+            build_reservoir(dict(PARAMS), seed=1)
+
+    def test_the_abstract_coupling_refuses_the_unnormalised_lattice(self):
+        with pytest.raises(ValueError, match="'lattice' needs coupling"):
+            build_reservoir(dict(PARAMS, topology_type="lattice", rc_scaling=0.1,
+                                 noise_rc=0.0), seed=1)
+        node, _ = build_reservoir(dict(PARAMS, topology_type="lattice", coupling="none"),
+                                  seed=1)
+        assert node.coupling == "none"
 
     def test_trials_record_the_coupling_options(self):
         from optimization.training import RECORDED
