@@ -358,6 +358,36 @@ def plot_sweep(ax, scores, *, reference=None, reference_label=None, seed_label="
     return ax
 
 
+def save_figure(fig, name, *, topic="", formats=("png", "pdf"), dpi=300):
+    """Save ``fig`` as ``results/figures/<topic>/<name>.<format>`` in each format; close it.
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+        The figure to save.
+    name : str
+        File name without its extension.
+    topic : str
+        Sub-folder of ``results/figures/`` (see :mod:`utils.config`).
+    formats : sequence of str
+        File formats: PNG to look at, PDF (vector) for a paper.
+    dpi : float
+        Resolution of the raster formats, in dots per inch.
+
+    Returns
+    -------
+    list of pathlib.Path
+        The files written, in the order of ``formats``.
+    """
+    folder = config.figures_dir(topic)
+    folder.mkdir(parents=True, exist_ok=True)
+    paths = [folder / f"{name}.{fmt}" for fmt in formats]
+    for path in paths:
+        fig.savefig(path, bbox_inches="tight", dpi=dpi)
+    plt.close(fig)
+    return paths
+
+
 # ---------------------------------------------------------------------------
 # Heterogeneity robustness figure  (P3-heterogeneity study)
 # ---------------------------------------------------------------------------

@@ -139,3 +139,13 @@ class TestSweep:
         ax = self._draw(pyplot, scores={0.0: [0.8, 0.9], 1.0: [0.7]})
         np.testing.assert_allclose(ax.lines[0].get_ydata(), [0.85, 0.7])
         assert not [w for w in recwarn.list if issubclass(w.category, RuntimeWarning)]
+
+
+def test_save_figure_writes_each_format_and_closes_the_figure(figure_dir, pyplot):
+    fig, ax = pyplot.subplots()
+    ax.plot([0, 1], [1, 0])
+    paths = vis.save_figure(fig, "line", topic="checks")
+    assert [p.relative_to(figure_dir).as_posix() for p in paths] == ["checks/line.png",
+                                                                     "checks/line.pdf"]
+    assert all(p.stat().st_size > 0 for p in paths)
+    assert not pyplot.fignum_exists(fig.number)
