@@ -1,7 +1,7 @@
 """Digital controls for the colony reservoir: random features of the beat and a bank of leaky
 integrators.
 
-The mechanism comparison (paper, Fig. 4) asks whether the colony array does more than a
+The controls ask whether the colony array does more than a
 generic nonlinear feature map of the beat (:class:`RandomFeatures`) or a bank of timescales
 (:class:`LeakyBank`). Both are ReservoirPy nodes with one state per input step, so they run
 through the same pipeline as the colony reservoir: every beat from an empty history, the same
@@ -193,7 +193,7 @@ class LeakyBank(_SequenceMemory):
     Parameters
     ----------
     units : int
-        Number of integrators per input (24 in the pilots).
+        Number of integrators per input.
     tau_min, tau_max : float, default 1 and 256
         Shortest and longest time constants, in input steps (at least 1).
     band_pass : bool, default True
