@@ -55,6 +55,8 @@ Each entry is marked **[science]** if it changes a reported number, or
   one-hot labels or scores.
 - [engineering] `reservoir.params.delay` sets the colonies' feedback delay in input steps;
   `delay: 0` removes it (an ablation).
+- [engineering] `task.scramble: true` puts the time steps of each beat in a random order
+  (an ablation).
 
 ### Removed
 

@@ -103,6 +103,10 @@ SCALAR_METRICS = ("f1", "f1_macro", "f1_weighted", "accuracy", "precision", "rec
 # Ridge strengths a RidgeCV readout chooses from: 10^-4 to 10^6, two per decade.
 RIDGE_ALPHAS = tuple(float(a) for a in np.logspace(-4, 6, 21))
 
+# Third seed word of the stream that scrambles a beat (training.observation uses 1 and 2,
+# training.readouts 3), so its draws are independent of theirs.
+_SCRAMBLE = 4
+
 # Named settings; explicit config values win. ``v0.1`` reproduces the v0.1 code
 # path. ``qs_diffusion`` is the structure of the chemically realisable model: colonies
 # exchange AHL through symmetric distance-based conductances (so AHL is conserved), and the
@@ -340,6 +344,7 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
     sections["cv"].setdefault("seed", seed)
     if sections["task"]["labels"] not in ("five-class", "binary"):
         raise ValueError("task.labels must be 'five-class' or 'binary'.")
+    _check_scramble(sections["task"])
     _check_raw(sections, resolved_reservoir)
     _check_simulation(sections, resolved_reservoir)
     _check_observation(sections, resolved_reservoir)
@@ -355,6 +360,9 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
         if "states_from" in resolved_reservoir:
             raise ValueError("A held-out evaluation simulates the reservoir; it cannot reuse "
                              "the states of another run (reservoir.states_from).")
+        if sections["task"].get("scramble"):
+            raise ValueError("task.scramble scrambles the beats of the pool only: the beats of "
+                             "a held-out split (test.split) would not be scrambled.")
 
     out = {"name": str(cfg["name"]), "description": str(cfg.get("description", "")).strip(),
            "seed": seed, "task": sections["task"], "reservoir": resolved_reservoir,
@@ -367,6 +375,21 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
     if cfg.get("reference"):
         out["reference"] = str(cfg["reference"])
     return _plain(out)
+
+
+def _check_scramble(task: dict[str, Any]) -> None:
+    from training.simulate import PER_BEAT_SCALERS
+
+    scramble = task.get("scramble")
+    if scramble is None:
+        return
+    if not isinstance(scramble, bool):
+        raise ValueError(f"task.scramble must be true or false, got {scramble!r}.")
+    if scramble and task["scaler"] not in PER_BEAT_SCALERS:
+        raise ValueError(f"task.scramble needs a scaling of each beat on its own "
+                         f"({', '.join(PER_BEAT_SCALERS)}), which the order of the steps does "
+                         f"not change; task.scaler {task['scaler']!r} scales each time step "
+                         "across the beats.")
 
 
 def _check_raw(sections: dict[str, Any], reservoir: dict[str, Any]) -> None:
@@ -456,7 +479,33 @@ def load_task(task: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, list[Path]]
     ``ecg/binary_ecg_data.npz`` in the data folder), or from ``task.data_file`` (relative
     to the data folder) when it is set. ``task.data_sha256``, when set, must be the file's
     SHA-256.
+
+    ``task.scramble: true`` then puts the time steps of each beat in a random order
+    (:func:`scramble_steps`). The beats are scaled before they are scrambled; the per-beat
+    scalings (``training.simulate.PER_BEAT_SCALERS``) do not depend on the order of the
+    steps, so this equals scaling the scrambled beats.
     """
+    X, Y, sources = _load_pool(task)
+    if task.get("scramble"):
+        X = scramble_steps(X, int(task["seed"]))
+    return X, Y, sources
+
+
+def scramble_steps(X: np.ndarray, seed: int) -> np.ndarray:
+    """The beats of ``X`` (beats, steps, channels), each with its steps in a random order.
+
+    A beat keeps its values and loses their order. Beat ``i`` is permuted by a generator of
+    its own, ``default_rng([seed, i, 4])``, so its order depends only on the seed and its
+    position in the pool, not on the folds or the other beats.
+    """
+    scrambled = np.empty_like(X)
+    for i, beat in enumerate(X):
+        order = np.random.default_rng([int(seed), i, _SCRAMBLE]).permutation(len(beat))
+        scrambled[i] = beat[order]
+    return scrambled
+
+
+def _load_pool(task: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, list[Path]]:
     from utils.preprocessing import load_ecg_data
 
     binary = task["labels"] == "binary"
