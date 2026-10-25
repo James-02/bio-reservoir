@@ -60,6 +60,7 @@ Each entry is marked **[science]** if it changes a reported number, or
   run stops with `UnstableIntegrationError` when colony states blow up.
 - [engineering] A study records a trial that blows up as failed and goes on, and every
   trial records the machine it ran on.
+- [engineering] `optimization/deploy.py` checks for a running session before it copies files.
 - [engineering] Optuna's plots no longer warn that they are experimental, and
   `analyse_fold_results.py` reports MCC and kappa, also for `v0.1` fold files.
 
