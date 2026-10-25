@@ -858,6 +858,16 @@ def main(argv: list[str] | None = None) -> None:
     p_bst.add_argument("config")
     p_bst.add_argument("--out", help="File for the run config.")
     p_bst.add_argument("--storage")
+    p_tbl = sub.add_parser("study-table",
+                           help="Print the trials of one or more studies as a table "
+                                "(training.study).")
+    p_tbl.add_argument("configs", nargs="+", metavar="config")
+    p_tbl.add_argument("--group", action="store_true",
+                       help="One row per point of the searched values, averaged over "
+                            "reservoir.seed and over the given studies.")
+    p_tbl.add_argument("--csv", help="Also write the table to this CSV file.")
+    p_tbl.add_argument("--storage",
+                       help="Optuna storage URL (default results/optuna/optuna-<study>.db).")
     args = parser.parse_args(argv)
 
     setup_logging(level=logging.INFO)
@@ -883,6 +893,14 @@ def main(argv: list[str] | None = None) -> None:
         from training.study import write_best
 
         print(write_best(load_config(args.config), args.out, args.storage), end="")
+    elif args.command == "study-table":
+        from training.study import format_table, study_table
+
+        frame = study_table([load_config(path) for path in args.configs], args.storage,
+                            group=args.group)
+        if args.csv:
+            frame.to_csv(args.csv, index=False)
+        print(format_table(frame))
     else:
         from training.compare import compare, format_comparison
 

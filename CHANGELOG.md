@@ -13,6 +13,56 @@ Each entry is marked **[science]** if it changes a reported number, or
   so the test suite runs on a host like any other command
   (`--run "python -m pytest tests/unit tests/integration"`). Data files that `data/` links
   to, as in a worktree that uses the prepared dataset, are copied as files.
+
+### Added
+
+- [engineering] The `v0.2` campaign configs in `experiments/v0.2/` (index:
+  `experiments/v0.2/README.md`): the tracking set rerun at every tag (the P centre, P
+  lattice #208, A′ #109, U #68 and the `v0.1` ESN, three reservoir seeds each), the Phase 1
+  grids around the P centre (`e1/`: 14 grid studies, 540 trials, three reservoir seeds) and
+  the Phase 2 seeded TPE searches (`e2/`: P lattice 300, A′ 300, U 200 and ESN 200 trials,
+  starting from the exploration optima). `tests/unit/test_experiment_configs.py` checks
+  that every config resolves, searches only settings its run reads, has a unique name with
+  its folder's prefix, runs as many trials as its grid has points, and reaches no coupling
+  that the RK4 stability check refuses. No reported number changes.
+- [engineering] `python -m training.run study-table CONFIG [CONFIG ...] [--group]
+  [--csv FILE]`: one row per trial of a study (searched values, reservoir seed, the
+  metric's mean and SD over folds, wall time, simulation time, commit); `--group` averages
+  each point over its reservoir seeds, and over several studies that differ only in their
+  seeds (`training.study.trials_table`, `seed_table`).
+
+## [0.2.1] - 2026-10-25
+
+### Added
+
+- [engineering] Diffusive coupling, a chemically realisable alternative to the abstract
+  coupling of `v0.1` (which stays the default): with `BioReservoir(coupling="diffusion")`
+  colonies exchange extracellular AHL through a graph Laplacian, `dHe_i/dt` gaining
+  `sum_j G_ij (He_j - He_i)` at every RK4 stage (`solve_dde_substep(conductance=...)`).
+  The conductances come from a non-negative kernel (`distance_matrix(signed=False)`, or
+  the new `lattice_matrix()` for a trap array on a near-square grid), scaled so that a
+  colony's conductances sum to `diffusion_rate` on average (`scale_conductances`);
+  symmetric conductances conserve AHL, and `relative_asymmetry` measures how far a kernel
+  is from symmetric.
+  `coupling="none"` gives independent oscillators. The input can be a non-negative
+  inducer level (`input_encoding="nonnegative"`: a fixed offset on the clipped sample,
+  noise cannot make it negative) delivered with non-negative weights
+  (`input_sign="positive"`). Run configs and studies take the new options (`coupling`,
+  `diffusion_rate`, `input_encoding`, `input_range`, `input_sign`, `topology_type:
+  lattice`; trials record them), the `qs_diffusion` preset sets the structure of the
+  realisable model, and only the abstract coupling needs `rc_scaling` and `noise_rc` (it
+  refuses the lattice, whose weights are not normalised to unit spectral radius).
+  The solver is checked against an independent integrator (fourth-order convergence
+  without delay, second order with it), for AHL conservation, and for non-negative
+  states with non-negative input. It runs on one thread, and refuses an exchange too fast
+  for its step (the explicit solver would blow up); `drive_shares` applies to the
+  abstract coupling only, and the ablation and heterogeneity scripts accept
+  `--preset v0.1` only.
+
+## [0.2] - 2026-10-24
+
+### Changed
+
 - [engineering] Worker processes read the run's reservoir from a temporary file when they
   start. It used to travel with each worker's start-up, so the workers started one after
   another (about 0.5 s each): simulating the 4,015 beats of the balanced pool with a
@@ -100,29 +150,6 @@ Each entry is marked **[science]** if it changes a reported number, or
   channels of each test fold a gain error the readout does not see in training. They need
   `cv.simulate: once`; the defaults observe every output variable without error, as
   before.
-- [engineering] Diffusive coupling, a chemically realisable alternative to the abstract
-  coupling of `v0.1` (which stays the default): with `BioReservoir(coupling="diffusion")`
-  colonies exchange extracellular AHL through a graph Laplacian, `dHe_i/dt` gaining
-  `sum_j G_ij (He_j - He_i)` at every RK4 stage (`solve_dde_substep(conductance=...)`).
-  The conductances come from a non-negative kernel (`distance_matrix(signed=False)`, or
-  the new `lattice_matrix()` for a trap array on a near-square grid), scaled so that a
-  colony's conductances sum to `diffusion_rate` on average (`scale_conductances`);
-  symmetric conductances conserve AHL, and `relative_asymmetry` measures how far a kernel
-  is from symmetric.
-  `coupling="none"` gives independent oscillators. The input can be a non-negative
-  inducer level (`input_encoding="nonnegative"`: a fixed offset on the clipped sample,
-  noise cannot make it negative) delivered with non-negative weights
-  (`input_sign="positive"`). Run configs and studies take the new options (`coupling`,
-  `diffusion_rate`, `input_encoding`, `input_range`, `input_sign`, `topology_type:
-  lattice`; trials record them), the `qs_diffusion` preset sets the structure of the
-  realisable model, and only the abstract coupling needs `rc_scaling` and `noise_rc` (it
-  refuses the lattice, whose weights are not normalised to unit spectral radius).
-  The solver is checked against an independent integrator (fourth-order convergence
-  without delay, second order with it), for AHL conservation, and for non-negative
-  states with non-negative input. It runs on one thread, and refuses an exchange too fast
-  for its step (the explicit solver would blow up); `drive_shares` applies to the
-  abstract coupling only, and the ablation and heterogeneity scripts accept
-  `--preset v0.1` only.
 - [engineering] `--archive VERSION` reads frozen studies from `archive/<version>/`.
 - [engineering] `optimization/deploy.py` and `optimization/collect.py` are now part of the
   repository. Host addresses, user, remote workspace, pip proxy and service come from
