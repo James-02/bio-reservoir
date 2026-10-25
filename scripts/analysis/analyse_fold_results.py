@@ -66,6 +66,7 @@ from utils.visualisation import (
     plot_confusion_matrix,
     plot_metrics_across_folds,
     plot_tsne_clustering,
+    use_v0_1_style,
 )
 
 # ---------------------------------------------------------------------------
@@ -323,6 +324,7 @@ def _run_plots(
 # ---------------------------------------------------------------------------
 
 def main() -> int:
+    use_v0_1_style()
     parser = argparse.ArgumentParser(
         description="Analyse saved fold NPZ artefacts and report headline metrics.",
         formatter_class=argparse.RawDescriptionHelpFormatter,

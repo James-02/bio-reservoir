@@ -40,6 +40,7 @@ from utils.visualisation import (
     plot_confusion_matrix,
     plot_metrics_across_folds,
     plot_tsne_clustering,
+    use_v0_1_style,
 )
 
 
@@ -148,6 +149,7 @@ def _stack_readouts(folds: list[FoldResult]) -> np.ndarray | None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    use_v0_1_style()
     parser = argparse.ArgumentParser(description="Plot CV fold results from saved npz artifacts")
     parser.add_argument(
         "paths",

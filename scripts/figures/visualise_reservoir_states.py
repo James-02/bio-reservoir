@@ -28,7 +28,7 @@ from matplotlib.lines import Line2D
 
 from bioreservoir import BioReservoir, distance_matrix
 from utils.preprocessing import load_ecg_data
-from utils.visualisation import _save_figure, gene_full_name
+from utils.visualisation import _save_figure, gene_full_name, use_v0_1_style
 from utils.visualisation import classes as ECG_CLASSES
 
 _VAR_TO_INDEX = {"A": 0, "I": 1, "Hi": 2, "He": 3}
@@ -319,6 +319,7 @@ def _plot_input_vs_recurrent(
 	plt.close(fig)
 
 def main() -> None:
+	use_v0_1_style()
 	parser = argparse.ArgumentParser(description="Visualise BioReservoir node states on ECG data")
 	parser.add_argument("--nodes", type=int, default=250, help="Number of reservoir nodes")
 	parser.add_argument("--instance", type=int, default=0, help="Which ECG training instance to visualise")

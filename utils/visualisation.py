@@ -1,3 +1,12 @@
+"""Figure helpers shared by the library and the figure scripts.
+
+The ``v0.1`` figures use seaborn's "ticks" style with 15 pt text (:data:`V0_1_STYLE`). The
+helpers below that draw them apply it themselves, and the scripts that draw the figures of
+the ``v0.1`` paper call :func:`use_v0_1_style`; importing this module changes no matplotlib
+setting. Figures are saved under ``results/figures/`` (``BIORESERVOIR_RESULTS_DIR``).
+"""
+
+import functools
 import os
 
 import matplotlib.pyplot as plt
@@ -8,10 +17,8 @@ from sklearn.manifold import TSNE
 
 from utils import config
 
-# Set global visualization config
-sns.set_style("ticks")
-
-plt.rcParams.update({'font.size': 15})
+#: The look of the ``v0.1`` figures: seaborn's "ticks" style with 15 pt text.
+V0_1_STYLE = {**sns.axes_style("ticks"), "font.size": 15}
 
 DPI = 800
 
@@ -45,6 +52,25 @@ def gene_full_name(name: str) -> str:
     return GENE_DISPLAY_NAME.get(str(name), str(name))
 
 
+def use_v0_1_style() -> None:
+    """Draw every later figure of this process in the ``v0.1`` style (:data:`V0_1_STYLE`).
+
+    The scripts that draw the figures of the ``v0.1`` paper call it first.
+    """
+    plt.rcParams.update(V0_1_STYLE)
+
+
+def _in_v0_1_style(plot):
+    """Decorator: ``plot`` draws in the ``v0.1`` style and leaves the settings as it found them."""
+
+    @functools.wraps(plot)
+    def wrapper(*args, **kwargs):
+        with plt.rc_context(V0_1_STYLE):
+            return plot(*args, **kwargs)
+
+    return wrapper
+
+
 def _save_figure(filename: str) -> None:
     """
     Save the current figure under ``results/figures/``.
@@ -56,6 +82,7 @@ def _save_figure(filename: str) -> None:
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     plt.savefig(file_path, bbox_inches="tight", dpi=DPI)
 
+@_in_v0_1_style
 def plot_confusion_matrix(confusion_matrix: np.ndarray, cmap=plt.cm.Blues, 
                           show: bool = True, filename: str = "confusion_matrix.png") -> None:
     """
@@ -89,6 +116,7 @@ def plot_confusion_matrix(confusion_matrix: np.ndarray, cmap=plt.cm.Blues,
     if show:
         plt.show()
 
+@_in_v0_1_style
 def plot_metrics_across_folds(metrics: list[dict[str, any]], metric_names: list[str] | None = None,
                               show: bool = True, filename: str = "metrics_folds.png") -> None:
     """
@@ -122,6 +150,7 @@ def plot_metrics_across_folds(metrics: list[dict[str, any]], metric_names: list[
     if show:
         plt.show()
 
+@_in_v0_1_style
 def plot_class_metrics(metrics: dict[str, dict[str, float]], show: bool = True, filename: str = "class_metrics.png") -> None:
     """
     Plot the metrics for each class.
@@ -163,6 +192,7 @@ def plot_class_metrics(metrics: dict[str, dict[str, float]], show: bool = True, 
     if show:
         plt.show()
 
+@_in_v0_1_style
 def plot_tsne_clustering(Y_pred: np.ndarray, Y_true: np.ndarray, show: bool = True, filename: str = "clustering.png") -> None:
     # --- debug: inspect incoming shapes -----------------------------------
     print(f"[TSNE] raw Y_pred type={type(Y_pred)}, shape={getattr(Y_pred, 'shape', None)}")
@@ -265,6 +295,7 @@ def plot_tsne_clustering(Y_pred: np.ndarray, Y_true: np.ndarray, show: bool = Tr
 # Heterogeneity robustness figure  (P3-heterogeneity study)
 # ---------------------------------------------------------------------------
 
+@_in_v0_1_style
 def plot_heterogeneity_robustness(
     db_path: str | None = None,
     study_name: str = "P3-heterogeneity",

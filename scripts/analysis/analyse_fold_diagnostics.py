@@ -39,7 +39,7 @@ import numpy as np
 from utils import config
 from utils.analysis import evaluate_performance
 from utils.results import FoldArtifact
-from utils.visualisation import binary_classes
+from utils.visualisation import binary_classes, use_v0_1_style
 from utils.visualisation import classes as categorical_classes
 
 RESULTS_DIR = str(config.figures_dir("diagnostics"))
@@ -263,6 +263,7 @@ def _artifact_to_folddata(a: FoldArtifact) -> FoldData:
 
 
 def main() -> int:
+    use_v0_1_style()
     parser = argparse.ArgumentParser(description="Extra diagnostics for fold NPZ results")
     parser.add_argument(
         "--glob",

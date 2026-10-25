@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from bioreservoir import distance_matrix
-from utils.visualisation import _save_figure
+from utils.visualisation import _save_figure, use_v0_1_style
 
 
 def plot_distance_histograms(units: int = 250,
@@ -220,6 +220,7 @@ def plot_spatial_topology(
 
 
 def main() -> None:
+    use_v0_1_style()
     parser = argparse.ArgumentParser(description="Visualise distance-based reservoir topology")
     parser.add_argument("--units", type=int, default=250, help="Number of reservoir nodes")
     parser.add_argument("--spatial-dim", type=int, default=2, help="Spatial dimensionality")

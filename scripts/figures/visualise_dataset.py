@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from utils.preprocessing import load_ecg_data, standardize_data
-from utils.visualisation import _save_figure, binary_classes, classes
+from utils.visualisation import _save_figure, binary_classes, classes, use_v0_1_style
 
 _ECG_SAMPLING_FREQ_HZ = 125
 
@@ -528,6 +528,7 @@ def visualise_dataset(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    use_v0_1_style()
     parser = argparse.ArgumentParser(description="Visualise ECG classification dataset")
     parser.add_argument("--rows", type=int, default=5000, help="Number of training rows to load")
     parser.add_argument("--test-ratio", type=float, default=0.2, help="Test split ratio")

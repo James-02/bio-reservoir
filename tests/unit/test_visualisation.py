@@ -1,5 +1,8 @@
 """The shared figure helpers of utils.visualisation draw the data they are given."""
 
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 
@@ -8,6 +11,31 @@ from utils import visualisation as vis
 
 def _one_hot(labels, n_classes):
     return np.eye(n_classes)[labels]
+
+
+class TestV0_1Style:
+    """The ``v0.1`` style applies where the ``v0.1`` figures are drawn, not on import."""
+
+    def test_importing_the_module_changes_no_matplotlib_setting(self):
+        code = ("import matplotlib\nmatplotlib.use('Agg')\nimport matplotlib.pyplot as plt\n"
+                "before = dict(plt.rcParams)\nimport utils.visualisation\n"
+                "print(sorted(k for k, v in plt.rcParams.items() if before[k] != v))")
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                             check=True)
+        assert out.stdout.strip() == "[]"
+
+    def test_helpers_draw_in_the_style_and_leave_the_settings(self, figure_dir, pyplot):
+        pyplot.rcParams["font.size"] = 9
+        vis.plot_confusion_matrix(np.array([[3, 1], [1, 3]]), show=False, filename="s.png")
+        annotation = pyplot.gcf().axes[0].texts[0]
+        assert annotation.get_fontsize() == vis.V0_1_STYLE["font.size"]
+        assert pyplot.rcParams["font.size"] == 9
+
+    def test_scripts_switch_their_process_to_the_style(self, pyplot):
+        with pyplot.rc_context(vis.V0_1_STYLE):
+            expected = dict(pyplot.rcParams)
+        vis.use_v0_1_style()
+        assert dict(pyplot.rcParams) == expected
 
 
 class TestConfusionMatrix:

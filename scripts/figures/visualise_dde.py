@@ -27,7 +27,7 @@ import numpy as np
 
 from bioreservoir import BioReservoir
 from utils.preprocessing import load_ecg_data
-from utils.visualisation import _save_figure, gene_full_name
+from utils.visualisation import _save_figure, gene_full_name, use_v0_1_style
 
 
 def _simulate_step_only(*, reservoir: BioReservoir, input_series: np.ndarray) -> np.ndarray:
@@ -307,6 +307,7 @@ def plot_dde_ecg_multiscale(
 
 
 def main() -> None:
+	use_v0_1_style()
 	parser = argparse.ArgumentParser(description="ECG-driven DDE multiscale figure")
 	parser.add_argument("--timesteps", type=int, default=1000, help="Driven segment length")
 	parser.add_argument("--warmup", type=int, default=100, help="0-input warmup steps (drawn dashed)")
