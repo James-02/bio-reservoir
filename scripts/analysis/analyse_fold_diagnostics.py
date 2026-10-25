@@ -151,7 +151,7 @@ def plot_entropy_by_class(prob: np.ndarray, y_true: np.ndarray, *, name: str) ->
     plt.figure(figsize=(9, 4.8))
     data = [ent[y_true == c] for c in classes]
     tick_labels = [labels[int(c)] if int(c) < len(labels) else str(int(c)) for c in classes]
-    plt.boxplot(data, labels=tick_labels, showfliers=False)
+    plt.boxplot(data, tick_labels=tick_labels, showfliers=False)
     plt.xlabel("True class")
     plt.ylabel("Prediction entropy")
     plt.title("Uncertainty (entropy) by class")
