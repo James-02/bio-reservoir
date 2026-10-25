@@ -29,6 +29,14 @@ Each entry is marked **[science]** if it changes a reported number, or
   gap closed.
 - [engineering] Configs can name a `base:` config and list only what differs, and studies
   can search the run `seed`; the `v0.2` studies name designs in `experiments/v0.2/designs/`.
+- [engineering] Realism options, off by default: heterogeneity of cell density and
+  dilution, discrete input levels and an imperfect reset (`bioreservoir.realism`).
+- [engineering] `bioreservoir.diagnostics.oscillation_amplitudes`, reported by
+  `scripts/analysis/drive_bounds.py --oscillation`.
+
+### Fixed
+
+- [engineering] `scripts/analysis/drive_bounds.py` works on diffusive and uncoupled arrays.
 
 ## [0.2.1] - 2026-10-25
 
@@ -123,26 +131,6 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Added
 
-- [engineering] Realism options of the `BioReservoir` (`bioreservoir.realism`; README,
-  Realism Options), all off by default, so no reported number changes:
-  heterogeneity by group (`heterogeneity_density_cv`: per-colony cell density, clipped to
-  `[0.05, 0.99 d0]`, with its growth factor recomputed; `heterogeneity_dilution_cv`:
-  per-trap washout `mu`; each from its own random stream of the heterogeneity seed, so the
-  kinetic draws of `param_heterogeneity_cv` are unchanged), input levels
-  (`input_levels: K` or `continuous`: K levels in `(0, 1] x input_scaling` for the input
-  connections, drawn with the reservoir seed) and an imperfect reset (`reset_noise`: each
-  beat starts from the warm-up state times log-normal factors drawn from the beat's own
-  seed; the per-fold path refuses it). Run configs, studies and trials record them
-  (`RESERVOIR_KEYS`, `RECORDED`). With the options at zero, the P centre and the `v0.1`
-  balanced headline run give the same features, bit for bit; a P-centre regression
-  reference generated before the change (`tests/realism_reference.py`) checks this.
-  Configs that evaluate the options at the P centre and at U:
-  `experiments/v0.2/checks/realism-options/`.
-- [engineering] `bioreservoir.diagnostics.oscillation_amplitudes`: each colony's relative
-  peak-to-peak amplitude when the warm-up continues without input, to check that colonies
-  still oscillate. `scripts/analysis/drive_bounds.py` reports it (`--oscillation STEPS`)
-  and can change config values first (`--set reservoir.params.reset_noise=0.3`), so a
-  grid's extreme settings can be checked from its config.
 - [engineering] A `RidgeCV` readout: ridge whose strength is chosen by leave-one-out on
   each training fold (scikit-learn's `RidgeClassifierCV`, from `params.alphas`, by default
   10^-4 to 10^6, two per decade). One decomposition of the training features gives the
@@ -245,9 +233,6 @@ position per oscillator -0.015, spectral radius on the final matrix -0.016, subs
 delay -0.003 (not significant), scaled readout features -0.003. The first two change the
 coupling the hyperparameters were tuned for, so the studies need re-tuning.
 
-- [engineering] `scripts/analysis/drive_bounds.py` failed on diffusive and uncoupled
-  arrays: it always reported the drive shares, which only the abstract coupling has. It
-  now reports them for the abstract coupling only.
 - [science] Standard deviations over folds or seeds are sample SDs (ddof = 1)
   everywhere: Optuna trial attributes (`metric_f1_std`, fold timings), per-class SDs,
   run metrics, the headline-metrics and fold-analysis scripts and the heterogeneity

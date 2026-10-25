@@ -218,7 +218,7 @@ reservoir:
     reset_noise: 0.01                 # imperfect reset between beats
 ```
 
-Trials record the options (`res_heterogeneity_density_cv`, `res_heterogeneity_dilution_cv`, `res_input_levels`, `res_reset_noise`). The grids that evaluate them at the P centre are in `experiments/v0.2/checks/realism-options/`.
+Trials record the options (`res_heterogeneity_density_cv`, `res_heterogeneity_dilution_cv`, `res_input_levels`, `res_reset_noise`).
 
 ## Visualisation
 
