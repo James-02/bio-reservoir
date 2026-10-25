@@ -3,7 +3,7 @@
     python -m training.run run CONFIG.yaml [--processes N] [--out DIR] [--allow-dirty]
                                            [--final-test]
     python -m training.run resolve CONFIG.yaml
-    python -m training.run compare RUN_A RUN_B [--out DIR]
+    python -m training.run compare RUN_A RUN_B [--out DIR] [--margin M] [--ceiling RUN_C]
     python -m training.run study CONFIG.yaml [--processes N] [--trials N]
     python -m training.run study-best CONFIG.yaml [--out BEST.yaml]
 
@@ -139,9 +139,14 @@ def dump_config(cfg: dict[str, Any]) -> str:
 
 
 def classifier_class(name: str):
-    """The scikit-learn class behind a readout name (the Phase 4 readout-study names, and
-    RidgeCV: ridge with its strength chosen by leave-one-out on the training data)."""
-    from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+    """The scikit-learn class behind a readout name (the Phase 4 readout-study names,
+    RidgeCV: ridge with its strength chosen by leave-one-out on the training data, and
+    HistGB: histogram-based gradient boosting)."""
+    from sklearn.ensemble import (
+        GradientBoostingClassifier,
+        HistGradientBoostingClassifier,
+        RandomForestClassifier,
+    )
     from sklearn.linear_model import (
         LogisticRegression,
         Perceptron,
@@ -157,6 +162,7 @@ def classifier_class(name: str):
     table = {"Ridge": RidgeClassifier, "RidgeCV": RidgeClassifierCV, "LR": LogisticRegression,
              "SVM": SVC, "KNN": KNeighborsClassifier, "RF": RandomForestClassifier,
              "DT": DecisionTreeClassifier, "GB": GradientBoostingClassifier,
+             "HistGB": HistGradientBoostingClassifier,
              "MLP": MLPClassifier, "Bayes": GaussianNB, "Perceptron": Perceptron}
     if name not in table:
         raise ValueError(f"Unknown readout classifier {name!r}; choose from {sorted(table)}.")
@@ -233,6 +239,12 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
     reservoir = dict(cfg.get("reservoir") or {})
     if "states_from" in reservoir:
         resolved_reservoir = {"states_from": str(reservoir["states_from"])}
+    elif reservoir.get("type") == "none":
+        other = sorted(set(reservoir) - {"type"})
+        if other:
+            raise ValueError("reservoir: {type: none} classifies the beat itself; reservoir "
+                             f"settings do not apply ({', '.join(other)}).")
+        resolved_reservoir = {"type": "none"}
     else:
         params: dict[str, Any] = dict(preset.get("reservoir", {}))
         source = None
@@ -301,6 +313,7 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
     sections["cv"].setdefault("seed", seed)
     if sections["task"]["labels"] not in ("five-class", "binary"):
         raise ValueError("task.labels must be 'five-class' or 'binary'.")
+    _check_raw(sections, resolved_reservoir)
     _check_simulation(sections, resolved_reservoir)
     _check_observation(sections, resolved_reservoir)
     split = (cfg.get("test") or {}).get("split")
@@ -327,6 +340,20 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
     if cfg.get("reference"):
         out["reference"] = str(cfg["reference"])
     return _plain(out)
+
+
+def _check_raw(sections: dict[str, Any], reservoir: dict[str, Any]) -> None:
+    """A raw-beat run (``reservoir: {type: none}``) classifies each scaled beat once, as is."""
+    if reservoir.get("type") != "none":
+        return
+    changed = sorted(key for key, value in sections["features"].items()
+                     if value != DEFAULTS["features"].get(key))
+    if changed:
+        raise ValueError("reservoir: {type: none} classifies the beat itself; observation "
+                         f"settings do not apply (features.{', features.'.join(changed)}).")
+    if sections["cv"]["simulate"] != "once":
+        raise ValueError("reservoir: {type: none} computes the features of each beat once; "
+                         "it needs cv.simulate: once.")
 
 
 def _check_simulation(sections: dict[str, Any], reservoir: dict[str, Any]) -> None:
@@ -446,20 +473,29 @@ def make_readout(readout: dict[str, Any]):
     return ScikitLearnNode(cls, model_hypers=params)
 
 
+def _build(cfg: dict[str, Any]):
+    """The run's reservoir, or None for a raw-beat run."""
+    from optimization.reservoirs import build_reservoir
+
+    if cfg["reservoir"]["type"] == "none":
+        return None
+    reservoir_cfg = dict(cfg["reservoir"]["params"], reservoir_type=cfg["reservoir"]["type"])
+    return build_reservoir(reservoir_cfg, seed=int(cfg["reservoir"]["seed"]))[0]
+
+
 def _simulate(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray,
               processes: int) -> tuple[dict[str, Any], list]:
-    from optimization.reservoirs import build_reservoir
     from training.cross_validate import cross_validate, cross_validate_features
 
-    reservoir_cfg = dict(cfg["reservoir"]["params"], reservoir_type=cfg["reservoir"]["type"])
-    reservoir, _ = build_reservoir(reservoir_cfg, seed=int(cfg["reservoir"]["seed"]))
+    reservoir = _build(cfg)
     if cfg["cv"]["simulate"] == "once":
         folds = int(cfg["cv"]["folds"])
         features, timing = _features(cfg, X, reservoir, processes)
         result, artifacts = cross_validate_features(
             features, Y, make_readout(cfg["readout"]), folds=folds,
             seed=int(cfg["cv"]["seed"]), primary_average=str(cfg["cv"]["primary_average"]),
-            save_states=bool(cfg["outputs"]["save_states"]), model_hypers=reservoir.hypers,
+            save_states=bool(cfg["outputs"]["save_states"]),
+            model_hypers=getattr(reservoir, "hypers", None),
             test_gains=_test_gains(cfg, features, folds))
         result["simulation"] = timing
         return result, artifacts
@@ -486,18 +522,21 @@ def _classes(Y: np.ndarray) -> np.ndarray:
 def _features(cfg: dict[str, Any], X: np.ndarray, reservoir,
               processes: int) -> tuple[np.ndarray, dict[str, Any]]:
     """Scale the beats, simulate each once on the run's ``reservoir`` and measure it; return
-    the features and the timing."""
+    the features and the timing. Without a reservoir the features are the scaled beats."""
     import time
 
     from training.observation import measure, observed_columns
     from training.simulate import simulate_beats
     from utils.preprocessing import standardize_data
 
+    X_scaled, _ = standardize_data(X, X[:1], scaler_type=str(cfg["task"]["scaler"]))
+    if reservoir is None:
+        rows = np.asarray(X_scaled, dtype=float).reshape(len(X), -1)
+        return rows, {"beats": int(len(X)), "features": int(rows.shape[1]), "simulate_s": 0.0}
     columns = None
     if cfg["features"]["variables"] is not None:
         columns = observed_columns(reservoir.hypers["output_variables"],
                                    cfg["features"]["variables"], int(reservoir.hypers["units"]))
-    X_scaled, _ = standardize_data(X, X[:1], scaler_type=str(cfg["task"]["scaler"]))
     started = time.perf_counter()
     features = simulate_beats(
         reservoir, X_scaled, noise_seed=int(cfg["reservoir"]["seed"]),
@@ -532,7 +571,6 @@ def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: n
     Augmentation needs ``per_fold``: its noisy copies are extra training beats of one fold,
     which a feature row per beat, shared by every fold, cannot hold.
     """
-    from optimization.reservoirs import build_reservoir
     from training.cross_validate import Fold, _prepare_fold_data, run_fold
     from utils.heldout import overlap
 
@@ -543,8 +581,7 @@ def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: n
     X_all, Y_all = np.concatenate((X, X_test)), np.concatenate((Y, Y_test))
     fold = Fold(train_idx=np.arange(len(X)), val_idx=np.arange(len(X), len(X_all)),
                 fold_index=0)
-    reservoir_cfg = dict(cfg["reservoir"]["params"], reservoir_type=cfg["reservoir"]["type"])
-    reservoir, _ = build_reservoir(reservoir_cfg, seed=int(cfg["reservoir"]["seed"]))
+    reservoir = _build(cfg)
     if cfg["cv"]["simulate"] == "once":
         from training.cross_validate import fit_on_features
 
@@ -554,7 +591,7 @@ def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: n
                                    save_states=bool(cfg["outputs"]["save_states"]),
                                    primary_average=str(cfg["cv"]["primary_average"]),
                                    labels=np.unique(_classes(Y_test)),
-                                   model_hypers=reservoir.hypers,
+                                   model_hypers=getattr(reservoir, "hypers", None),
                                    test_gains=None if gains is None else gains[0])
         artifact.test_index = np.asarray(beat_ids, dtype=np.int64)
         return artifact
@@ -843,6 +880,10 @@ def main(argv: list[str] | None = None) -> None:
     p_cmp.add_argument("run_b")
     p_cmp.add_argument("--out", help="Folder for compare.json and figures.")
     p_cmp.add_argument("--bootstrap", type=int, default=2000)
+    p_cmp.add_argument("--margin", type=float,
+                       help="Non-inferiority margin for B - A, e.g. -0.02.")
+    p_cmp.add_argument("--ceiling", help="Run C on the same beats: the share of the gap "
+                                          "from A to C that B closes.")
     p_std = sub.add_parser("study", help="Run the Optuna study of a config (training.study).")
     p_std.add_argument("config")
     p_std.add_argument("--processes", type=int, default=1,
@@ -904,7 +945,8 @@ def main(argv: list[str] | None = None) -> None:
     else:
         from training.compare import compare, format_comparison
 
-        result = compare(args.run_a, args.run_b, out=args.out, n_boot=args.bootstrap)
+        result = compare(args.run_a, args.run_b, out=args.out, n_boot=args.bootstrap,
+                         margin=args.margin, ceiling=args.ceiling)
         print(format_comparison(result))
 
 
