@@ -3,7 +3,7 @@
     python -m training.run run CONFIG.yaml [--processes N] [--out DIR] [--allow-dirty]
                                            [--final-test]
     python -m training.run resolve CONFIG.yaml
-    python -m training.run compare RUN_A RUN_B [--out DIR]
+    python -m training.run compare RUN_A RUN_B [--out DIR] [--margin M] [--ceiling RUN_C]
     python -m training.run study CONFIG.yaml [--processes N] [--trials N]
     python -m training.run study-best CONFIG.yaml [--out BEST.yaml]
 
@@ -843,6 +843,10 @@ def main(argv: list[str] | None = None) -> None:
     p_cmp.add_argument("run_b")
     p_cmp.add_argument("--out", help="Folder for compare.json and figures.")
     p_cmp.add_argument("--bootstrap", type=int, default=2000)
+    p_cmp.add_argument("--margin", type=float,
+                       help="Non-inferiority margin for B - A, e.g. -0.02.")
+    p_cmp.add_argument("--ceiling", help="Run C on the same beats: the share of the gap "
+                                          "from A to C that B closes.")
     p_std = sub.add_parser("study", help="Run the Optuna study of a config (training.study).")
     p_std.add_argument("config")
     p_std.add_argument("--processes", type=int, default=1,
@@ -904,7 +908,8 @@ def main(argv: list[str] | None = None) -> None:
     else:
         from training.compare import compare, format_comparison
 
-        result = compare(args.run_a, args.run_b, out=args.out, n_boot=args.bootstrap)
+        result = compare(args.run_a, args.run_b, out=args.out, n_boot=args.bootstrap,
+                         margin=args.margin, ceiling=args.ceiling)
         print(format_comparison(result))
 
 

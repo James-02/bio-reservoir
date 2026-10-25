@@ -24,6 +24,8 @@ Each entry is marked **[science]** if it changes a reported number, or
   metric's mean and SD over folds, wall time, simulation time, commit); `--group` averages
   each point over its reservoir seeds, and over several studies that differ only in their
   seeds (`training.study.trials_table`, `seed_table`).
+- [engineering] `training.run compare --margin M --ceiling RUN_C`: non-inferiority and the
+  gap closed.
 
 ## [0.2.1] - 2026-10-25
 

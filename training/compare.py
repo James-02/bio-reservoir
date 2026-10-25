@@ -5,7 +5,9 @@ or ``archive:<version>/<run>`` for a frozen run, e.g.
 ``archive:v0.1/P4-readout-balanced-best``. Metrics are recomputed from the stored labels
 and predictions, so runs from any code version compare on the same basis. Predictions
 are paired beat by beat only when both runs have the same folds (same test labels in the
-same order in every fold).
+same order in every fold). Paired runs also get the lower one-sided 95% bound of B - A,
+tested against ``margin`` for non-inferiority, and, with a third run C on the same beats
+(``ceiling``), the share of the gap from A to C that B closes: (B - A) / (C - A).
 """
 
 from __future__ import annotations
@@ -84,17 +86,42 @@ def _f1_macro(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return f1_score(y_true, y_pred, labels=np.unique(y_true), average="macro")
 
 
+def _paired_draws(y_true: np.ndarray, preds: list[np.ndarray], n_boot: int = 2000,
+                  seed: int = 0) -> np.ndarray:
+    """Macro-F1 of each prediction set on ``n_boot`` resamples of the beats, one row per draw;
+    every set is scored on the same beats."""
+    rng = np.random.default_rng(seed)
+    draws = np.empty((n_boot, len(preds)))
+    for i in range(n_boot):
+        idx = rng.integers(0, len(y_true), len(y_true))
+        draws[i] = [_f1_macro(y_true[idx], pred[idx]) for pred in preds]
+    return draws
+
+
 def bootstrap_delta(y_true: np.ndarray, pred_a: np.ndarray, pred_b: np.ndarray,
                     n_boot: int = 2000, seed: int = 0) -> tuple[float, float, float]:
     """Macro-F1 of B minus A, with a 95% percentile CI from resampling beats in pairs."""
-    rng = np.random.default_rng(seed)
     delta = _f1_macro(y_true, pred_b) - _f1_macro(y_true, pred_a)
-    draws = np.empty(n_boot)
-    for i in range(n_boot):
-        idx = rng.integers(0, len(y_true), len(y_true))
-        draws[i] = _f1_macro(y_true[idx], pred_b[idx]) - _f1_macro(y_true[idx], pred_a[idx])
+    draws = np.diff(_paired_draws(y_true, [pred_a, pred_b], n_boot, seed), axis=1)[:, 0]
     low, high = np.percentile(draws, [2.5, 97.5])
     return float(delta), float(low), float(high)
+
+
+def gap_closed(f1_a, f1_b, f1_ceiling):
+    """(B - A) / (C - A): the share of the gap from A to the ceiling C that B closes; NaN
+    where C does not exceed A."""
+    span = np.asarray(f1_ceiling, dtype=float) - f1_a
+    return np.where(span > 0, (np.asarray(f1_b, dtype=float) - f1_a)
+                    / np.where(span > 0, span, 1.0), np.nan)
+
+
+def _same_beats(folds_a: list, folds_b: list) -> bool:
+    if [f.fold_index for f in folds_a] != [f.fold_index for f in folds_b]:
+        return False
+    return all(np.array_equal(_classes(a.Y_test), _classes(b.Y_test))
+               and (a.test_index is None or b.test_index is None
+                    or np.array_equal(a.test_index, b.test_index))
+               for a, b in zip(folds_a, folds_b, strict=True))
 
 
 def bootstrap_ci(y_true: np.ndarray, y_pred: np.ndarray, n_boot: int = 2000,
@@ -110,7 +137,8 @@ def bootstrap_ci(y_true: np.ndarray, y_pred: np.ndarray, n_boot: int = 2000,
 
 
 def compare(ref_a: str | Path, ref_b: str | Path, *, out: str | Path | None = None,
-            n_boot: int = 2000, seed: int = 0) -> dict[str, Any]:
+            n_boot: int = 2000, seed: int = 0, margin: float | None = None,
+            ceiling: str | Path | None = None) -> dict[str, Any]:
     folds_a, folds_b = load_folds(ref_a), load_folds(ref_b)
     paths = [run_path(ref_a), run_path(ref_b)]
     names = [p.name for p in paths]
@@ -142,14 +170,34 @@ def compare(ref_a: str | Path, ref_b: str | Path, *, out: str | Path | None = No
     result: dict[str, Any] = {"a": names[0], "b": names[1], "paired": paired,
                               "paired_by": "beat position" if by_index else "test labels",
                               "folds": rows, "summary_a": stats("a"), "summary_b": stats("b")}
+    if (ceiling is not None or margin is not None) and not paired:
+        raise ValueError("A margin or a ceiling needs runs A and B on the same folds and beats.")
     if paired:
         y_true = np.concatenate([_classes(f.Y_test) for f in folds_a])
-        pred_a = np.concatenate([_classes(f.Y_pred) for f in folds_a])
-        pred_b = np.concatenate([_classes(f.Y_pred) for f in folds_b])
-        delta, low, high = bootstrap_delta(y_true, pred_a, pred_b, n_boot, seed)
-        result["pooled_delta_f1_macro"] = {"delta": delta, "ci95": [low, high],
-                                           "n_beats": int(len(y_true)), "n_boot": n_boot}
-        result["agreement"] = float(np.mean(pred_a == pred_b))
+        preds = [np.concatenate([_classes(f.Y_pred) for f in folds]) for folds in (folds_a, folds_b)]
+        if ceiling is not None:
+            folds_c = load_folds(ceiling)
+            if not _same_beats(folds_a, folds_c):
+                raise ValueError(f"{run_path(ceiling).name} does not share the folds and beats "
+                                 f"of {names[0]}.")
+            preds.append(np.concatenate([_classes(f.Y_pred) for f in folds_c]))
+        f1 = [_f1_macro(y_true, pred) for pred in preds]
+        draws = _paired_draws(y_true, preds, n_boot, seed)
+        low, high, bound = np.percentile(draws[:, 1] - draws[:, 0], [2.5, 97.5, 5.0])
+        pooled = {"delta": float(f1[1] - f1[0]), "ci95": [float(low), float(high)],
+                  "lower_95_one_sided": float(bound), "n_beats": int(len(y_true)),
+                  "n_boot": n_boot}
+        if margin is not None:
+            pooled.update(margin=float(margin), non_inferior=bool(bound > margin))
+        result["pooled_delta_f1_macro"] = pooled
+        result["agreement"] = float(np.mean(preds[0] == preds[1]))
+        if ceiling is not None:
+            gaps = gap_closed(draws[:, 0], draws[:, 1], draws[:, 2])
+            defined = gaps[np.isfinite(gaps)]
+            low, high = np.percentile(defined, [2.5, 97.5]) if len(defined) else (np.nan,) * 2
+            result["gap_closed"] = {"ceiling": run_path(ceiling).name, "f1_ceiling": float(f1[2]),
+                                    "gap": float(gap_closed(*f1)), "ci95": [float(low), float(high)],
+                                    "undefined_draws": int(len(gaps) - len(defined))}
     if out:
         out = Path(out)
         out.mkdir(parents=True, exist_ok=True)
@@ -226,6 +274,15 @@ def format_comparison(result: dict[str, Any]) -> str:
                      f"(paired bootstrap 95% CI, {pooled['n_beats']} beats); "
                      f"prediction agreement {result['agreement']:.4f} "
                      f"(paired by {result['paired_by']})")
+        line = f"lower one-sided 95% bound {pooled['lower_95_one_sided']:+.4f}"
+        if "margin" in pooled:
+            verdict = "non-inferior" if pooled["non_inferior"] else "not shown non-inferior"
+            line += f"; margin {pooled['margin']:+.3f}: {verdict}"
+        lines.append(line)
+        if "gap_closed" in result:
+            gap = result["gap_closed"]
+            lines.append(f"gap closed toward {gap['ceiling']} (macro-F1 {gap['f1_ceiling']:.4f}): "
+                         f"{gap['gap']:.3f} [{gap['ci95'][0]:.3f}, {gap['ci95'][1]:.3f}]")
     else:
         lines.append("Folds differ: predictions are not paired.")
     return "\n".join(lines)

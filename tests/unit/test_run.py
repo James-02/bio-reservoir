@@ -476,6 +476,32 @@ class TestCompare:
         assert low < delta < high and delta > 0
         assert compare_module.bootstrap_delta(y, pred_a, pred_a, n_boot=50) == (0.0, 0.0, 0.0)
 
+    def test_paired_runs_get_a_non_inferiority_bound_and_the_gap_closed(self, tmp_path):
+        # kNN over all 16 training beats predicts one class for every beat.
+        weak = _execute(_config(readout={"classifier": "KNN", "params": {"n_neighbors": 16}}),
+                        tmp_path / "weak")
+        strong = _execute(_config(), tmp_path / "strong")
+        result = compare_module.compare(weak, strong, n_boot=200, margin=-0.02,
+                                        ceiling=strong)
+        pooled = result["pooled_delta_f1_macro"]
+        assert pooled["ci95"][0] <= pooled["lower_95_one_sided"] <= pooled["delta"]
+        assert pooled["non_inferior"] == (pooled["lower_95_one_sided"] > -0.02)
+        gap = result["gap_closed"]
+        assert pooled["delta"] > 0
+        assert gap["gap"] == 1.0 and gap["ci95"] == [1.0, 1.0]
+        text = compare_module.format_comparison(result)
+        assert "margin -0.020" in text and "gap closed toward" in text
+        other = _execute(_config(cv={"folds": 3, "seed": 99}), tmp_path / "other")
+        with pytest.raises(ValueError, match="does not share the folds"):
+            compare_module.compare(weak, strong, n_boot=10, ceiling=other)
+        with pytest.raises(ValueError, match="on the same folds and beats"):
+            compare_module.compare(weak, other, n_boot=10, margin=-0.02)
+
+    def test_the_gap_closed_is_undefined_without_a_gap(self):
+        np.testing.assert_allclose(compare_module.gap_closed(0.7, [0.8, 0.7], [0.9, 0.9]),
+                                   [0.5, 0.0])
+        assert np.isnan(compare_module.gap_closed(0.7, 0.8, 0.7))
+
     def test_scores_average_over_the_classes_of_the_test_labels(self):
         y = np.array([0, 0, 1, 1])
         pred = np.array([0, 2, 1, 1])
