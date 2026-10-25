@@ -77,16 +77,27 @@ class TestFoldMetrics:
 
 
 class TestTsne:
-    def test_predictions_are_marked_correct_or_incorrect(self, figure_dir, pyplot):
+    @staticmethod
+    def _predictions():
         rng = np.random.default_rng(0)
         y_true = rng.integers(0, 5, 40)
         y_pred = y_true.copy()
         y_pred[:5] = (y_pred[:5] + 1) % 5
-        vis.plot_tsne_clustering(_one_hot(y_pred, 5) + rng.normal(0, 0.05, (40, 5)),
-                                 _one_hot(y_true, 5), show=False, filename="tsne.png")
+        return _one_hot(y_pred, 5) + rng.normal(0, 0.05, (40, 5)), _one_hot(y_true, 5)
+
+    def test_predictions_are_marked_correct_or_incorrect(self, figure_dir, pyplot):
+        vis.plot_tsne_clustering(*self._predictions(), show=False, filename="tsne.png")
         assert (figure_dir / "metrics" / "tsne.png").is_file()
         correct, incorrect = pyplot.gcf().axes[0].collections[2:4]
         assert (len(correct.get_offsets()), len(incorrect.get_offsets())) == (35, 5)
+
+    def test_the_same_predictions_give_the_same_picture(self, figure_dir, pyplot):
+        drawn = []
+        for _ in range(2):
+            vis.plot_tsne_clustering(*self._predictions(), show=False, filename="tsne.png")
+            drawn.append(pyplot.gcf().axes[0].collections[2].get_offsets().copy())
+            pyplot.close("all")
+        np.testing.assert_array_equal(*drawn)
 
 
 def test_genes_are_named_after_the_model_variables():

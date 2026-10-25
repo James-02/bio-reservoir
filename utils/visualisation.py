@@ -209,6 +209,7 @@ def plot_tsne_clustering(Y_pred: np.ndarray, Y_true: np.ndarray, show: bool = Tr
         n_iter=2000,
         metric="euclidean",     # default, but you could try 'cosine'
         init="random",          # maybe random instead of PCA
+        random_state=42,        # the same picture every time, as in plot_tsne_states
     )    
     tsne_embeddings = tsne.fit_transform(Y_pred_flat)
     print(f"[TSNE] tsne_embeddings shape={tsne_embeddings.shape}")
