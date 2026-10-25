@@ -286,10 +286,10 @@ class TestStep:
         calls = {}
 
         def fake_solver(state, ring_, pos_, input_vec, substeps, parallel, node_params,
-                        **dde_kwargs):
+                        conductance, **dde_kwargs):
             calls.update(state=state.copy(), ring=ring_, pos=pos_, input_vec=input_vec,
                          substeps=substeps, parallel=parallel, node_params=node_params,
-                         dde=dde_kwargs)
+                         conductance=conductance, dde=dde_kwargs)
             return np.full((4, 4), 0.5), 7
 
         monkeypatch.setattr(node_module, "solve_dde_substep", fake_solver)
@@ -299,6 +299,7 @@ class TestStep:
         np.testing.assert_allclose(calls["input_vec"], [0.3, 0.6, 0.9, 1.2])
         assert calls["substeps"] == 4 and calls["parallel"] is False
         assert calls["node_params"] is node._param_table and calls["dde"] == node.dde_kwargs
+        assert calls["conductance"] is None
         np.testing.assert_array_equal(out, np.full((4, 4), 0.5))
         np.testing.assert_array_equal(node.states[-1], out)
         assert node._ring_pos == 7

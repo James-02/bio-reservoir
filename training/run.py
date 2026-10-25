@@ -83,6 +83,7 @@ RESERVOIR_KEYS = {
         "topology_type",
         "interaction_diameters", "fade_alpha", "sparsity", "signed", "p_excite",
         "rc_connectivity", "geometry", "couple_vars", "delay_scheme", "normalize_after_masks",
+        "coupling", "diffusion_rate", "input_encoding", "input_range", "input_sign",
     ),
     "esn": (
         "units", "esn_leak_rate", "esn_spectral_radius", "esn_activation", "input_scaling",
@@ -97,7 +98,10 @@ SCALAR_METRICS = ("f1", "f1_macro", "f1_weighted", "accuracy", "precision", "rec
 # Ridge strengths a RidgeCV readout chooses from: 10^-4 to 10^6, two per decade.
 RIDGE_ALPHAS = tuple(float(a) for a in np.logspace(-4, 6, 21))
 
-# Settings that reproduce the v0.1 code path; explicit config values win.
+# Named settings; explicit config values win. ``v0.1`` reproduces the v0.1 code
+# path. ``qs_diffusion`` is the structure of the chemically realisable model: colonies
+# exchange AHL through symmetric distance-based conductances (so AHL is conserved), and the
+# input is a non-negative inducer level delivered with non-negative weights.
 PRESETS: dict[str, dict[str, dict[str, Any]]] = {
     "v0.1": {
         "task": {"cap_includes_test": False},
@@ -106,6 +110,11 @@ PRESETS: dict[str, dict[str, dict[str, Any]]] = {
                       "heterogeneity_mean_preserving": False},
         "readout": {"scale": False},
         "cv": {"simulate": "per_fold"},
+    },
+    "qs_diffusion": {
+        "reservoir": {"coupling": "diffusion", "topology_type": "distance", "signed": False,
+                      "p_excite": 1.0, "sparsity": 1.0, "input_encoding": "nonnegative",
+                      "input_sign": "positive"},
     },
 }
 

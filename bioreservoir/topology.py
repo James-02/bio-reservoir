@@ -6,15 +6,22 @@ for biologically-inspired diffusion / signaling between nodes.
 Public API:
     generate_distance_weights(...): returns (W, coords)
     spectral_radius(W): largest absolute eigenvalue
+    lattice_matrix(...): nearest-neighbour links of a regular 2-D grid of colonies
+    scale_conductances(W, mean_rate): conductances for diffusive coupling
+    relative_asymmetry(W): how far a coupling matrix is from symmetric
 """
 from __future__ import annotations
 
 from functools import partial
 
 import numpy as np
+from scipy import sparse
 from scipy.sparse import csr_matrix
+from scipy.sparse.linalg import norm as sparse_norm
 
-__all__ = ["generate_distance_weights", "spectral_radius", "distance_matrix", "random_gaussian_weights"]
+__all__ = ["generate_distance_weights", "spectral_radius", "distance_matrix",
+           "random_gaussian_weights", "lattice_matrix", "scale_conductances",
+           "relative_asymmetry"]
 
 def spectral_radius(mat: np.ndarray) -> float:
     """Return largest absolute eigenvalue (spectral radius)."""
@@ -405,3 +412,67 @@ def distance_matrix(
     if return_coords:
         return W, coords
     return W
+
+
+def lattice_matrix(m: int | None = None, n: int | None = None,
+                   **kwargs) -> csr_matrix | partial:
+    """Nearest-neighbour links of colonies on a regular 2-D grid, as in a trap array.
+
+    The ``m`` colonies fill the most nearly square grid of ``rows x columns = m`` sites,
+    row by row, and each is linked with weight 1 to its 4 grid neighbours (fewer at the
+    edges). A number of colonies whose most nearly square grid is more than twice as long
+    as wide (a prime, for example) is refused. The weights are not normalised: the
+    diffusive coupling scales them (:func:`scale_conductances`). Without ``m`` and ``n``,
+    returns the initializer (the ReservoirPy pattern); other keyword arguments (``sr``,
+    ``seed``, ...) are ignored, as the grid has no random part.
+    """
+    if m is None and n is None:
+        return partial(lattice_matrix)
+    if m != n:
+        raise ValueError(f"Lattice matrix must be square (got {m}x{n}).")
+    columns = max(int(round(np.sqrt(m))), 1)
+    while m % columns:
+        columns -= 1
+    if m // columns > 2 * columns:
+        raise ValueError(
+            f"{m} colonies make a {m // columns} x {columns} lattice; choose a number with "
+            f"a near-square grid (at most twice as long as wide), such as "
+            f"{int(round(np.sqrt(m))) ** 2}.")
+    sites = np.arange(m).reshape(m // columns, columns)
+    a = np.concatenate([sites[:, :-1].ravel(), sites[:-1, :].ravel()])
+    b = np.concatenate([sites[:, 1:].ravel(), sites[1:, :].ravel()])
+    rows, cols = np.concatenate([a, b]), np.concatenate([b, a])
+    return csr_matrix((np.ones(len(rows)), (rows, cols)), shape=(m, m))
+
+
+def scale_conductances(weights, mean_rate: float) -> csr_matrix:
+    """Conductances for diffusive coupling: ``weights`` scaled to a mean total of ``mean_rate``.
+
+    The kernel sets which colonies exchange AHL and in what proportions; ``mean_rate`` sets
+    how fast. The result is scaled so that a colony's conductances sum to ``mean_rate`` on
+    average (per model time unit), and the diagonal is dropped (a colony does not exchange
+    with itself). Weights must be non-negative.
+    """
+    W = sparse.coo_matrix(weights, dtype=float)
+    if W.shape[0] != W.shape[1]:
+        raise ValueError(f"Conductances must be square, got {W.shape}.")
+    keep = (W.row != W.col) & (W.data != 0.0)
+    G = csr_matrix((W.data[keep], (W.row[keep], W.col[keep])), shape=W.shape)
+    if G.nnz and G.data.min() < 0:
+        raise ValueError("Conductances must be non-negative (build the kernel with "
+                         "signed=False).")
+    total = G.sum()
+    if total > 0:
+        G = G * (float(mean_rate) * G.shape[0] / total)
+    return G.tocsr()
+
+
+def relative_asymmetry(weights) -> float:
+    """``||W - W^T|| / ||W||`` (Frobenius norms): 0 for a symmetric matrix.
+
+    Diffusive coupling conserves AHL (it only moves it between colonies) when the
+    conductances are symmetric.
+    """
+    W = csr_matrix(weights, dtype=float)
+    norm = sparse_norm(W)
+    return float(sparse_norm(W - W.T) / norm) if norm > 0 else 0.0
