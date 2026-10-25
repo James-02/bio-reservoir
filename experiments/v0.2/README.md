@@ -7,16 +7,20 @@ the commit, the host and its resolved config.
 
 | Folder | What | Studies | Trials |
 |---|---|---|---|
-| `tracking/` | The tracking set, rerun at every tagged code version: the P centre, P lattice #208, A′ #109, U #68 and the `v0.1` ESN, each at three reservoir seeds | 5 | 15 |
+| `tracking/` | The tracking set, rerun at every tagged code version: the P centre, the best P lattice, A′ and U designs of the earlier searches and the `v0.1` ESN, each at three reservoir seeds | 5 | 15 |
 | `phase-1/` | Phase 1 grids: one or two design parameters at a time around the P centre, at three reservoir seeds | 14 | 540 |
 | `phase-2/` | Phase 2 seeded TPE searches over every design parameter: P lattice, A′, U and the ESN | 4 | 1,000 |
 
-Study names give the phase and what the study varies: `P1-coupling` is the Phase 1 coupling
-grid, `P2-lattice` the Phase 2 search of the P lattice, and `tracking-<design>` a design of the
-tracking set. Later phases follow the same pattern: `phase-3/` (`P3-`, robustness at the
-frozen designs), `phase-4/` (`P4-`, readouts and raw-beat baselines), `phase-5/` (`P5-`, final
-runs) and `phase-6/` (`P6-`, ablations and controls). `tests/unit/test_experiment_configs.py`
-checks every config here.
+Study names follow the convention of the `v0.1` studies (SI Table S5): a phase prefix and
+a descriptor, with each phase keeping its `v0.1` meaning. Phase 1 (`P1-`, folder `phase-1/`)
+varies one or two parameters at a time, Phase 2 (`P2-`) searches all of a design's parameters
+jointly, Phase 3 (`P3-`) evaluates the chosen designs on other tasks, and Phase 4 (`P4-`)
+optimises the readout on saved states. Classifiers on the raw beat, without a reservoir, are
+the baselines (`B1-`, `B2-`, ...), and `tracking-<design>` is a design of the tracking set.
+So `P1-coupling` is the Phase 1 coupling grid and `P2-lattice` the Phase 2 search of the P
+lattice. A `v0.2` study and a `v0.1` study of the same name are told apart by version: the
+`v0.1` databases are in `archive/v0.1/`. `tests/unit/test_experiment_configs.py` checks every
+config here.
 
 ## Models
 
@@ -67,8 +71,8 @@ the measurement noise and the reservoir; `study-table --group` reads them as one
 Seeded multivariate TPE (`seed: 6337`, 24 start-up trials), N = 1,024 traps and 16
 substeps, reservoir seed 6337. The ranges are those of the exploration searches, whose input
 and recurrent gains were multiples of the `v0.1` scalings; here they are absolute scalings.
-Each search first runs the exploration's best design (P lattice #208 and the P centre, A′
-#109, U #68, the `v0.1` ESN).
+Each search first runs the best design of the earlier search (and the P centre for the P
+lattice; the `v0.1` ESN for the ESN).
 
 | Study | Searched | Trials |
 |---|---|---|
