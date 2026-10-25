@@ -69,7 +69,8 @@ SECTIONS = ("task", "reservoir", "features", "readout", "cv")
 _SETTINGS = {"reservoir": ("params", "seed", "trial"),
              "readout": ("classifier", "params", "scale", "search", "inner_folds", "seed",
                          "trial")}
-_EXTRA_SETTINGS = {"task": ("seed", "data_sha256", "scramble"), "cv": ("seed",)}
+_EXTRA_SETTINGS = {"task": ("seed", "data_sha256", "scramble"), "cv": ("seed",),
+                   "features": ("reference",)}
 # Environment keys a trial leaves out: the code is in its ``code`` attribute, and these vary.
 _UNRECORDED = ("timestamp_utc", "ram_available_gb", "git_commit", "git_dirty", "git_branch")
 

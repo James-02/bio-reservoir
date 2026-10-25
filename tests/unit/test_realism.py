@@ -444,6 +444,39 @@ class TestWarmupInput:
             build_reservoir(dict(V0_1_LIKE, warmup_input="rest"), seed=3)
 
 
+class TestStartState:
+    """``BioReservoir.start_state``: the observed state every beat starts from."""
+
+    def _built(self, **kwargs):
+        node, _ = build_reservoir(dict(P_LIKE, noise_in=0.0, **kwargs), seed=3)
+        return node
+
+    def test_it_is_the_observed_warm_up_state_a_beat_starts_from(self):
+        node = self._built()
+        start = node.start_state()
+        np.testing.assert_array_equal(start, node._warmup_states[-1][:, [1, 3]].ravel())
+        node.run(X, reset=True)
+        node.reset()
+        np.testing.assert_array_equal(node.state()[0], start)
+
+    def test_a_rest_warm_up_is_run_on_a_copy(self):
+        node = self._built(warmup_input="rest")
+        before = node._warmup_states.copy()
+        start = node.start_state()
+        assert not node.is_initialized
+        np.testing.assert_array_equal(node._warmup_states, before)
+        warmed = self._built(warmup_input="rest")
+        warmed.initialize(np.zeros((1, 1)))
+        np.testing.assert_array_equal(start, warmed._warmup_states[-1][:, [1, 3]].ravel())
+        np.testing.assert_array_equal(warmed.start_state(), start)
+        assert not np.allclose(start, self._built().start_state())
+
+    def test_reset_noise_leaves_it_at_the_unperturbed_state(self):
+        """The perturbations are mean-preserving, so this is the average start."""
+        np.testing.assert_array_equal(self._built(reset_noise=0.2).start_state(),
+                                      self._built().start_state())
+
+
 # ---------------------------------------------------------------------------
 # Options at zero
 # ---------------------------------------------------------------------------

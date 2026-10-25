@@ -1,6 +1,7 @@
 """Unit tests for the run framework (training.run and training.compare)."""
 
 import argparse
+import copy
 import hashlib
 import importlib
 import json
@@ -452,6 +453,109 @@ class TestObservation:
     def test_variables_the_reservoir_does_not_output_are_reported(self, tmp_path):
         with pytest.raises(ValueError, match="output variables"):
             _execute(_config(features={"variables": ["I"]}), tmp_path / "run")
+
+
+def _start(cfg):
+    """The observed start state of a config's reservoir, colony by colony (I, He)."""
+    from optimization.reservoirs import build_reservoir
+
+    params = dict(cfg["reservoir"]["params"], reservoir_type="bioreservoir")
+    return build_reservoir(params, seed=cfg["seed"])[0].start_state()
+
+
+class TestReference:
+    """``features.reference: start``: every image over the trap's image at the start."""
+
+    def test_rows_are_read_over_the_start_image_in_every_image(self, tmp_path):
+        features = dict(variables=["I"], aggregation="images:2", measurement_noise=0.05)
+        plain = _execute(_reporter_config(**features), tmp_path / "plain")
+        cfg = _reporter_config(reference="start", **features)
+        ratio = _execute(cfg, tmp_path / "ratio")
+        reference = np.tile(_start(cfg)[0::2], 2)
+        assert reference.shape == (6,) and (reference > 0).all()
+        for kind in ("train", "test"):
+            for p, r in zip(_states(plain, kind), _states(ratio, kind), strict=True):
+                np.testing.assert_array_equal(r, p / reference)
+
+    def test_calibration_error_cancels(self, tmp_path):
+        runs = [_execute(_reporter_config(variables=["I"], aggregation="images:2",
+                                          reference="start", calibration_error=error),
+                         tmp_path / str(error)) for error in (0.0, 0.05, 0.3)]
+        for kind in ("train", "test"):
+            for clean, *biased in zip(*[_states(r, kind) for r in runs], strict=True):
+                for b in biased:
+                    np.testing.assert_allclose(b, clean, rtol=1e-14)
+        for clean, *biased in zip(*[_predictions(r) for r in runs], strict=True):
+            for b in biased:
+                np.testing.assert_array_equal(b, clean)
+
+    def test_without_calibration_error_the_predictions_are_those_without_a_reference(
+            self, tmp_path):
+        """The readout standardises each feature, and dividing a feature by a constant does
+        not change its standardised value."""
+        plain = _execute(_reporter_config(variables=["I"], measurement_noise=0.05),
+                         tmp_path / "plain")
+        ratio = _execute(_reporter_config(variables=["I"], measurement_noise=0.05,
+                                          reference="start"), tmp_path / "ratio")
+        for p, r in zip(_predictions(plain), _predictions(ratio), strict=True):
+            np.testing.assert_array_equal(p, r)
+
+    def test_the_reference_of_a_rest_warm_up_is_the_state_it_settles_in(self, tmp_path):
+        features = dict(variables=["I"])
+        cfg = _reporter_config(**features)
+        # LuxI answers the input through the delayed AHL term: a warm-up longer than the delay
+        cfg["reservoir"]["params"].update(warmup=30, warmup_input="rest",
+                                         input_encoding="nonnegative", input_sign="positive")
+        plain = _execute(copy.deepcopy(cfg), tmp_path / "plain")
+        cfg["features"]["reference"] = "start"
+        ratio = _execute(cfg, tmp_path / "ratio")
+        reference = _start(cfg)[0::2]
+        zero = copy.deepcopy(cfg)
+        zero["reservoir"]["params"]["warmup_input"] = "zero"
+        assert not np.allclose(reference, _start(zero)[0::2])
+        for p, r in zip(_states(plain, "test"), _states(ratio, "test"), strict=True):
+            np.testing.assert_array_equal(r, p / reference)
+
+    def test_a_colony_that_starts_at_zero_is_reported(self, tmp_path, monkeypatch):
+        from bioreservoir.node import BioReservoir
+
+        monkeypatch.setattr(BioReservoir, "start_state",
+                            lambda node, input_dim=1: np.array([1.0, 1.0, 0.0, 1.0, 2.0, 1.0]))
+        with pytest.raises(ValueError, match="1 of the 3 colonies"):
+            _execute(_reporter_config(variables=["I"], reference="start"), tmp_path / "run")
+
+    def test_the_option_is_recorded_only_when_set(self):
+        cfg = _reporter_config(variables=["I"], reference="start")
+        resolved = run_module.resolve(cfg)
+        assert resolved["features"]["reference"] == "start"
+        assert run_module.resolve(resolved) == resolved
+        unset = run_module.resolve(_reporter_config(variables=["I"], reference=None))
+        assert unset == run_module.resolve(_reporter_config(variables=["I"]))
+        assert "reference" not in unset["features"]
+
+    def test_a_study_can_search_it(self):
+        from training import study as study_module
+
+        study_module.check(_reporter_config(variables=["I"]), {"search": {
+            "features.reference": {"type": "categorical", "choices": [None, "start"]}}})
+
+    @pytest.mark.parametrize("change, message", [
+        ({"features": {"variables": ["I"], "reference": "end"}}, "must be 'start'"),
+        ({"features": {"reference": "start"}}, "features.variables"),
+        ({"features": {"variables": ["I"], "reference": "start", "aggregation": "mean"}},
+         "final, images:K or images_at"),
+        ({"features": {"variables": ["I"], "reference": "start", "window": 5}},
+         "final, images:K or images_at"),
+        ({"features": {"variables": ["I"], "reference": "start"},
+          "cv": {"simulate": "per_fold"}}, "cv.simulate: once"),
+        ({"features": {"variables": ["I"], "reference": "start"},
+          "reservoir": {"params": {"units": 3, "reservoir_type": "esn"}}}, "bioreservoir"),
+        ({"features": {"reference": "start"}, "reservoir": {"type": "none"}}, "bioreservoir"),
+        ({"features": {"reference": "start"}, "reservoir": {"states_from": "run"}}, "refit"),
+    ])
+    def test_invalid_references_are_rejected(self, change, message):
+        with pytest.raises(ValueError, match=message):
+            run_module.resolve(_config(**change))
 
 
 def test_load_task_subsamples_to_the_requested_rows(monkeypatch):

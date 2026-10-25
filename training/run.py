@@ -363,6 +363,7 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
     if sections["task"]["labels"] not in ("five-class", "binary"):
         raise ValueError("task.labels must be 'five-class' or 'binary'.")
     _check_scramble(sections["task"])
+    _check_reference(sections, resolved_reservoir)
     _check_raw(sections, resolved_reservoir)
     _check_simulation(sections, resolved_reservoir)
     _check_observation(sections, resolved_reservoir)
@@ -442,6 +443,36 @@ def _check_simulation(sections: dict[str, Any], reservoir: dict[str, Any]) -> No
         raise ValueError(f"task.scaler {sections['task']['scaler']!r} is fitted on a training "
                          "fold; cv.simulate: once needs a scaling of each beat on its own "
                          f"({', '.join(PER_BEAT_SCALERS)}).")
+
+
+def _check_reference(sections: dict[str, Any], reservoir: dict[str, Any]) -> None:
+    """Check ``features.reference``; leave it out of the features when it is not set."""
+    features = sections["features"]
+    reference = features.pop("reference", None)
+    if reference is None:
+        return
+    if reference != "start":
+        raise ValueError("features.reference must be 'start' (each image over the trap's "
+                         f"image at the start of the beat), got {reference!r}.")
+    if "states_from" in reservoir:
+        raise ValueError("A refit reads the features of another run as they were measured; "
+                         "features.reference cannot change them.")
+    kind = reservoir.get("type")
+    if kind != "bioreservoir":
+        raise ValueError("features.reference reads each colony over the state it starts "
+                         f"every beat from; it needs a bioreservoir, not {kind!r}.")
+    if features["variables"] is None:
+        raise ValueError("features.reference needs features.variables, the imaged reporter "
+                         "(for example [I]).")
+    aggregation = str(features["aggregation"])
+    if int(features["window"]) > 1 or not (
+            aggregation == "final" or aggregation.startswith(("images:", "images_at:"))):
+        raise ValueError("features.reference reads images over an image: it needs "
+                         "features.aggregation final, images:K or images_at:..., not "
+                         f"{aggregation!r} with window {features['window']}.")
+    if sections["cv"]["simulate"] != "once":
+        raise ValueError("features.reference needs cv.simulate: once.")
+    features["reference"] = reference
 
 
 def _check_observation(sections: dict[str, Any], reservoir: dict[str, Any]) -> None:
@@ -608,7 +639,8 @@ def _simulate(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray,
             seed=int(cfg["cv"]["seed"]), primary_average=str(cfg["cv"]["primary_average"]),
             save_states=bool(cfg["outputs"]["save_states"]),
             model_hypers=getattr(reservoir, "hypers", None),
-            test_gains=_test_gains(cfg, features, folds))
+            test_gains=_test_gains(cfg, features, folds),
+            reference=_reference(cfg, reservoir, X))
         result["simulation"] = timing
         return result, artifacts
     return cross_validate(
@@ -670,6 +702,30 @@ def _test_gains(cfg: dict[str, Any], features: np.ndarray, folds: int) -> list |
                               fold) for fold in range(folds)]
 
 
+def _reference(cfg: dict[str, Any], reservoir, X: np.ndarray) -> np.ndarray | None:
+    """The value each feature is read over (``features.reference: start``), or None.
+
+    It is the observed channel's value in the state every beat starts from (noise-free: the
+    image before the beat can be averaged over many beats), once per image of the row.
+    """
+    if cfg["features"].get("reference") is None:
+        return None
+    from training.observation import image_count, observed_columns
+
+    beat = np.asarray(X[0])
+    variables = cfg["features"]["variables"]
+    start = reservoir.start_state(input_dim=beat.reshape(len(beat), -1).shape[1])
+    start = start[observed_columns(reservoir.hypers["output_variables"], variables,
+                                   int(reservoir.hypers["units"]))]
+    colonies = start.reshape(-1, len(variables))
+    failing = int((colonies <= 0).any(axis=1).sum())
+    if failing:
+        raise ValueError(f"features.reference: {failing} of the {len(colonies)} colonies "
+                         "start the beat at 0 or below, so their images cannot be read over "
+                         "it.")
+    return np.tile(start, image_count(str(cfg["features"]["aggregation"])))
+
+
 def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: np.ndarray,
                     Y_test: np.ndarray, beat_ids: np.ndarray, processes: int = 1):
     """Fit the readout on the whole pool and evaluate it on a held-out split, as fold 0.
@@ -700,7 +756,8 @@ def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: n
                                    primary_average=str(cfg["cv"]["primary_average"]),
                                    labels=np.unique(class_indices(Y_test)),
                                    model_hypers=getattr(reservoir, "hypers", None),
-                                   test_gains=None if gains is None else gains[0])
+                                   test_gains=None if gains is None else gains[0],
+                                   reference=_reference(cfg, reservoir, X_all))
         artifact.test_index = np.asarray(beat_ids, dtype=np.int64)
         return artifact
     data = _prepare_fold_data(X_all, Y_all, fold, noise_rate=float(cfg["cv"]["noise_rate"]),

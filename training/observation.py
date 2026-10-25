@@ -10,6 +10,12 @@ The noise applies to the feature row, after aggregation: an image is one noisy s
 and an average over the beat (``mean``, ``last_N:K``) one noisy measurement of the average.
 The colonies of a test fold are read with gains calibrated to a relative error
 (``features.calibration_error``), which the readout never sees during training.
+
+With ``features.reference: start`` every image is read over the trap's own image of the
+state the beat starts from (F / F0). A trap's gain is the same in every image of a session,
+so it multiplies the reference as it multiplies the images and cancels. Every beat starts
+from the same warmed-up state, so the reference can be averaged over many beats: it is the
+noise-free start state (with ``reset_noise``, the average of the perturbed starts).
 """
 
 from __future__ import annotations

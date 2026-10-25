@@ -161,6 +161,26 @@ def test_test_gains_multiply_only_the_test_rows_of_their_fold():
         np.testing.assert_array_equal(artifact.train_states[:, 0], features[fold.train_idx])
 
 
+def test_a_reference_divides_every_row_and_cancels_the_test_gains():
+    rng = np.random.default_rng(2)
+    labels = np.repeat([0, 1], 9)
+    features = rng.uniform(1, 2, size=(18, 4)) + labels[:, None]
+    reference = rng.uniform(0.5, 2, size=4)
+    Y = np.eye(2)[labels][:, None, :]
+    readout = run_module.make_readout({"classifier": "Ridge", "params": {}, "scale": True})
+    gains = [1.0 + 0.3 * rng.standard_normal(4) for _ in range(3)]
+    runs = [cross_validate_features(features, Y, readout, folds=3, seed=0, save_states=True,
+                                    test_gains=g, reference=reference)[1]
+            for g in (gains, None)]
+    for with_gains, without, fold in zip(*runs, _iter_folds(features, Y, folds=3, seed=0),
+                                         strict=True):
+        np.testing.assert_array_equal(with_gains.train_states[:, 0],
+                                      features[fold.train_idx] / reference)
+        np.testing.assert_allclose(with_gains.test_states[:, 0],
+                                   features[fold.val_idx] / reference, rtol=1e-15)
+        np.testing.assert_array_equal(with_gains.Y_pred, without.Y_pred)
+
+
 def test_images_are_evenly_spaced_and_end_at_the_last_timestep():
     states = np.arange(187 * 2).reshape(187, 2)
     np.testing.assert_array_equal(_aggregate_states(states, "images:4", None),

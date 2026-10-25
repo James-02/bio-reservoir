@@ -97,6 +97,8 @@ The main sections of a run config:
 
 `aggregation: images_at:155,187` takes an image at each listed minute of the beat (the state after that many steps; `images_at:187` is `final` for a 187-step beat).
 
+`reference: start` divides each image by the trap's own image of the state every beat starts from (F/F0). A trap's calibration gain multiplies both and cancels, provided it holds from the reference to the last image; without calibration error the results are unchanged. It needs a bioreservoir, `variables`, an image aggregation and `cv.simulate: once`.
+
 ### Studies
 
 A config with a `study` section is a seeded Optuna search over its own values. Each trial

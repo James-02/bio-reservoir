@@ -28,6 +28,8 @@ Each entry is marked **[science]** if it changes a reported number, or
   `task.scramble: true` puts each beat's time steps in a random order.
 - [engineering] `features.aggregation: images_at:t1,t2,...` takes images at chosen minutes
   of the beat.
+- [engineering] `features.reference: start` divides each image by the trap's image of the
+  start state, which cancels calibration error.
 - [engineering] `bioreservoir.diagnostics.oscillation_amplitudes` (`drive_bounds.py
   --oscillation`) and `utils.analysis.class_indices`, which every label conversion uses.
 - [engineering] A run warns, and a study trial records (`grid_edges`), when a fold picks a
