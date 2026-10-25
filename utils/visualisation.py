@@ -292,6 +292,73 @@ def plot_tsne_clustering(Y_pred: np.ndarray, Y_true: np.ndarray, show: bool = Tr
 
 
 # ---------------------------------------------------------------------------
+# Building blocks for figure scripts: each draws on the Axes it is given
+# ---------------------------------------------------------------------------
+
+def plot_sweep(ax, scores, *, reference=None, reference_label=None, seed_label="Seeds",
+               mean_label="Mean (\u00b11 SD)", ddof=1, color="#d62728", seed_color="#1f77b4",
+               jitter=0.15, jitter_seed=42):
+    """Draw a score against the levels of a swept setting, one dot per seed.
+
+    Level ``i`` in sorted order is drawn at ``x = i`` and labelled with its value, so an
+    uneven grid such as 0, 0.025, 0.05, 0.1, 0.5 stays readable. Each level gets one dot per
+    seed, shifted sideways by up to ``jitter``, and a line through the seed means with a band
+    of plus and minus one SD (no band at a level with one seed).
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Where to draw.
+    scores : mapping of float to sequence of float
+        The scores at each level, one per seed: for example the rows of
+        :func:`training.study.trials_table` grouped by the swept value, or a grid of run
+        folders read with :class:`utils.results.FoldArtifact`.
+    reference : float, optional
+        Value of a dashed horizontal line, for example the score without the swept effect.
+    reference_label, seed_label, mean_label : str
+        Legend labels of the reference line, the dots and the mean line.
+    ddof : int
+        Delta degrees of freedom of the SD: 1 for the sample SD over the seeds, 0 for the
+        population SD.
+    color, seed_color : str
+        Colours of the mean (line and band) and of the dots.
+    jitter : float
+        Largest sideways shift of a dot, in level spacings.
+    jitter_seed : int
+        Seed of the shifts, so that a figure is the same every time it is drawn.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        ``ax``.
+
+    Examples
+    --------
+    >>> trials = trials_table(cfg)  # one row per trial: the swept value, the seed, f1
+    >>> scores = trials.groupby("reservoir.params.param_heterogeneity_cv")["f1"].apply(list)
+    >>> plot_sweep(ax, scores.to_dict(), reference=np.mean(scores[0.0]))
+    """
+    levels = sorted(scores)
+    x = np.arange(len(levels))
+    values = [np.asarray(scores[level], dtype=float) for level in levels]
+    means = np.array([v.mean() for v in values])
+    sds = np.array([v.std(ddof=ddof) if v.size > 1 else np.nan for v in values])
+    if reference is not None:
+        ax.axhline(reference, color="#888888", ls="--", lw=0.8, alpha=0.6, zorder=1,
+                   label=reference_label)
+    dots_x = np.concatenate([np.full(v.size, i) for i, v in enumerate(values)])
+    shift = np.random.default_rng(jitter_seed).uniform(-jitter, jitter, dots_x.size)
+    ax.scatter(dots_x + shift, np.concatenate(values), s=18, alpha=0.45, color=seed_color,
+               edgecolors="none", zorder=3, label=seed_label)
+    ax.plot(x, means, "o-", color=color, ms=5, lw=1.5, zorder=4, label=mean_label)
+    ax.fill_between(x, means - sds, means + sds, alpha=0.15, color=color, zorder=2)
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{level:g}" for level in levels])
+    ax.set_xlim(x[0] - 0.5, x[-1] + 0.5)
+    return ax
+
+
+# ---------------------------------------------------------------------------
 # Heterogeneity robustness figure  (P3-heterogeneity study)
 # ---------------------------------------------------------------------------
 

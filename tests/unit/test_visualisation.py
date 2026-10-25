@@ -92,3 +92,50 @@ class TestTsne:
 def test_genes_are_named_after_the_model_variables():
     assert (vis.gene_full_name("I"), vis.gene_full_name("A")) == ("luxI", "aiiA")
     assert vis.gene_full_name("He") == "He"
+
+
+class TestSweep:
+    """plot_sweep: a score against the levels of a swept setting, one dot per seed."""
+
+    SCORES = {0.0: [0.80, 0.82, 0.84], 0.5: [0.70, 0.74], 0.1: [0.90, 0.91, 0.92]}
+    MEANS = [0.82, 0.91, 0.72]  # at the sorted levels 0, 0.1, 0.5
+
+    def _draw(self, pyplot, scores=SCORES, **kwargs):
+        _, ax = pyplot.subplots()
+        return vis.plot_sweep(ax, scores, **kwargs)
+
+    def test_levels_are_evenly_spaced_and_labelled_with_their_values(self, pyplot):
+        ax = self._draw(pyplot)
+        assert list(ax.get_xticks()) == [0, 1, 2]
+        assert [t.get_text() for t in ax.get_xticklabels()] == ["0", "0.1", "0.5"]
+        assert ax.get_xlim() == (-0.5, 2.5)
+
+    def test_every_seed_is_a_dot_near_its_level(self, pyplot):
+        dots = self._draw(pyplot, jitter=0.15).collections[0].get_offsets()
+        np.testing.assert_allclose(dots[:, 1], [0.80, 0.82, 0.84, 0.90, 0.91, 0.92, 0.70, 0.74])
+        assert np.all(np.abs(dots[:, 0] - [0, 0, 0, 1, 1, 1, 2, 2]) <= 0.15)
+
+    def test_the_line_joins_the_means_and_the_band_spans_one_sd(self, pyplot):
+        for ddof in (1, 0):
+            ax = self._draw(pyplot, ddof=ddof)
+            np.testing.assert_allclose(ax.lines[0].get_ydata(), self.MEANS)
+            corners = ax.collections[1].get_paths()[0].vertices
+            for x, level in enumerate((0.0, 0.1, 0.5)):
+                sd = np.std(self.SCORES[level], ddof=ddof)
+                for y in (self.MEANS[x] - sd, self.MEANS[x] + sd):
+                    assert np.isclose(corners, [x, y]).all(axis=1).any()
+
+    def test_a_figure_is_the_same_every_time(self, pyplot):
+        first, second = (self._draw(pyplot).collections[0].get_offsets() for _ in range(2))
+        np.testing.assert_array_equal(first, second)
+
+    def test_the_reference_line_and_the_legend(self, pyplot):
+        ax = self._draw(pyplot, reference=0.82, reference_label="Without the setting")
+        assert list(ax.lines[0].get_ydata()) == [0.82, 0.82]
+        assert ax.get_legend_handles_labels()[1] == ["Without the setting", "Seeds",
+                                                     "Mean (\u00b11 SD)"]
+
+    def test_a_level_with_one_seed_has_a_mean_but_no_band(self, pyplot, recwarn):
+        ax = self._draw(pyplot, scores={0.0: [0.8, 0.9], 1.0: [0.7]})
+        np.testing.assert_allclose(ax.lines[0].get_ydata(), [0.85, 0.7])
+        assert not [w for w in recwarn.list if issubclass(w.category, RuntimeWarning)]
