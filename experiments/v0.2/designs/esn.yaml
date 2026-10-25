@@ -1,0 +1,25 @@
+# Design: the v0.1 ESN. Studies name it with base: ../designs/esn.yaml and list only
+# what differs; a run of this file is one reservoir seed (6337).
+name: design-esn
+description: >-
+  The v0.1 ESN (experiments/benchmarks/v0.1/esn.yaml), clean mean of its states over the
+  beat, RidgeCV readout.
+seed: 6337
+task: {labels: five-class, rows: 4015, balance_classes: true, scaler: sequence_zscore, seed: 6337}
+reservoir:
+  type: esn
+  params:
+    units: 850
+    input_scaling: 0.32714579463608107
+    input_connectivity: 0.6246343669642176
+    input_bias: true
+    bias_scaling: 0.9630661362999436
+    noise_in: 0.005487227657292568
+    noise_rc: 0.0009442056404533605
+    rc_connectivity: 0.17937632730640085
+    esn_leak_rate: 0.3160238707949273
+    esn_spectral_radius: 1.6955020298458932
+    esn_activation: tanh
+features: {aggregation: mean}
+readout: {classifier: RidgeCV, scale: true}
+cv: {folds: 5, seed: 6337}
