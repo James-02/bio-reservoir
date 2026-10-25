@@ -38,16 +38,27 @@ def figure_dir(tmp_path, monkeypatch, pyplot):
 
 
 @pytest.fixture
-def run_script(monkeypatch):
-    """Run ``scripts/<name>.py`` in this process, as ``python scripts/<name>.py ARGS`` would."""
+def load_script(monkeypatch):
+    """Import ``scripts/<name>.py`` as a module, e.g. ``load_script("figures/visualise_dde")``."""
 
-    def run(name, *args):
+    def load(name):
         spec = importlib.util.spec_from_file_location(f"script_{name.replace('/', '_')}",
                                                       SCRIPTS / f"{name}.py")
         module = importlib.util.module_from_spec(spec)
         # Registered first, as a module is on import: dataclasses look their module up there.
         monkeypatch.setitem(sys.modules, spec.name, module)
         spec.loader.exec_module(module)
+        return module
+
+    return load
+
+
+@pytest.fixture
+def run_script(monkeypatch, load_script):
+    """Run ``scripts/<name>.py`` in this process, as ``python scripts/<name>.py ARGS`` would."""
+
+    def run(name, *args):
+        module = load_script(name)
         monkeypatch.setattr(sys, "argv", [f"{name}.py", *map(str, args)])
         return module.main()
 

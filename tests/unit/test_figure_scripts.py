@@ -106,3 +106,59 @@ class TestDatasetFigures:
             "preprocessing/ecg_average_instances.png", "preprocessing/ecg_noise_example.png",
             "preprocessing/ecg_scalers_comparison.png"]
         assert len([p for p in saved if p.startswith("dataset/samples/")]) == 5
+
+
+class TestHeterogeneityFigure:
+    """scripts/figures/visualise_heterogeneity.py draws the ``v0.1`` heterogeneity figure from
+    the run folders of scripts/run_heterogeneity.py."""
+
+    RUNS = {"heterogeneity-cv0.000-seed100": 0.88, "heterogeneity-cv0.000-seed200": 0.90,
+            "heterogeneity-cv0.100-seed100": 0.86, "heterogeneity-cv0.100-seed200-array7": 0.87,
+            "heterogeneity-cv0.300-seed100": 0.84, "heterogeneity-cv0.300-seed200": 0.83,
+            "another-run": 0.5}
+
+    @classmethod
+    def _runs(cls, folder):
+        """Two folds per run, with macro F1 0.01 below and above the run's value."""
+        from utils.analysis import Metrics
+        from utils.results import FoldArtifact
+
+        labels = np.eye(5)[:, None, :]
+        for name, value in cls.RUNS.items():
+            for k, f1 in enumerate((value - 0.01, value + 0.01)):
+                metrics = Metrics(f1=f1, accuracy=f1, precision=f1, recall=f1, mcc=0.0, kappa=0.0,
+                                  runtime=1.0, confusion_matrix=np.eye(5), class_metrics={},
+                                  f1_macro=f1, f1_weighted=f1)
+                FoldArtifact(trial_name=name, fold_index=k, Y_train=labels, Y_test=labels,
+                             Y_pred=labels, metrics=metrics).save(results_dir=str(folder))
+        return folder
+
+    def test_each_run_is_its_mean_over_folds_grouped_by_cv(self, tmp_path, load_script):
+        scores = load_script("figures/visualise_heterogeneity").run_scores(
+            self._runs(tmp_path / "runs"))
+        assert list(scores) == [0.0, 0.1, 0.3]
+        np.testing.assert_allclose(scores[0.0], [0.88, 0.90])
+        np.testing.assert_allclose(scores[0.1], [0.86, 0.87])
+        np.testing.assert_allclose(scores[0.3], [0.84, 0.83])
+
+    def test_the_figure_shows_the_runs_their_means_and_the_baseline(self, tmp_path, pyplot,
+                                                                    load_script):
+        script = load_script("figures/visualise_heterogeneity")
+        ax = script.draw(script.run_scores(self._runs(tmp_path / "runs"))).axes[0]
+        baseline, means = ax.lines
+        assert list(baseline.get_ydata()) == pytest.approx([0.89, 0.89])
+        np.testing.assert_allclose(means.get_ydata(), [0.89, 0.865, 0.835])
+        assert ax.get_legend_handles_labels()[1] == [
+            "Baseline F$_1$ = 0.890", "Individual seeds", "Mean F$_1$ (\u00b11\u03c3)"]
+
+    def test_the_script_saves_the_figure_and_prints_the_means(self, tmp_path, figure_dir,
+                                                              run_script, capsys):
+        run_script("figures/visualise_heterogeneity", "--runs_dir", self._runs(tmp_path / "runs"))
+        assert sorted(p.name for p in (figure_dir / "diagnostics").iterdir()) == [
+            "heterogeneity_robustness.pdf", "heterogeneity_robustness.png"]
+        assert "0.1     0.8650" in capsys.readouterr().out
+
+    def test_a_folder_without_heterogeneity_runs_is_an_error(self, tmp_path, pyplot, run_script):
+        (tmp_path / "runs").mkdir()
+        with pytest.raises(SystemExit, match="No heterogeneity"):
+            run_script("figures/visualise_heterogeneity", "--runs_dir", tmp_path / "runs")
