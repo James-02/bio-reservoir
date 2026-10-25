@@ -110,6 +110,9 @@ def check(run_cfg: dict[str, Any], study: dict[str, Any]) -> None:
         if "states_from" in resolved["reservoir"] and keys[0] != "readout":
             raise ValueError(f"Search path {path!r}: a study on saved states "
                              "(reservoir.states_from) can only search readout settings.")
+        if kind == "none" and keys[0] in ("reservoir", "features"):
+            raise ValueError(f"Search path {path!r}: a raw-beat run (reservoir: {{type: none}}) "
+                             "has no reservoir or observation settings.")
         known = (set(DEFAULTS[keys[0]]) | set(_EXTRA_SETTINGS.get(keys[0], ()))
                  if keys[0] in DEFAULTS else set(_SETTINGS[keys[0]]))
         if keys[1] not in known:

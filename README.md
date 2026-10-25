@@ -74,6 +74,8 @@ A reservoir starts every beat from the same state, so a beat's features do not d
 
 Readouts are fitted on standardised features (`readout.scale`, on by default). A readout can choose its hyperparameters on each training fold: `classifier: RidgeCV` picks the ridge strength by leave-one-out (from `params.alphas`, by default 10^-4 to 10^6, two per decade), and `readout.search` runs a grid search over inner folds (`readout.inner_folds`). `metrics.json` records each fold's choice.
 
+`reservoir: {type: none}` fits the readout on the scaled beat itself (187 values), on the same pool and folds as a reservoir run, so `compare` pairs the two beat by beat; `classifier: HistGB` is histogram gradient boosting.
+
 The `features` section also sets what a measurement sees ([training/observation.py](training/observation.py)). In a device a microscope images the colonies' reporter, so a readout can be restricted to some variables, a few images, measurement noise and calibration error:
 
 ```yaml
