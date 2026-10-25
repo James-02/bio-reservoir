@@ -17,7 +17,7 @@ def tiny_node():
     return BioReservoir(
         units=4,
         warmup=2,
-        rk4_substeps=4,
+        rk4_substeps=16,
         seed=42,
         input_dim=1,
         output_variables="He",
@@ -32,7 +32,7 @@ def tiny_node_diagnostics():
     return BioReservoir(
         units=4,
         warmup=2,
-        rk4_substeps=4,
+        rk4_substeps=16,
         seed=42,
         input_dim=1,
         output_variables="He",
@@ -50,18 +50,18 @@ class TestBioReservoirInit:
         assert tiny_node.output_dim == 4
 
     def test_output_dim_subset(self):
-        node = BioReservoir(units=4, warmup=1, rk4_substeps=4, seed=0,
+        node = BioReservoir(units=4, warmup=1, rk4_substeps=16, seed=0,
                             input_dim=1, output_variables=("A",), parallel=False)
         assert node.output_dim == 4  # 4 units × 1 var
 
     def test_output_variables_preset_string(self):
-        node = BioReservoir(units=3, warmup=1, rk4_substeps=4, seed=0,
+        node = BioReservoir(units=3, warmup=1, rk4_substeps=16, seed=0,
                             input_dim=1, output_variables="He", parallel=False)
         assert node.output_dim == 3  # 3 units × 1 var
 
     def test_invalid_output_variables_preset_raises(self):
         with pytest.raises(ValueError, match="Unknown output_variables preset"):
-            BioReservoir(units=4, warmup=1, rk4_substeps=4,
+            BioReservoir(units=4, warmup=1, rk4_substeps=16,
                          output_variables="INVALID", parallel=False)
 
     def test_states_shape(self, tiny_node):
@@ -93,9 +93,9 @@ class TestBioReservoirRun:
     def test_deterministic_with_same_seed(self):
         """Two nodes with same seed + same input → identical output."""
         x = np.random.default_rng(0).uniform(size=(3, 1))
-        n1 = BioReservoir(units=4, warmup=2, rk4_substeps=4, seed=99,
+        n1 = BioReservoir(units=4, warmup=2, rk4_substeps=16, seed=99,
                           input_dim=1, parallel=False, output_variables="He")
-        n2 = BioReservoir(units=4, warmup=2, rk4_substeps=4, seed=99,
+        n2 = BioReservoir(units=4, warmup=2, rk4_substeps=16, seed=99,
                           input_dim=1, parallel=False, output_variables="He")
         o1 = n1.run(x, reset=True)
         o2 = n2.run(x, reset=True)
@@ -103,9 +103,9 @@ class TestBioReservoirRun:
 
     def test_different_seed_different_output(self):
         x = np.random.default_rng(0).uniform(size=(3, 1))
-        n1 = BioReservoir(units=4, warmup=2, rk4_substeps=4, seed=1,
+        n1 = BioReservoir(units=4, warmup=2, rk4_substeps=16, seed=1,
                           input_dim=1, parallel=False, output_variables="He")
-        n2 = BioReservoir(units=4, warmup=2, rk4_substeps=4, seed=2,
+        n2 = BioReservoir(units=4, warmup=2, rk4_substeps=16, seed=2,
                           input_dim=1, parallel=False, output_variables="He")
         o1 = n1.run(x, reset=True)
         o2 = n2.run(x, reset=True)
@@ -114,7 +114,7 @@ class TestBioReservoirRun:
     def test_output_variables_select_subset(self):
         """Output with 'IHe' (2 vars) should have twice the features of 'He' (1 var)."""
         x = np.random.default_rng(0).uniform(size=(3, 1))
-        n_he = BioReservoir(units=4, warmup=1, rk4_substeps=4, seed=42,
+        n_he = BioReservoir(units=4, warmup=1, rk4_substeps=16, seed=42,
                              input_dim=1, parallel=False, output_variables="He")
         out_he = n_he.run(x, reset=True)
         assert out_he.shape[1] == 4  # 4 units × 1 var
@@ -142,7 +142,7 @@ class TestBioReservoirReset:
         in _compute_input (noise_in, noise_rc).
         """
         node = BioReservoir(
-            units=4, warmup=2, rk4_substeps=4, seed=42, input_dim=1,
+            units=4, warmup=2, rk4_substeps=16, seed=42, input_dim=1,
             output_variables="He", parallel=False,
             noise_rc=0.0, noise_in=0.0, noise_fb=0.0,
         )
@@ -180,7 +180,7 @@ class TestBioReservoirDiagnostics:
 # ---------------------------------------------------------------------------
 
 def _node(**kwargs):
-    options = dict(units=4, warmup=2, rk4_substeps=4, seed=42, input_dim=1,
+    options = dict(units=4, warmup=2, rk4_substeps=16, seed=42, input_dim=1,
                    output_variables="He", parallel=False)
     options.update(kwargs)
     return BioReservoir(**options)
@@ -297,7 +297,7 @@ class TestStep:
         np.testing.assert_array_equal(calls["state"], history[-1])
         assert calls["ring"] is ring and calls["pos"] == pos
         np.testing.assert_allclose(calls["input_vec"], [0.3, 0.6, 0.9, 1.2])
-        assert calls["substeps"] == 4 and calls["parallel"] is False
+        assert calls["substeps"] == 16 and calls["parallel"] is False
         assert calls["node_params"] is node._param_table and calls["dde"] == node.dde_kwargs
         assert calls["conductance"] is None
         np.testing.assert_array_equal(out, np.full((4, 4), 0.5))

@@ -19,6 +19,7 @@ from bioreservoir.dde import (
     _NP_D_COEFF,
     _NP_D_FRAC,
     _NP_MU,
+    UnstableIntegrationError,
     generate_node_params,
     get_dde_params,
     log_dde_params,
@@ -343,19 +344,13 @@ class BioReservoir(Node):
                                               dtype=self.dtype, seed=seed)
             self.conductance = scale_conductances(kernel, self.diffusion_rate)
             self._conductances = prepare_conductances(self.conductance)
-            # The exchange is integrated explicitly, and RK4 is stable on a mode decaying at
-            # rate r only for steps below about 2.78 / r. He's fastest mode decays at most at
-            # its washout and membrane exchange, mu + d/(1-d) D, plus twice the colony's
-            # total conductance (Gershgorin's bound on the graph Laplacian).
-            table = self._param_table
-            D, d, mu = table[:, _NP_D_COEFF], table[:, _NP_D_FRAC], table[:, _NP_MU]
-            fastest = float(np.max(d / (1 - d) * D + mu + 2 * self._conductances.row_sum))
-            if fastest > 2.7 * self.rk4_substeps:
-                raise ValueError(
-                    f"The AHL exchange is too fast for {self.rk4_substeps} RK4 substeps: "
-                    f"He's fastest mode decays at up to {fastest:.3g} per time unit, so the "
-                    f"explicit solver needs at least {int(np.ceil(fastest / 2.7))} substeps "
-                    f"(or a lower diffusion_rate).")
+        if self.delay_scheme == "substep":
+            self._check_step()
+        # A and I stay non-negative under any drive; Hi and He too under non-negative drive
+        # (the abstract coupling's recurrent term is signed). Below that, the solver blew up.
+        self._nonnegative = slice(0, 4) if (self.input_encoding == "nonnegative"
+                                            and self.input_sign == "positive"
+                                            and self.coupling != "abstract") else slice(0, 2)
 
         logger.info(
             "Initialized BioReservoir(units=%s, warmup=%s, rk4_substeps=%s, output_variables=%s)",
@@ -508,17 +503,21 @@ class BioReservoir(Node):
         x = np.asarray(x).reshape(-1)[:n_nodes]
 
         if self.delay_scheme == "substep":
-            next_state, self._ring_pos = solve_dde_substep(
-                self.states[-1],
-                self._ring,
-                self._ring_pos,
-                x * self.cell_coupling,
-                self.rk4_substeps,
-                parallel=self.parallel,
-                node_params=self._param_table,
-                conductance=self._conductances,
-                **self.dde_kwargs,
-            )
+            try:
+                next_state, self._ring_pos = solve_dde_substep(
+                    self.states[-1],
+                    self._ring,
+                    self._ring_pos,
+                    x * self.cell_coupling,
+                    self.rk4_substeps,
+                    parallel=self.parallel,
+                    node_params=self._param_table,
+                    conductance=self._conductances,
+                    **self.dde_kwargs,
+                )
+            except ZeroDivisionError as exc:
+                raise UnstableIntegrationError(self._unstable_message()) from exc
+            self._check_state(next_state)
             self._update_history(next_state)
             return next_state
 
@@ -526,21 +525,56 @@ class BioReservoir(Node):
         # This models how strongly the external AHL (He-like signal) influences each oscillator.
         # input_effect = self.cell_coupling * x
         # This input will be used in the DDE equations to combine with the external AHL.
-        sol = solve_dde_rk4(
-            self.states,
-            self.rk4_timespan,
-            input_vec=x * self.cell_coupling,
-            parallel=self.parallel,
-            node_params=self.node_params,
-            **self.dde_kwargs,
-        )
+        try:
+            sol = solve_dde_rk4(
+                self.states,
+                self.rk4_timespan,
+                input_vec=x * self.cell_coupling,
+                parallel=self.parallel,
+                node_params=self.node_params,
+                **self.dde_kwargs,
+            )
+        except ZeroDivisionError as exc:
+            raise UnstableIntegrationError(self._unstable_message()) from exc
 
         # The state at the end of the input step (the solver returns every substep).
         next_state = sol[-1]
+        self._check_state(next_state)
 
         # Update internal history buffer for historical interpolation.
         self._update_history(next_state)
         return next_state
+
+    def _check_step(self) -> None:
+        """Refuse an RK4 step too long for a colony's fastest exchange of AHL.
+
+        RK4 is stable on a mode decaying at rate r only for steps below about 2.78 / r. Hi
+        and He relax towards each other at D / (1 - d) (He's washout mu adds to it), and the
+        diffusive coupling adds at most twice the colony's total conductance (Gershgorin's
+        bound on the graph Laplacian).
+        """
+        table = self._param_table
+        D, d, mu = table[:, _NP_D_COEFF], table[:, _NP_D_FRAC], table[:, _NP_MU]
+        rates = D / (1 - d) + mu
+        if self._conductances is not None:
+            rates = rates + 2 * self._conductances.row_sum
+        fastest = float(np.max(rates))
+        if fastest > 2.7 * self.rk4_substeps:
+            raise UnstableIntegrationError(
+                f"The AHL exchange is too fast for {self.rk4_substeps} RK4 substeps: its "
+                f"fastest mode decays at up to {fastest:.3g} per time unit, so the explicit "
+                f"solver needs at least {int(np.ceil(fastest / 2.7))} substeps (or a lower "
+                "diffusion_rate or cell density).")
+
+    def _check_state(self, state: np.ndarray) -> None:
+        """Stop a run whose states blew up: non-finite, or negative where they cannot be."""
+        if not np.isfinite(state).all() or state[:, self._nonnegative].min() < -1e-6:
+            raise UnstableIntegrationError(self._unstable_message())
+
+    def _unstable_message(self) -> str:
+        return (f"The colony states blew up with {self.rk4_substeps} RK4 substeps per input "
+                "step: the step is too long for the fastest rates of some colonies (such as "
+                "fast degradation at large kinetic heterogeneity); use more substeps.")
 
     def _restore_warmup(self) -> None:
         """Return the state and delay histories to their values after warm-up.

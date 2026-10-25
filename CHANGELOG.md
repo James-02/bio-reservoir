@@ -56,6 +56,8 @@ Each entry is marked **[science]** if it changes a reported number, or
 ### Fixed
 
 - [engineering] `scripts/analysis/drive_bounds.py` works on diffusive and uncoupled arrays.
+- [science] The RK4 step check counts the whole membrane exchange, for every coupling, and a
+  run stops with `UnstableIntegrationError` when colony states blow up.
 - [engineering] Optuna's plots no longer warn that they are experimental, and
   `analyse_fold_results.py` reports MCC and kappa, also for `v0.1` fold files.
 
