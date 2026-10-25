@@ -27,8 +27,8 @@ simulating beats; ``cv.simulate: per_fold`` simulates the beats of every fold ag
 
 The ``features`` section also sets what a measurement sees (:mod:`training.observation`):
 the observed variables (``variables: [I]`` for the LuxI reporter alone), K images over the
-beat (``aggregation: images:K``), multiplicative measurement noise and the calibration
-error of the test fold's colonies.
+beat (``aggregation: images:K``) or images at chosen times (``images_at:155,187``),
+multiplicative measurement noise and the calibration error of the test fold's colonies.
 
 A config with a ``study`` section defines an Optuna search over its own values:
 ``study`` runs the trials through this runner's pipeline and ``study-best`` writes the best
@@ -447,10 +447,16 @@ def _check_simulation(sections: dict[str, Any], reservoir: dict[str, Any]) -> No
 def _check_observation(sections: dict[str, Any], reservoir: dict[str, Any]) -> None:
     features = sections["features"]
     aggregation = str(features["aggregation"])
-    if aggregation.startswith("images:"):
-        count = aggregation.split(":")[1]
-        if not count.isdigit() or int(count) < 1:
-            raise ValueError(f"features.aggregation {aggregation!r}: expected images:K, K >= 1.")
+    if aggregation.startswith(("images:", "images_at:")):
+        if aggregation.startswith("images_at:"):
+            from training.observation import image_times
+
+            image_times(aggregation)
+        else:
+            count = aggregation.split(":")[1]
+            if not count.isdigit() or int(count) < 1:
+                raise ValueError(f"features.aggregation {aggregation!r}: expected images:K, "
+                                 "K >= 1.")
         if int(features["window"]) > 1:
             raise ValueError("features.window averages the last steps instead of taking "
                              f"images; it cannot be combined with {aggregation!r}.")

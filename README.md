@@ -95,6 +95,8 @@ The main sections of a run config:
   leave-one-out, and `readout.search` picks hyperparameters on inner folds.
 - `reservoir: {type: none}` classifies the raw beat, the baseline without a reservoir.
 
+`aggregation: images_at:155,187` takes an image at each listed minute of the beat (the state after that many steps; `images_at:187` is `final` for a 187-step beat).
+
 ### Studies
 
 A config with a `study` section is a seeded Optuna search over its own values. Each trial

@@ -7,7 +7,13 @@ import pytest
 from optimization.reservoirs import build_reservoir
 from training import run as run_module
 from training.cross_validate import _iter_folds, cross_validate_features
-from training.observation import calibration_gains, image_count, measure, observed_columns
+from training.observation import (
+    calibration_gains,
+    image_count,
+    image_times,
+    measure,
+    observed_columns,
+)
 from training.pipeline import _aggregate_states, train
 from training.simulate import beat_seed, reseed_noise, simulate_beats
 
@@ -163,6 +169,33 @@ def test_images_are_evenly_spaced_and_end_at_the_last_timestep():
     with pytest.raises(ValueError, match="between 1 and 187"):
         _aggregate_states(states, "images:188", None)
     assert (image_count("images:4"), image_count("final")) == (4, 1)
+
+
+def test_images_at_chosen_times_take_the_state_after_that_many_steps():
+    states = np.arange(187 * 2).reshape(187, 2)
+    np.testing.assert_array_equal(_aggregate_states(states, "images_at:46,93,140,187", None),
+                                  _aggregate_states(states, "images:4", None))
+    np.testing.assert_array_equal(_aggregate_states(states, "images_at:187", None),
+                                  _aggregate_states(states, "final", None))
+    np.testing.assert_array_equal(_aggregate_states(states, "images_at:1,155", None),
+                                  states[[0, 154]].reshape(1, -1))
+    with pytest.raises(ValueError, match="187 steps long"):
+        _aggregate_states(states, "images_at:155,188", None)
+    assert image_times("images_at:155,187") == [155, 187]
+    assert (image_count("images_at:155,187"), image_count("images_at:187")) == (2, 1)
+
+
+@pytest.mark.parametrize("mode, message", [
+    ("images_at:187,155", "strictly increasing"),
+    ("images_at:155,155", "strictly increasing"),
+    ("images_at:0,187", "1 or more"),
+    ("images_at:", "Invalid images_at"),
+    ("images_at:1.5", "Invalid images_at"),
+    ("images_at:-3,4", "Invalid images_at"),
+])
+def test_image_times_are_whole_increasing_minutes(mode, message):
+    with pytest.raises(ValueError, match=message):
+        image_times(mode)
 
 
 def test_observed_columns_take_the_variables_of_every_colony():

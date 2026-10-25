@@ -392,6 +392,20 @@ class TestObservation:
             assert images.shape[1] == 6
             np.testing.assert_array_equal(images[:, 3:], last)
 
+    def test_images_at_chosen_times_are_the_images_k_at_the_same_times(self, tmp_path):
+        """With 8-step beats, images:2 takes the states after 4 and 8 steps; the calibration
+        gains of the test rows count both images."""
+        features = dict(variables=["I"], measurement_noise=0.05, calibration_error=0.1)
+        even = _execute(_reporter_config(aggregation="images:2", **features), tmp_path / "even")
+        chosen = _execute(_reporter_config(aggregation="images_at:4,8", **features),
+                          tmp_path / "chosen")
+        for kind in ("train", "test"):
+            for a, b in zip(_states(even, kind), _states(chosen, kind), strict=True):
+                assert a.shape[1] == 6
+                np.testing.assert_array_equal(a, b)
+        with pytest.raises(ValueError, match="8 steps long"):
+            _execute(_reporter_config(aggregation="images_at:4,9"), tmp_path / "long")
+
     def test_measurement_noise_is_multiplicative_and_repeatable(self, tmp_path):
         clean = _states(_execute(_reporter_config(), tmp_path / "clean"), "train")
         noisy = [_states(_execute(_reporter_config(measurement_noise=0.05), tmp_path / name),
@@ -423,6 +437,9 @@ class TestObservation:
         ({"features": {"variables": ["I", "I"]}}, "each once"),
         ({"features": {"aggregation": "images:0"}}, "images:K"),
         ({"features": {"aggregation": "images:4", "window": 5}}, "window"),
+        ({"features": {"aggregation": "images_at:8,4"}}, "strictly increasing"),
+        ({"features": {"aggregation": "images_at:0,4"}}, "1 or more"),
+        ({"features": {"aggregation": "images_at:4,8", "window": 5}}, "window"),
         ({"features": {"variables": ["I"]},
           "reservoir": {"params": {"units": 3, "reservoir_type": "esn"}}}, "bioreservoir"),
         ({"features": {"calibration_error": 0.1}, "reservoir": {"states_from": "run"}},
