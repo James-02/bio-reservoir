@@ -3,7 +3,6 @@
 This script uses ``load_ecg_data`` from ``utils.preprocessing`` and the
 visualisation helpers in ``utils.visualisation`` to give an overview of:
 
-- class/sample distribution
 - class-wise mean and variance
 - average waveform per class
 - effect of noise augmentation on a single sample
@@ -161,10 +160,6 @@ def visualise_dataset(args: argparse.Namespace) -> None:
         balance_classes=True,
         max_per_class=None,
     )
-
-    # 1) Class / sample distribution: disabled. To draw it, pass the train + test labels
-    # as an (N, 1) integer array to ``plot_data_distribution`` (it calls ``count_labels``):
-    # plot_data_distribution(labels, filename="ecg_data_distribution.png", show=False)
 
     # 2) Average instances figure (mean + quantile band + multiple exemplars)
     #    We compute it on sequence_zscore-scaled waveforms.

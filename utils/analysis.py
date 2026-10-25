@@ -433,29 +433,3 @@ def measure_dataset_deviation(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     mean = np.mean(X, axis=0)
     std = np.std(X, axis=0)
     return mean, std
-
-def measure_class_deviation(
-    X: list[np.ndarray],
-    Y: list[np.ndarray],
-) -> tuple[dict[int, float], dict[int, float]]:
-    """
-    Measure the mean and standard deviation of features for each class in a dataset.
-
-    Args:
-        X: List of feature arrays.
-        Y: List of target arrays.
-
-    Returns:
-        Tuple of (class_means, class_stds) dicts keyed by class label.
-    """
-    X = np.concatenate(X, axis=0)
-    Y = np.concatenate(Y, axis=0)
-    class_means = {}
-    class_stds = {}
-
-    for label in np.unique(Y):
-        indices = np.where(Y == label)[0]
-        class_means[label] = round(np.mean(X[indices], axis=0).tolist()[0], 4)
-        class_stds[label] = round(np.std(X[indices], axis=0).tolist()[0], 4)
-
-    return class_means, class_stds
