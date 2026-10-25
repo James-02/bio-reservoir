@@ -253,6 +253,10 @@ def run_fold(
         Contains metrics, predictions and labels.  States included only when
         ``save_states=True``.  Saving to disk is deferred to the caller.
     """
+    if getattr(reservoir, "reset_noise", 0.0):
+        raise ValueError("reset_noise needs the beats simulated once (cv.simulate: once), "
+                         "which draws each beat's perturbation from the beat's own seed; the "
+                         "per-fold path would make it depend on the order of the beats.")
     rpy.verbosity(0)
     setup_logging(level=logging.DEBUG)
     logger.info("Cross-validation fold %s", str(fold_index))

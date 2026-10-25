@@ -27,6 +27,14 @@ from bioreservoir.dde import (
     solve_dde_substep,
     substep_history,
 )
+from bioreservoir.realism import (
+    RESET_STREAM,
+    check_input_levels,
+    level_weights,
+    perturb_start,
+    stream,
+    vary_colonies,
+)
 from bioreservoir.topology import scale_conductances
 
 logger = logging.getLogger(__name__)
@@ -76,6 +84,10 @@ class BioReservoir(Node):
         input_encoding: str = "signed",
         input_range: Sequence[float] = (-3.0, 8.0),
         input_sign: str = "mixed",
+        heterogeneity_density_cv: float = 0.0,
+        heterogeneity_dilution_cv: float = 0.0,
+        input_levels: int | str = 1,
+        reset_noise: float = 0.0,
         **kwargs,
     ):
         """Genetic-oscillator reservoir node (one DDE oscillator per unit).
@@ -119,6 +131,16 @@ class BioReservoir(Node):
         nominal values (log-normal, coefficient of variation ``param_heterogeneity_cv``),
         with mean equal to the nominal value unless
         ``param_heterogeneity_mean_preserving=False`` (v0.1, biased upwards).
+
+        Realism options (:mod:`bioreservoir.realism`), off by default:
+        ``heterogeneity_density_cv`` and ``heterogeneity_dilution_cv`` vary each colony's
+        cell density ``d`` (with its growth factor) and washout ``mu`` (mean-preserving
+        log-normal, from their own streams of the heterogeneity seed);
+        ``input_levels`` (K >= 1 or ``"continuous"``) gives the input connections K levels
+        in ``(0, 1] * input_scaling``, drawn with the reservoir seed (needs
+        ``geometry="per_node"``); ``reset_noise`` multiplies the warm-up state that every
+        input sequence starts from by log-normal factors of that coefficient of variation,
+        drawn from a stream reseeded by :meth:`reseed_reset`.
         """
         if units is None and not is_array(W):
             raise ValueError("'units' must be specified if 'W' is not a matrix.")
@@ -144,6 +166,11 @@ class BioReservoir(Node):
         if not low < high:
             raise ValueError(f"input_range must be (low, high) with low < high, got "
                              f"{tuple(input_range)}.")
+        input_levels = check_input_levels(input_levels)
+        if input_levels != 1 and geometry != "per_node":
+            raise ValueError("input_levels other than 1 need geometry='per_node'.")
+        if float(reset_noise) < 0:
+            raise ValueError(f"reset_noise must be 0 or more, got {reset_noise}.")
 
         rng = rand_generator(seed)
         noise_kwargs = noise_kwargs or {}
@@ -187,6 +214,7 @@ class BioReservoir(Node):
         self.input_encoding = input_encoding
         self.input_range = (low, high)
         self.input_sign = input_sign
+        self.input_levels = input_levels
         if couple_vars is None:
             couple_vars = np.ones(len(self.output_indices))
         self.couple_vars = np.asarray(couple_vars, dtype=float).reshape(-1)
@@ -285,6 +313,18 @@ class BioReservoir(Node):
             )
         else:
             self.node_params = None
+        self.heterogeneity_density_cv = float(heterogeneity_density_cv)
+        self.heterogeneity_dilution_cv = float(heterogeneity_dilution_cv)
+        if self.heterogeneity_density_cv or self.heterogeneity_dilution_cv:
+            table = (self.node_params if self.node_params is not None
+                     else generate_node_params(self.units, 0.0, self.dde_kwargs, seed=0))
+            self.node_params = vary_colonies(
+                table, self.dde_kwargs["d0"], self.heterogeneity_density_cv,
+                self.heterogeneity_dilution_cv, seed=self._het_seed)
+
+        # Imperfect reset: the stream is reseeded for every input sequence (reseed_reset).
+        self.reset_noise = float(reset_noise)
+        self._reset_rng = stream(self.seed, RESET_STREAM)
 
         # Per-node parameter table for the substep solver, and the Hi history at
         # substep resolution (the frozen v0.1 scheme reads the per-step history only).
@@ -503,11 +543,27 @@ class BioReservoir(Node):
         return next_state
 
     def _restore_warmup(self) -> None:
-        """Return the state and delay histories to their values after warm-up."""
+        """Return the state and delay histories to their values after warm-up.
+
+        With ``reset_noise`` > 0, an initialized node starts each input sequence from the
+        warm-up state perturbed by :func:`bioreservoir.realism.perturb_start`. The reset
+        inside ``initialize()`` is left unperturbed, so a sequence draws one perturbation
+        whether or not it is the node's first.
+        """
         self.states = self._warmup_states.copy()
         if getattr(self, "_warmup_ring", None) is not None:
             self._ring = self._warmup_ring[0].copy()
             self._ring_pos = self._warmup_ring[1]
+        if getattr(self, "reset_noise", 0.0) > 0 and self.is_initialized:
+            ring = self._ring if self.delay_scheme == "substep" else None
+            self.states, ring = perturb_start(self.states, ring, self.reset_noise,
+                                              self._reset_rng)
+            if ring is not None:
+                self._ring = ring
+
+    def reseed_reset(self, seed: int) -> None:
+        """Draw the following reset perturbations (``reset_noise``) from ``seed``'s stream."""
+        self._reset_rng = stream(seed, RESET_STREAM)
 
     def reset(self, to_state: np.ndarray = None) -> "BioReservoir":
         """Reset the reservoir to warmup state or a specified state."""
@@ -591,6 +647,7 @@ def _initialize_per_node(
         bias = rpy_zeros(n, 1, dtype=dtype)
     if reservoir.input_sign == "positive":
         Win, bias = abs(Win), abs(bias)
+    Win = level_weights(Win, reservoir.input_levels, seed)
 
     reservoir.set_param("W", W.astype(dtype))
     reservoir.set_param("Win", Win.astype(dtype))

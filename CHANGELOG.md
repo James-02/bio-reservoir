@@ -29,6 +29,14 @@ Each entry is marked **[science]** if it changes a reported number, or
   gap closed.
 - [engineering] Configs can name a `base:` config and list only what differs, and studies
   can search the run `seed`; the `v0.2` studies name designs in `experiments/v0.2/designs/`.
+- [engineering] Realism options, off by default: heterogeneity of cell density and
+  dilution, discrete input levels and an imperfect reset (`bioreservoir.realism`).
+- [engineering] `bioreservoir.diagnostics.oscillation_amplitudes`, reported by
+  `scripts/analysis/drive_bounds.py --oscillation`.
+
+### Fixed
+
+- [engineering] `scripts/analysis/drive_bounds.py` works on diffusive and uncoupled arrays.
 
 ## [0.2.1] - 2026-10-25
 

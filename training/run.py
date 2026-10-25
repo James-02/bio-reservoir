@@ -84,6 +84,7 @@ RESERVOIR_KEYS = {
         "interaction_diameters", "fade_alpha", "sparsity", "signed", "p_excite",
         "rc_connectivity", "geometry", "couple_vars", "delay_scheme", "normalize_after_masks",
         "coupling", "diffusion_rate", "input_encoding", "input_range", "input_sign",
+        "heterogeneity_density_cv", "heterogeneity_dilution_cv", "input_levels", "reset_noise",
     ),
     "esn": (
         "units", "esn_leak_rate", "esn_spectral_radius", "esn_activation", "input_scaling",
@@ -376,6 +377,9 @@ def _check_simulation(sections: dict[str, Any], reservoir: dict[str, Any]) -> No
     simulate = sections["cv"]["simulate"]
     if simulate not in ("once", "per_fold"):
         raise ValueError("cv.simulate must be 'once' or 'per_fold'.")
+    if simulate == "per_fold" and float((reservoir.get("params") or {}).get("reset_noise", 0)):
+        raise ValueError("reset_noise needs cv.simulate: once, which draws each beat's "
+                         "perturbation from the beat's own seed.")
     if simulate == "per_fold" or "states_from" in reservoir:
         return
     if sections["cv"]["noise_rate"] or sections["cv"]["noise_ratio"]:
