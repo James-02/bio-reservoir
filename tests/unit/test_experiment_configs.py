@@ -1,9 +1,10 @@
 """Checks of the campaign configs in ``experiments/v0.2/``.
 
 Every config resolves; every search path names a setting that its run reads; names are
-unique and start with their folder's prefix (``P<k>-`` in ``phase-<k>/``, ``tracking-`` in
-``tracking/``); every study is seeded, grids run each point once, and no trial of a coupled
-array is refused by the RK4 stability check, which would stop its study.
+unique and start with their folder's prefix (``P<k>-`` in ``phase-<k>/``, ``design-`` in
+``designs/``, ``tracking-`` in ``tracking/``); every study is seeded, grids run each point
+once, and no trial of a coupled array is refused by the RK4 stability check, which would
+stop its study.
 """
 
 import itertools
@@ -29,6 +30,8 @@ def _ids(paths):
 def _prefix(path: Path) -> str:
     folder = path.relative_to(ROOT).parts[0]
     phase = re.fullmatch(r"phase-(\d)", folder)
+    if folder == "designs":
+        return "design-"
     return f"P{phase[1]}-" if phase else re.escape(folder) + "-"
 
 

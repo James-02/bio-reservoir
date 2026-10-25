@@ -6,80 +6,26 @@
 #    python -m training.run study experiments/v0.2/phase-2/abstract.yaml --processes N
 #    python -m training.run study-table experiments/v0.2/phase-2/abstract.yaml
 #    python -m training.run study-best experiments/v0.2/phase-2/abstract.yaml --out best.yaml
+base: ../designs/abstract.yaml
 name: P2-abstract
 description: >-
   Phase 2 TPE search, A' (corrected abstract coupling): input gain x0.25-20, recurrent
   gain x0.01-3, input connectivity 0.1-1, heterogeneity CV 0-0.5, warm-up 50-2,000; N =
   1,024, 16 substeps; one image of the LuxI reporter with 1% measurement noise, RidgeCV
   readout; reservoir seed 6337. Starts from the exploration's A' optimum (trial 109).
-seed: 6337
-task: {labels: five-class, rows: 4015, balance_classes: true, scaler: sequence_zscore, seed: 6337}
 reservoir:
-  type: bioreservoir
-  seed: 6337
-  params:
-    units: 1024
-    warmup: 1305
-    rk4_substeps: 16
-    input_scaling: 0.2091196987007607
-    input_connectivity: 0.6905345484159945
-    input_bias: false
-    bias_scaling: 0.1
-    rc_scaling: 0.0018614710585649716
-    dde_scaling: 0.0006439480590749527
-    cell_coupling: 12.74579065885262
-    noise_in: 0.01442
-    noise_rc: 0.2397
-    output_variables: IHe
-    param_heterogeneity_cv: 0.007566297560251477
-    param_heterogeneity_seed: null
-    heterogeneity_mean_preserving: true
-    topology_type: distance
-    interaction_diameters: 8.2
-    fade_alpha: 2.80278092396274e-05
-    sparsity: 0.5759952026896107
-    signed: true
-    p_excite: 0.8354274565239865
-    geometry: per_node
-    delay_scheme: substep
-    normalize_after_masks: true
-    coupling: abstract
-    input_encoding: signed
-    input_sign: mixed
-features: {variables: [I], aggregation: final, measurement_noise: 0.01}
-readout: {classifier: RidgeCV, scale: true}
-cv: {folds: 5, seed: 6337}
+  params: {units: 1024, rk4_substeps: 16, heterogeneity_mean_preserving: true}
 study:
   trials: 300
   metric: f1
   sampler: {type: tpe, seed: 6337, multivariate: true, n_startup_trials: 24}
   enqueue:
-    - reservoir.params.input_scaling: 0.2091196987007607
-      reservoir.params.rc_scaling: 0.0018614710585649716
-      reservoir.params.input_connectivity: 0.6905345484159945
-      reservoir.params.param_heterogeneity_cv: 0.007566297560251477
-      reservoir.params.warmup: 1305
+  - {reservoir.params.input_scaling: 0.2091196987007607, reservoir.params.rc_scaling: 0.0018614710585649716,
+    reservoir.params.input_connectivity: 0.6905345484159945, reservoir.params.param_heterogeneity_cv: 0.007566297560251477,
+    reservoir.params.warmup: 1305}
   search:
-    reservoir.params.input_scaling:
-      type: float
-      low: 0.00692469
-      high: 0.553975
-      log: true
-    reservoir.params.rc_scaling:
-      type: float
-      low: 7.03619e-05
-      high: 0.0211086
-      log: true
-    reservoir.params.input_connectivity:
-      type: float
-      low: 0.1
-      high: 1.0
-    reservoir.params.param_heterogeneity_cv:
-      type: float
-      low: 0.0
-      high: 0.5
-    reservoir.params.warmup:
-      type: int
-      low: 50
-      high: 2000
-      log: true
+    reservoir.params.input_scaling: {type: float, low: 0.00692469, high: 0.553975, log: true}
+    reservoir.params.rc_scaling: {type: float, low: 7.03619e-05, high: 0.0211086, log: true}
+    reservoir.params.input_connectivity: {type: float, low: 0.1, high: 1.0}
+    reservoir.params.param_heterogeneity_cv: {type: float, low: 0.0, high: 0.5}
+    reservoir.params.warmup: {type: int, low: 50, high: 2000, log: true}

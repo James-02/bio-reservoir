@@ -124,8 +124,22 @@ PRESETS: dict[str, dict[str, dict[str, Any]]] = {
 # ---------------------------------------------------------------------------
 
 def load_config(path: str | Path) -> dict[str, Any]:
+    """A config file. With ``base: <file>`` (relative to the config) it is the base config
+    with this file's settings merged over it: sections merge key by key, other values replace."""
+    path = Path(path)
     with open(path) as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f) or {}
+    if "base" in cfg:
+        cfg = _merged(load_config(path.parent / cfg.pop("base")), cfg)
+    return cfg
+
+
+def _merged(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    out = dict(base)
+    for key, value in override.items():
+        both = isinstance(value, dict) and isinstance(out.get(key), dict)
+        out[key] = _merged(out[key], value) if both else value
+    return out
 
 
 def _plain(value: Any) -> Any:

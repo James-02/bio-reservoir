@@ -82,6 +82,9 @@ def apply(cfg: dict[str, Any], values: dict[str, Any]) -> dict[str, Any]:
     """A copy of ``cfg`` with each value put in at its dotted path."""
     cfg = copy.deepcopy(cfg)
     for path, value in values.items():
+        if path == "seed":
+            cfg["seed"] = value
+            continue
         keys = path.split(".")
         if keys[0] not in SECTIONS or len(keys) < 2:
             raise ValueError(f"Search path {path!r} must start with one of {SECTIONS}.")
@@ -113,10 +116,16 @@ def check(run_cfg: dict[str, Any], study: dict[str, Any]) -> None:
         if kind == "none" and keys[0] in ("reservoir", "features"):
             raise ValueError(f"Search path {path!r}: a raw-beat run (reservoir: {{type: none}}) "
                              "has no reservoir or observation settings.")
-        known = (set(DEFAULTS[keys[0]]) | set(_EXTRA_SETTINGS.get(keys[0], ()))
-                 if keys[0] in DEFAULTS else set(_SETTINGS[keys[0]]))
-        if keys[1] not in known:
-            raise ValueError(f"Search path {path!r}: {keys[0]} has no setting {keys[1]!r}.")
+        if path == "seed":
+            if "seed" not in (run_cfg.get("task") or {}) or "seed" not in (run_cfg.get("cv") or {}):
+                raise ValueError("Search path 'seed': set task.seed and cv.seed, so that every "
+                                 "trial has the same pool and folds.")
+        else:
+            known = (set(DEFAULTS[keys[0]]) | set(_EXTRA_SETTINGS.get(keys[0], ()))
+                     if keys[0] in DEFAULTS else set(_SETTINGS[keys[0]]))
+            if keys[1] not in known:
+                raise ValueError(f"Search path {path!r}: {keys[0]} has no setting "
+                                 f"{keys[1]!r}.")
         if keys[:2] == ["reservoir", "params"] and (
                 len(keys) < 3 or keys[2] not in RESERVOIR_KEYS.get(kind, ())):
             raise ValueError(f"Search path {path!r}: the {kind} builder has no such "

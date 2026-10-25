@@ -61,8 +61,20 @@ def isolated(tmp_path, monkeypatch):
 
 def test_values_go_in_at_their_dotted_paths():
     cfg = study_module.apply({"reservoir": {"params": {"units": 3}}},
-                             {"reservoir.params.units": 5, "cv.folds": 2})
-    assert cfg == {"reservoir": {"params": {"units": 5}}, "cv": {"folds": 2}}
+                             {"reservoir.params.units": 5, "cv.folds": 2, "seed": 7})
+    assert cfg == {"reservoir": {"params": {"units": 5}}, "cv": {"folds": 2}, "seed": 7}
+
+
+def test_a_study_searches_the_run_seed_on_fixed_folds():
+    search = {"seed": {"type": "categorical", "choices": [3, 4]}}
+    with pytest.raises(ValueError, match="set task.seed and cv.seed"):
+        study_module.run_study(_config(search=search, sampler={"type": "grid"}))
+    cfg = _config(search=search, sampler={"type": "grid"}, trials=2)
+    cfg["task"]["seed"] = cfg["cv"]["seed"] = 3
+    study = study_module.run_study(cfg)
+    resolved = {t.params["seed"]: yaml.safe_load(t.user_attrs["config"]) for t in study.trials}
+    assert [resolved[s]["reservoir"]["seed"] for s in (3, 4)] == [3, 4]
+    assert resolved[3]["cv"] == resolved[4]["cv"] and resolved[3]["task"] == resolved[4]["task"]
 
 
 @pytest.mark.parametrize("path, message", [

@@ -27,6 +27,8 @@ Each entry is marked **[science]** if it changes a reported number, or
 - [engineering] Raw-beat runs (`reservoir: {type: none}`) and a `HistGB` readout.
 - [engineering] `training.run compare --margin M --ceiling RUN_C`: non-inferiority and the
   gap closed.
+- [engineering] Configs can name a `base:` config and list only what differs, and studies
+  can search the run `seed`; the `v0.2` studies name designs in `experiments/v0.2/designs/`.
 
 ## [0.2.1] - 2026-10-25
 

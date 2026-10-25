@@ -1,14 +1,16 @@
 # v0.2 campaign configs
 
-The configs of the `v0.2` tuning campaign. Each file is a run config with a `study`
-section ([Studies](../../README.md#studies)): every number of the campaign comes from one of
+The configs of the `v0.2` tuning campaign. Each study names one of the designs in `designs/`
+(`base: ../designs/centre.yaml`) and lists only what differs and its `study` section
+([Studies](../../README.md#studies)): every number of the campaign comes from one of
 these studies, run from a tagged commit through `optimization.deploy`, so each trial records
 the commit, the host and its resolved config.
 
 | Folder | What | Studies | Trials |
 |---|---|---|---|
-| `tracking/` | The tracking set, rerun at every tagged code version: the P centre, the best P lattice, A′ and U designs of the earlier searches and the `v0.1` ESN, each at three reservoir seeds | 5 | 15 |
-| `phase-1/` | Phase 1 grids: one or two design parameters at a time around the P centre, at three reservoir seeds | 14 | 540 |
+| `designs/` | The five designs: the P centre, the best P lattice, A′ and U designs of the earlier searches, and the `v0.1` ESN | — | — |
+| `tracking/` | The tracking set, rerun at every tagged code version: each design at three reservoir seeds | 5 | 15 |
+| `phase-1/` | Phase 1 grids: one or two design parameters at a time around the P centre, at three reservoir seeds | 12 | 540 |
 | `phase-2/` | Phase 2 seeded TPE searches over every design parameter: P lattice, A′, U and the ESN | 4 | 1,000 |
 
 Study names follow the convention of the `v0.1` studies (SI Table S5): a phase prefix and
@@ -57,14 +59,13 @@ weights, heterogeneity, start state and noise. Fold SDs are 0.01–0.02 and seed
 | `P1-gain-coupling` | Input ×2–12 × coupling rate 0.1–4 | 108 |
 | `P1-connectivity-heterogeneity` | Input connectivity 0.4–1 × CV 0–0.3 | 60 |
 | `P1-images-noise` | 1–4 images × measurement noise 0.5–3% | 48 |
-| `P1-images-calibration-s6337`, `-s6338`, `-s6339` | 1–4 images × calibration error 0–5% | 3 × 24 |
+| `P1-images-calibration` | 1–4 images × calibration error 0–5%, at three run seeds | 72 |
 | `P1-substeps` | 8–128 RK4 substeps | 15 |
 | `P1-gaussian` | Random positions with a Gaussian kernel: range 2–8.2 cell diameters × coupling rate 0.3–1 (layout comparison only) | 45 |
 
 The calibration error of a test fold is drawn from the run's top-level `seed`
-([training/observation.py](../../training/observation.py)), which a study cannot search. So
-the three calibration draws are three studies, each with its own seed for the calibration,
-the measurement noise and the reservoir; `study-table --group` reads them as one grid.
+([training/observation.py](../../training/observation.py)), so `P1-images-calibration`
+searches `seed`, and the reservoir seed follows it.
 
 ## Phase 2 searches (`phase-2/`)
 
@@ -103,7 +104,7 @@ table:
 
 ```bash
 python -m training.run study-table experiments/v0.2/phase-1/gain.yaml --group
-python -m training.run study-table experiments/v0.2/phase-1/images-calibration-s*.yaml --group --csv calibration.csv
+python -m training.run study-table experiments/v0.2/phase-1/images-calibration.yaml --group --csv calibration.csv
 python -m training.run study-table experiments/v0.2/phase-2/lattice.yaml --csv lattice.csv
 python -m training.run study-best experiments/v0.2/phase-2/lattice.yaml --out lattice-best.yaml
 ```
