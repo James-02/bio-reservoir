@@ -90,7 +90,7 @@ The draws depend only on the run seed and the beat (measurement) or the fold (ca
 
 ### Studies
 
-A run config with a `study` section is an Optuna search over its own values. Each trial puts the sampled values into the config at their dotted paths and runs it through the same pipeline as a single run; the trials record their resolved configs, and `study-best` writes the best one as a plain config to run for the reported numbers.
+A run config with a `study` section is an Optuna search over its own values. Each trial puts the sampled values into the config at their dotted paths and runs it through the same pipeline as a single run; the trials record their resolved configs, and `study-best` writes the best one as a plain config to run for the reported numbers. A search may also set the run's `seed` (with `task.seed` and `cv.seed` fixed). A config can name another with `base: <file>` and list only what differs: its sections are merged key by key over the base's.
 
 ```yaml
 study:

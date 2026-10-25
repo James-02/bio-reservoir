@@ -192,6 +192,21 @@ def test_benchmark_configs_are_explicit(path):
     assert cfg["reference"].startswith("archive:")
 
 
+def test_a_config_lists_only_what_differs_from_its_base(tmp_path):
+    (tmp_path / "designs").mkdir()
+    (tmp_path / "designs" / "root.yaml").write_text(
+        "seed: 3\nreservoir: {params: {units: 4, warmup: 5}}\n")
+    (tmp_path / "designs" / "design.yaml").write_text(
+        "base: root.yaml\nreadout: {classifier: Ridge, params: {alpha: 1.0}, scale: true}\n")
+    (tmp_path / "study.yaml").write_text(
+        "base: designs/design.yaml\nname: s\nreservoir: {params: {units: 9}}\n"
+        "readout: {classifier: RF, params: {n_estimators: 10}}\n")
+    assert run_module.load_config(tmp_path / "study.yaml") == {
+        "seed": 3, "name": "s", "reservoir": {"params": {"units": 9, "warmup": 5}},
+        "readout": {"classifier": "RF", "params": {"alpha": 1.0, "n_estimators": 10},
+                    "scale": True}}
+
+
 # ---------------------------------------------------------------------------
 # Running
 # ---------------------------------------------------------------------------
