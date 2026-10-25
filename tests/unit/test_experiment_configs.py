@@ -2,8 +2,9 @@
 
 Every config resolves; every search path names a setting that its run reads; names are
 unique and start with their experiment's prefix (the folder name, or ``d<k>-`` for the
-development checks); grids run each point once; and no trial of a coupled array is refused
-by the RK4 stability check, which would stop its study.
+development checks). In the campaign folders (all but ``checks/``), every study is seeded,
+grids run each point once, and no trial of a coupled array is refused by the RK4 stability
+check, which would stop its study.
 """
 
 import itertools
@@ -20,6 +21,7 @@ from training.run import load_config, resolve
 ROOT = Path(__file__).resolve().parents[2] / "experiments" / "v0.2"
 CONFIGS = sorted(ROOT.rglob("*.yaml"))
 STUDIES = [p for p in CONFIGS if "study" in load_config(p)]
+CAMPAIGN = [p for p in STUDIES if p.relative_to(ROOT).parts[0] != "checks"]
 
 
 def _ids(paths):
@@ -107,7 +109,7 @@ def test_names_are_unique_and_carry_their_experiment_prefix():
             names[name] = path
 
 
-@pytest.mark.parametrize("path", STUDIES, ids=_ids(STUDIES))
+@pytest.mark.parametrize("path", CAMPAIGN, ids=_ids(CAMPAIGN))
 def test_each_study_is_seeded_and_runs_its_intended_trials(path):
     study = load_config(path)["study"]
     sampler = study["sampler"]
@@ -143,7 +145,7 @@ def _stiffest_points(study):
             for values in itertools.product(*each.values())]
 
 
-COUPLED = [p for p in STUDIES
+COUPLED = [p for p in CAMPAIGN
            if resolve(study_module.split(load_config(p))[0])["reservoir"].get("params", {})
            .get("coupling") == "diffusion"]
 
