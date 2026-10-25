@@ -145,13 +145,13 @@ class TestDeployer:
         deployer.sync("host1")
         mkdir, *copies = deployer.commands
         assert mkdir[-1].endswith("\nmkdir -p /srv/bioreservoir/logs /srv/bioreservoir/results")
-        assert {"experiments/", "uv.lock"} <= set(deploy.SYNC_SOURCES)
+        assert {"experiments/", "tests/", "uv.lock"} <= set(deploy.SYNC_SOURCES)
         assert len(copies) == len(deploy.SYNC_SOURCES) + 1
         assert all("--delete" in cmd for cmd in copies[:-1])
         assert [cmd[-1] for cmd in copies[:-1]] == [
             f"runner@node1.example.org:/srv/bioreservoir/{source}"
             for source in deploy.SYNC_SOURCES]
-        assert "--ignore-existing" in copies[-1]
+        assert {"--ignore-existing", "--copy-links"} <= set(copies[-1])
         assert copies[-1][-1] == "runner@node1.example.org:/srv/bioreservoir/data/"
 
     def test_push_copies_results_to_the_same_place(self, settings, monkeypatch, tmp_path):
@@ -174,7 +174,7 @@ class TestDeployer:
         copy = next(cmd for cmd in deployer.commands if cmd[0] == "rsync")
         assert copy[-2:] == ["/opt/uv/bin/uv", "runner@node1.example.org:/srv/bioreservoir/bin/uv"]
         script = deployer.commands[-1][-1]
-        assert "bin/uv sync --frozen" in script and "pip install" not in script
+        assert "bin/uv sync --frozen --extra dev" in script and "pip install" not in script
         assert "UV_PYTHON_INSTALL_DIR=/srv/bioreservoir/python" in script
         assert "UV_PROJECT_ENVIRONMENT=/srv/bioreservoir/venv" in script
         assert "HTTPS_PROXY=http://proxy.example:3128" in script

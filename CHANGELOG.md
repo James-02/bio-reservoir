@@ -9,6 +9,10 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Changed
 
+- [engineering] `optimization/deploy.py` also copies `tests/` and installs the `dev` extra,
+  so the test suite runs on a host like any other command
+  (`--run "python -m pytest tests/unit tests/integration"`). Data files that `data/` links
+  to, as in a worktree that uses the prepared dataset, are copied as files.
 - [engineering] Worker processes read the run's reservoir from a temporary file when they
   start. It used to travel with each worker's start-up, so the workers started one after
   another (about 0.5 s each): simulating the 4,015 beats of the balanced pool with a
