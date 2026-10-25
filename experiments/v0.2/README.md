@@ -7,14 +7,19 @@ the commit, the host and its resolved config.
 
 | Folder | What | Studies | Trials |
 |---|---|---|---|
-| `tracking/` | The tracking set, rerun at every tagged code version: the P centre, P lattice #208, A′ #109, U #68 and the `v0.1` ESN, each at three reservoir seeds | 5 | 15 |
-| `e1/` | Phase 1 grids: one or two design parameters at a time around the P centre, at three reservoir seeds | 14 | 540 |
-| `e2/` | Phase 2 seeded TPE searches over every design parameter: P lattice, A′, U and the ESN | 4 | 1,000 |
-| `checks/<topic>/` | Validation configs of development branches (names start with `d<k>-`) | | |
+| `tracking/` | The tracking set, rerun at every tagged code version: the P centre, the best P lattice, A′ and U designs of the earlier searches and the `v0.1` ESN, each at three reservoir seeds | 5 | 15 |
+| `phase-1/` | Phase 1 grids: one or two design parameters at a time around the P centre, at three reservoir seeds | 14 | 540 |
+| `phase-2/` | Phase 2 seeded TPE searches over every design parameter: P lattice, A′, U and the ESN | 4 | 1,000 |
 
-Later phases add `e3/` (robustness at the frozen designs), `e4/` (readout suite and raw-beat
-ceiling), `e5/` (final runs) and `e6/` (ablations and controls). Study names start with
-their folder (`tracking-`, `e1-`, `e2-`); `tests/unit/test_experiment_configs.py` checks every
+Study names follow the convention of the `v0.1` studies (SI Table S5): a phase prefix and
+a descriptor, with each phase keeping its `v0.1` meaning. Phase 1 (`P1-`, folder `phase-1/`)
+varies one or two parameters at a time, Phase 2 (`P2-`) searches all of a design's parameters
+jointly, Phase 3 (`P3-`) evaluates the chosen designs on other tasks, and Phase 4 (`P4-`)
+optimises the readout on saved states. Classifiers on the raw beat, without a reservoir, are
+the baselines (`B1-`, `B2-`, ...), and `tracking-<design>` is a design of the tracking set.
+So `P1-coupling` is the Phase 1 coupling grid and `P2-lattice` the Phase 2 search of the P
+lattice. A `v0.2` study and a `v0.1` study of the same name are told apart by version: the
+`v0.1` databases are in `archive/v0.1/`. `tests/unit/test_experiment_configs.py` checks every
 config here.
 
 ## Models
@@ -39,42 +44,42 @@ the folds. `param_heterogeneity_seed` is `null`, so the heterogeneity draw follo
 weights, heterogeneity, start state and noise. Fold SDs are 0.01–0.02 and seed SDs about
 0.005, so differences below about 0.005 are noise.
 
-## Phase 1 grids (`e1/`)
+## Phase 1 grids (`phase-1/`)
 
 | Study | Values | Trials |
 |---|---|---|
-| `e1-gain` | Input scaling 0.0277–0.554 (×1–20) | 33 |
-| `e1-coupling` | Coupling rate 0–10 | 42 |
-| `e1-connectivity` | Input connectivity 0.1–1 | 30 |
-| `e1-heterogeneity` | Kinetic heterogeneity CV 0–0.5 | 27 |
-| `e1-warmup` | Warm-up 0–2,000 steps | 33 |
-| `e1-units` | Square lattices of 100–2,025 traps | 27 |
-| `e1-gain-coupling` | Input ×2–12 × coupling rate 0.1–4 | 108 |
-| `e1-connectivity-heterogeneity` | Input connectivity 0.4–1 × CV 0–0.3 | 60 |
-| `e1-images-noise` | 1–4 images × measurement noise 0.5–3% | 48 |
-| `e1-images-calibration-s6337`, `-s6338`, `-s6339` | 1–4 images × calibration error 0–5% | 3 × 24 |
-| `e1-substeps` | 8–128 RK4 substeps | 15 |
-| `e1-gaussian` | Random positions with a Gaussian kernel: range 2–8.2 cell diameters × coupling rate 0.3–1 (layout comparison only) | 45 |
+| `P1-gain` | Input scaling 0.0277–0.554 (×1–20) | 33 |
+| `P1-coupling` | Coupling rate 0–10 | 42 |
+| `P1-connectivity` | Input connectivity 0.1–1 | 30 |
+| `P1-heterogeneity` | Kinetic heterogeneity CV 0–0.5 | 27 |
+| `P1-warmup` | Warm-up 0–2,000 steps | 33 |
+| `P1-units` | Square lattices of 100–2,025 traps | 27 |
+| `P1-gain-coupling` | Input ×2–12 × coupling rate 0.1–4 | 108 |
+| `P1-connectivity-heterogeneity` | Input connectivity 0.4–1 × CV 0–0.3 | 60 |
+| `P1-images-noise` | 1–4 images × measurement noise 0.5–3% | 48 |
+| `P1-images-calibration-s6337`, `-s6338`, `-s6339` | 1–4 images × calibration error 0–5% | 3 × 24 |
+| `P1-substeps` | 8–128 RK4 substeps | 15 |
+| `P1-gaussian` | Random positions with a Gaussian kernel: range 2–8.2 cell diameters × coupling rate 0.3–1 (layout comparison only) | 45 |
 
 The calibration error of a test fold is drawn from the run's top-level `seed`
 ([training/observation.py](../../training/observation.py)), which a study cannot search. So
 the three calibration draws are three studies, each with its own seed for the calibration,
 the measurement noise and the reservoir; `study-table --group` reads them as one grid.
 
-## Phase 2 searches (`e2/`)
+## Phase 2 searches (`phase-2/`)
 
 Seeded multivariate TPE (`seed: 6337`, 24 start-up trials), N = 1,024 traps and 16
 substeps, reservoir seed 6337. The ranges are those of the exploration searches, whose input
 and recurrent gains were multiples of the `v0.1` scalings; here they are absolute scalings.
-Each search first runs the exploration's best design (P lattice #208 and the P centre, A′
-#109, U #68, the `v0.1` ESN).
+Each search first runs the best design of the earlier search (and the P centre for the P
+lattice; the `v0.1` ESN for the ESN).
 
 | Study | Searched | Trials |
 |---|---|---|
-| `e2-p-lattice` | Input scaling 0.0138–0.554 (log), coupling rate 0.01–10 (log), input connectivity 0.1–1, CV 0–0.5, warm-up 50–2,000 (log) | 300 |
-| `e2-a-abstract` | Input scaling 0.00692–0.554 (log), recurrent scaling 7.04e-5–0.0211 (log), input connectivity 0.1–1, CV 0–0.5, warm-up 50–2,000 (log) | 300 |
-| `e2-u-uncoupled` | Input scaling 0.0138–0.554 (log), input connectivity 0.1–1, CV 0–0.5, warm-up 50–2,000 (log) | 200 |
-| `e2-esn` | Leak rate 0.05–1, spectral radius 0.1–3 (log), input scaling 0.0327–3.27 (log), recurrent connectivity 0.05–0.5, bias scaling 0–2 | 200 |
+| `P2-lattice` | Input scaling 0.0138–0.554 (log), coupling rate 0.01–10 (log), input connectivity 0.1–1, CV 0–0.5, warm-up 50–2,000 (log) | 300 |
+| `P2-abstract` | Input scaling 0.00692–0.554 (log), recurrent scaling 7.04e-5–0.0211 (log), input connectivity 0.1–1, CV 0–0.5, warm-up 50–2,000 (log) | 300 |
+| `P2-uncoupled` | Input scaling 0.0138–0.554 (log), input connectivity 0.1–1, CV 0–0.5, warm-up 50–2,000 (log) | 200 |
+| `P2-esn` | Leak rate 0.05–1, spectral radius 0.1–3 (log), input scaling 0.0327–3.27 (log), recurrent connectivity 0.05–0.5, bias scaling 0–2 | 200 |
 
 ## Running and reading
 
@@ -83,9 +88,9 @@ per host at a time. A study resumes when its command runs again; a grid runs eac
 once.
 
 ```bash
-python -m optimization.deploy --host host3 --label e2-p-lattice \
-    --run 'python -m training.run study experiments/v0.2/e2/p-lattice.yaml --processes $NPROC'
-python -m optimization.collect --host host3 --study e2-p-lattice --logs
+python -m optimization.deploy --host host3 --label P2-lattice \
+    --run 'python -m training.run study experiments/v0.2/phase-2/lattice.yaml --processes $NPROC'
+python -m optimization.collect --host host3 --study P2-lattice --logs
 ```
 
 Several `--run` options run one after another in one session. The tracking set runs at every
@@ -97,10 +102,10 @@ grid point over its reservoir seeds (and over the studies given), and `--csv` wr
 table:
 
 ```bash
-python -m training.run study-table experiments/v0.2/e1/gain.yaml --group
-python -m training.run study-table experiments/v0.2/e1/images-calibration-s*.yaml --group --csv calibration.csv
-python -m training.run study-table experiments/v0.2/e2/p-lattice.yaml --csv p-lattice.csv
-python -m training.run study-best experiments/v0.2/e2/p-lattice.yaml --out p-lattice-best.yaml
+python -m training.run study-table experiments/v0.2/phase-1/gain.yaml --group
+python -m training.run study-table experiments/v0.2/phase-1/images-calibration-s*.yaml --group --csv calibration.csv
+python -m training.run study-table experiments/v0.2/phase-2/lattice.yaml --csv lattice.csv
+python -m training.run study-best experiments/v0.2/phase-2/lattice.yaml --out lattice-best.yaml
 ```
 
 A trial row holds the searched values, the reservoir seed, the mean macro F1 over the five

@@ -1,13 +1,15 @@
-# E1, Phase 1 grid: input connectivity 0.1-1, around the P centre, at three reservoir
-# seeds.
-#    python -m training.run study experiments/v0.2/e1/connectivity.yaml --processes N
-#    python -m training.run study-table experiments/v0.2/e1/connectivity.yaml --group
-name: e1-connectivity
+# Phase 1, layout, for comparison only (no joint search): colonies at random positions
+# exchanging AHL through a Gaussian kernel of distance, at the lattice optimum. Range 2-8.2
+# cell diameters x coupling rate 0.3-1, at three reservoir seeds.
+#    python -m training.run study experiments/v0.2/phase-1/gaussian.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/phase-1/gaussian.yaml --group
+name: P1-gaussian
 description: >-
-  Phase 1 grid: input connectivity 0.1-1 around the P centre (input x5.6, coupling rate
-  0.6, input connectivity 0.66, heterogeneity CV 0.065 mean-preserving, warm-up 800, N
-  = 1,024 traps, 16 substeps); one image of the LuxI reporter with 1% measurement
-  noise, RidgeCV readout; three reservoir seeds.
+  Gaussian kernel (random positions, topology_type distance) at the lattice optimum:
+  range 2-8.2 cell diameters x coupling rate 0.3-1 at the P centre (input x5.6,
+  coupling rate 0.6, input connectivity 0.66, heterogeneity CV 0.065 mean-preserving,
+  warm-up 800, N = 1,024 traps, 16 substeps); one image of the LuxI reporter with 1%
+  measurement noise, RidgeCV readout; three reservoir seeds.
 seed: 6337
 task: {labels: five-class, rows: 4015, balance_classes: true, scaler: sequence_zscore, seed: 6337}
 reservoir:
@@ -30,7 +32,7 @@ reservoir:
     param_heterogeneity_cv: 0.065
     param_heterogeneity_seed: null
     heterogeneity_mean_preserving: true
-    topology_type: lattice
+    topology_type: distance
     interaction_diameters: 8.2
     fade_alpha: 2.80278092396274e-05
     sparsity: 1.0
@@ -47,13 +49,16 @@ features: {variables: [I], aggregation: final, measurement_noise: 0.01}
 readout: {classifier: RidgeCV, scale: true}
 cv: {folds: 5, seed: 6337}
 study:
-  trials: 30
+  trials: 45
   metric: f1
   sampler: {type: grid, seed: 6337}
   search:
-    reservoir.params.input_connectivity:
+    reservoir.params.interaction_diameters:
       type: categorical
-      choices: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      choices: [2.0, 2.6, 3.8, 5.2, 8.2]
+    reservoir.params.diffusion_rate:
+      type: categorical
+      choices: [0.3, 0.6, 1.0]
     reservoir.seed:
       type: categorical
       choices: [6337, 6338, 6339]

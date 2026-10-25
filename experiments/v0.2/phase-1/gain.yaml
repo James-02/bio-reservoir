@@ -1,16 +1,13 @@
-# E1, Phase 1 grid: images 1-4 x calibration error 0-5%, around the P centre. The
-# calibration draw follows the run's top-level seed (training/observation.py), which a
-# study cannot search, so the three draws are three studies. This one draws calibration,
-# measurement noise and reservoir with seed 6337; read the three together.
-#    python -m training.run study experiments/v0.2/e1/images-calibration-s6337.yaml --processes N
-#    python -m training.run study-table experiments/v0.2/e1/images-calibration-s*.yaml --group
-name: e1-images-calibration-s6337
+# Phase 1 grid: input gain x1-20 of the v0.1 input scaling (0.0277), around the P
+# centre, at three reservoir seeds.
+#    python -m training.run study experiments/v0.2/phase-1/gain.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/phase-1/gain.yaml --group
+name: P1-gain
 description: >-
-  Phase 1 grid: images 1-4 x calibration error 0-5% around the P centre (input x5.6,
-  coupling rate 0.6, input connectivity 0.66, heterogeneity CV 0.065 mean-preserving,
-  warm-up 800, N = 1,024 traps, 16 substeps); one image of the LuxI reporter with 1%
-  measurement noise, RidgeCV readout; calibration, measurement noise and reservoir
-  drawn with seed 6337.
+  Phase 1 grid: input gain x1-20 of the v0.1 input scaling (0.0277) around the P centre
+  (input x5.6, coupling rate 0.6, input connectivity 0.66, heterogeneity CV 0.065
+  mean-preserving, warm-up 800, N = 1,024 traps, 16 substeps); one image of the LuxI
+  reporter with 1% measurement noise, RidgeCV readout; three reservoir seeds.
 seed: 6337
 task: {labels: five-class, rows: 4015, balance_classes: true, scaler: sequence_zscore, seed: 6337}
 reservoir:
@@ -50,13 +47,14 @@ features: {variables: [I], aggregation: final, measurement_noise: 0.01}
 readout: {classifier: RidgeCV, scale: true}
 cv: {folds: 5, seed: 6337}
 study:
-  trials: 24
+  trials: 33
   metric: f1
   sampler: {type: grid, seed: 6337}
   search:
-    features.aggregation:
+    reservoir.params.input_scaling:
       type: categorical
-      choices: [final, images:2, images:3, images:4]
-    features.calibration_error:
+      choices: [0.027699, 0.041548, 0.055397, 0.083096, 0.110795, 0.138494, 0.166192, 0.22159,
+                0.276987, 0.387782, 0.553975]
+    reservoir.seed:
       type: categorical
-      choices: [0.0, 0.005, 0.01, 0.02, 0.03, 0.05]
+      choices: [6337, 6338, 6339]

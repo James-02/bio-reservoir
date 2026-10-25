@@ -1,13 +1,13 @@
-# Tracking set: P lattice #208, at three reservoir seeds. It is rerun at every tagged code
-# version to follow the model's numbers across versions. Run each version in a fresh
-# workspace, or with --storage, so that the trials of an earlier version are not resumed.
-#    python -m training.run study experiments/v0.2/tracking/p-lattice-208.yaml --processes N
-#    python -m training.run study-table experiments/v0.2/tracking/p-lattice-208.yaml --group
-name: tracking-p-lattice-208
+# Tracking set: U #68, at three reservoir seeds. It is rerun at every tagged code version
+# to follow the model's numbers across versions. Run each version in a fresh workspace, or
+# with --storage, so that the trials of an earlier version are not resumed.
+#    python -m training.run study experiments/v0.2/tracking/uncoupled.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/tracking/uncoupled.yaml --group
+name: tracking-uncoupled
 description: >-
-  Tracking set: P lattice, exploration TPE trial 208 (N = 1,000, 32 substeps, the v0.1
-  heterogeneity draw); one image of the LuxI reporter with 1% measurement noise,
-  RidgeCV readout; three reservoir seeds.
+  Tracking set: U, the colonies of P without coupling, exploration TPE trial 68 (N =
+  1,000, 32 substeps, the v0.1 heterogeneity draw); one image of the LuxI reporter with
+  1% measurement noise, RidgeCV readout; three reservoir seeds.
 seed: 6337
 task: {labels: five-class, rows: 4015, balance_classes: true, scaler: sequence_zscore, seed: 6337}
 reservoir:
@@ -15,10 +15,10 @@ reservoir:
   seed: 6337
   params:
     units: 1000
-    warmup: 891
+    warmup: 91
     rk4_substeps: 32
-    input_scaling: 0.10324887955471862
-    input_connectivity: 0.7057006974054281
+    input_scaling: 0.15955052947198983
+    input_connectivity: 0.8973131056317318
     input_bias: false
     bias_scaling: 0.1
     rc_scaling: 0.007036187544739917
@@ -27,7 +27,7 @@ reservoir:
     noise_in: 0.01442
     noise_rc: 0.2397
     output_variables: IHe
-    param_heterogeneity_cv: 0.021272213401751467
+    param_heterogeneity_cv: 0.1888529465296334
     param_heterogeneity_seed: null
     heterogeneity_mean_preserving: false
     topology_type: lattice
@@ -39,8 +39,8 @@ reservoir:
     geometry: per_node
     delay_scheme: substep
     normalize_after_masks: true
-    coupling: diffusion
-    diffusion_rate: 0.8106029508239884
+    coupling: none
+    diffusion_rate: 1.0
     input_encoding: nonnegative
     input_sign: positive
 features: {variables: [I], aggregation: final, measurement_noise: 0.01}
