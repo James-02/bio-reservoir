@@ -1,11 +1,11 @@
-# E2, Phase 2 seeded TPE search: ESN, over every design parameter, with the ranges of the
+# Phase 2 seeded TPE search: ESN, over every design parameter, with the ranges of the
 # v0.2 exploration searches. Their input and recurrent gains were multiples of the v0.1
 # scalings (input 0.0277, recurrent 0.00704; ESN input 0.327); here they are absolute
 # scalings. Starts from the v0.1 ESN parameters.
-#    python -m training.run study experiments/v0.2/e2/esn.yaml --processes N
-#    python -m training.run study-table experiments/v0.2/e2/esn.yaml
-#    python -m training.run study-best experiments/v0.2/e2/esn.yaml --out best.yaml
-name: e2-esn
+#    python -m training.run study experiments/v0.2/phase-2/esn.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/phase-2/esn.yaml
+#    python -m training.run study-best experiments/v0.2/phase-2/esn.yaml --out best.yaml
+name: P2-esn
 description: >-
   Phase 2 TPE search, ESN: leak rate 0.05-1, spectral radius 0.1-3, input gain x0.1-10,
   recurrent connectivity 0.05-0.5, bias scaling 0-2; N = 850 (v0.1); clean mean of the

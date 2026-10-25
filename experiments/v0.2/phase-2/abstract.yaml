@@ -1,12 +1,12 @@
-# E2, Phase 2 seeded TPE search: A' (corrected abstract coupling), over every design
+# Phase 2 seeded TPE search: A' (corrected abstract coupling), over every design
 # parameter, with the ranges of the v0.2 exploration searches. Their input and recurrent
 # gains were multiples of the v0.1 scalings (input 0.0277, recurrent 0.00704; ESN input
 # 0.327); here they are absolute scalings. Starts from the exploration's A' optimum (trial
 # 109).
-#    python -m training.run study experiments/v0.2/e2/a-abstract.yaml --processes N
-#    python -m training.run study-table experiments/v0.2/e2/a-abstract.yaml
-#    python -m training.run study-best experiments/v0.2/e2/a-abstract.yaml --out best.yaml
-name: e2-a-abstract
+#    python -m training.run study experiments/v0.2/phase-2/abstract.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/phase-2/abstract.yaml
+#    python -m training.run study-best experiments/v0.2/phase-2/abstract.yaml --out best.yaml
+name: P2-abstract
 description: >-
   Phase 2 TPE search, A' (corrected abstract coupling): input gain x0.25-20, recurrent
   gain x0.01-3, input connectivity 0.1-1, heterogeneity CV 0-0.5, warm-up 50-2,000; N =

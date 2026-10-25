@@ -1,8 +1,8 @@
-# E1, Phase 1 grid: input connectivity 0.4-1 x heterogeneity CV 0-0.3 (two-way), around the
+# Phase 1 grid: input connectivity 0.4-1 x heterogeneity CV 0-0.3 (two-way), around the
 # P centre, at three reservoir seeds.
-#    python -m training.run study experiments/v0.2/e1/connectivity-heterogeneity.yaml --processes N
-#    python -m training.run study-table experiments/v0.2/e1/connectivity-heterogeneity.yaml --group
-name: e1-connectivity-heterogeneity
+#    python -m training.run study experiments/v0.2/phase-1/connectivity-heterogeneity.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/phase-1/connectivity-heterogeneity.yaml --group
+name: P1-connectivity-heterogeneity
 description: >-
   Phase 1 grid: input connectivity 0.4-1 x heterogeneity CV 0-0.3 (two-way) around the
   P centre (input x5.6, coupling rate 0.6, input connectivity 0.66, heterogeneity CV

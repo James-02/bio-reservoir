@@ -1,12 +1,14 @@
-# E1, Phase 1 grid: RK4 substeps 8-128, around the P centre, at three reservoir seeds.
-#    python -m training.run study experiments/v0.2/e1/substeps.yaml --processes N
-#    python -m training.run study-table experiments/v0.2/e1/substeps.yaml --group
-name: e1-substeps
+# Tracking set: P centre, at three reservoir seeds. It is rerun at every tagged code
+# version to follow the model's numbers across versions. Run each version in a fresh
+# workspace, or with --storage, so that the trials of an earlier version are not resumed.
+#    python -m training.run study experiments/v0.2/tracking/centre.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/tracking/centre.yaml --group
+name: tracking-centre
 description: >-
-  Phase 1 grid: RK4 substeps 8-128 around the P centre (input x5.6, coupling rate 0.6,
-  input connectivity 0.66, heterogeneity CV 0.065 mean-preserving, warm-up 800, N =
-  1,024 traps, 16 substeps); one image of the LuxI reporter with 1% measurement noise,
-  RidgeCV readout; three reservoir seeds.
+  Tracking set: the P centre (input x5.6, coupling rate 0.6, input connectivity 0.66,
+  heterogeneity CV 0.065 mean-preserving, warm-up 800, N = 1,024 traps, 16 substeps);
+  one image of the LuxI reporter with 1% measurement noise, RidgeCV readout; three
+  reservoir seeds.
 seed: 6337
 task: {labels: five-class, rows: 4015, balance_classes: true, scaler: sequence_zscore, seed: 6337}
 reservoir:
@@ -46,13 +48,10 @@ features: {variables: [I], aggregation: final, measurement_noise: 0.01}
 readout: {classifier: RidgeCV, scale: true}
 cv: {folds: 5, seed: 6337}
 study:
-  trials: 15
+  trials: 3
   metric: f1
   sampler: {type: grid, seed: 6337}
   search:
-    reservoir.params.rk4_substeps:
-      type: categorical
-      choices: [8, 16, 32, 64, 128]
     reservoir.seed:
       type: categorical
       choices: [6337, 6338, 6339]

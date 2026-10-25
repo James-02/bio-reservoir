@@ -1,11 +1,11 @@
-# E2, Phase 2 seeded TPE search: U (P without coupling), over every design parameter, with
+# Phase 2 seeded TPE search: U (P without coupling), over every design parameter, with
 # the ranges of the v0.2 exploration searches. Their input and recurrent gains were
 # multiples of the v0.1 scalings (input 0.0277, recurrent 0.00704; ESN input 0.327); here
 # they are absolute scalings. Starts from the exploration's U optimum (trial 68).
-#    python -m training.run study experiments/v0.2/e2/u-uncoupled.yaml --processes N
-#    python -m training.run study-table experiments/v0.2/e2/u-uncoupled.yaml
-#    python -m training.run study-best experiments/v0.2/e2/u-uncoupled.yaml --out best.yaml
-name: e2-u-uncoupled
+#    python -m training.run study experiments/v0.2/phase-2/uncoupled.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/phase-2/uncoupled.yaml
+#    python -m training.run study-best experiments/v0.2/phase-2/uncoupled.yaml --out best.yaml
+name: P2-uncoupled
 description: >-
   Phase 2 TPE search, U (P without coupling): input gain x0.5-20, input connectivity
   0.1-1, heterogeneity CV 0-0.5, warm-up 50-2,000; N = 1,024, 16 substeps; one image of

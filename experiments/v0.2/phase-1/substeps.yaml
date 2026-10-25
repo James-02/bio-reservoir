@@ -1,24 +1,23 @@
-# Tracking set: U #68, at three reservoir seeds. It is rerun at every tagged code version
-# to follow the model's numbers across versions. Run each version in a fresh workspace, or
-# with --storage, so that the trials of an earlier version are not resumed.
-#    python -m training.run study experiments/v0.2/tracking/u-uncoupled-68.yaml --processes N
-#    python -m training.run study-table experiments/v0.2/tracking/u-uncoupled-68.yaml --group
-name: tracking-u-uncoupled-68
+# Phase 1 grid: RK4 substeps 8-128, around the P centre, at three reservoir seeds.
+#    python -m training.run study experiments/v0.2/phase-1/substeps.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/phase-1/substeps.yaml --group
+name: P1-substeps
 description: >-
-  Tracking set: U, the colonies of P without coupling, exploration TPE trial 68 (N =
-  1,000, 32 substeps, the v0.1 heterogeneity draw); one image of the LuxI reporter with
-  1% measurement noise, RidgeCV readout; three reservoir seeds.
+  Phase 1 grid: RK4 substeps 8-128 around the P centre (input x5.6, coupling rate 0.6,
+  input connectivity 0.66, heterogeneity CV 0.065 mean-preserving, warm-up 800, N =
+  1,024 traps, 16 substeps); one image of the LuxI reporter with 1% measurement noise,
+  RidgeCV readout; three reservoir seeds.
 seed: 6337
 task: {labels: five-class, rows: 4015, balance_classes: true, scaler: sequence_zscore, seed: 6337}
 reservoir:
   type: bioreservoir
   seed: 6337
   params:
-    units: 1000
-    warmup: 91
-    rk4_substeps: 32
-    input_scaling: 0.15955052947198983
-    input_connectivity: 0.8973131056317318
+    units: 1024
+    warmup: 800
+    rk4_substeps: 16
+    input_scaling: 0.155113
+    input_connectivity: 0.66
     input_bias: false
     bias_scaling: 0.1
     rc_scaling: 0.007036187544739917
@@ -27,9 +26,9 @@ reservoir:
     noise_in: 0.01442
     noise_rc: 0.2397
     output_variables: IHe
-    param_heterogeneity_cv: 0.1888529465296334
+    param_heterogeneity_cv: 0.065
     param_heterogeneity_seed: null
-    heterogeneity_mean_preserving: false
+    heterogeneity_mean_preserving: true
     topology_type: lattice
     interaction_diameters: 8.2
     fade_alpha: 2.80278092396274e-05
@@ -39,18 +38,21 @@ reservoir:
     geometry: per_node
     delay_scheme: substep
     normalize_after_masks: true
-    coupling: none
-    diffusion_rate: 1.0
+    coupling: diffusion
+    diffusion_rate: 0.6
     input_encoding: nonnegative
     input_sign: positive
 features: {variables: [I], aggregation: final, measurement_noise: 0.01}
 readout: {classifier: RidgeCV, scale: true}
 cv: {folds: 5, seed: 6337}
 study:
-  trials: 3
+  trials: 15
   metric: f1
   sampler: {type: grid, seed: 6337}
   search:
+    reservoir.params.rk4_substeps:
+      type: categorical
+      choices: [8, 16, 32, 64, 128]
     reservoir.seed:
       type: categorical
       choices: [6337, 6338, 6339]

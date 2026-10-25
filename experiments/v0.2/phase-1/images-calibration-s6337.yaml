@@ -1,21 +1,21 @@
-# E1, Phase 1 grid: images 1-4 x calibration error 0-5%, around the P centre. The
+# Phase 1 grid: images 1-4 x calibration error 0-5%, around the P centre. The
 # calibration draw follows the run's top-level seed (training/observation.py), which a
 # study cannot search, so the three draws are three studies. This one draws calibration,
-# measurement noise and reservoir with seed 6338; read the three together.
-#    python -m training.run study experiments/v0.2/e1/images-calibration-s6338.yaml --processes N
-#    python -m training.run study-table experiments/v0.2/e1/images-calibration-s*.yaml --group
-name: e1-images-calibration-s6338
+# measurement noise and reservoir with seed 6337; read the three together.
+#    python -m training.run study experiments/v0.2/phase-1/images-calibration-s6337.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/phase-1/images-calibration-s*.yaml --group
+name: P1-images-calibration-s6337
 description: >-
   Phase 1 grid: images 1-4 x calibration error 0-5% around the P centre (input x5.6,
   coupling rate 0.6, input connectivity 0.66, heterogeneity CV 0.065 mean-preserving,
   warm-up 800, N = 1,024 traps, 16 substeps); one image of the LuxI reporter with 1%
   measurement noise, RidgeCV readout; calibration, measurement noise and reservoir
-  drawn with seed 6338.
-seed: 6338
+  drawn with seed 6337.
+seed: 6337
 task: {labels: five-class, rows: 4015, balance_classes: true, scaler: sequence_zscore, seed: 6337}
 reservoir:
   type: bioreservoir
-  seed: 6338
+  seed: 6337
   params:
     units: 1024
     warmup: 800

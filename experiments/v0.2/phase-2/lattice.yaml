@@ -1,11 +1,11 @@
-# E2, Phase 2 seeded TPE search: P lattice, over every design parameter, with the ranges of
+# Phase 2 seeded TPE search: P lattice, over every design parameter, with the ranges of
 # the v0.2 exploration searches. Their input and recurrent gains were multiples of the v0.1
 # scalings (input 0.0277, recurrent 0.00704; ESN input 0.327); here they are absolute
 # scalings. Starts from the exploration's P-lattice optimum (trial 208) and the P centre.
-#    python -m training.run study experiments/v0.2/e2/p-lattice.yaml --processes N
-#    python -m training.run study-table experiments/v0.2/e2/p-lattice.yaml
-#    python -m training.run study-best experiments/v0.2/e2/p-lattice.yaml --out best.yaml
-name: e2-p-lattice
+#    python -m training.run study experiments/v0.2/phase-2/lattice.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/phase-2/lattice.yaml
+#    python -m training.run study-best experiments/v0.2/phase-2/lattice.yaml --out best.yaml
+name: P2-lattice
 description: >-
   Phase 2 TPE search, P lattice: input gain x0.5-20, coupling rate 0.01-10, input
   connectivity 0.1-1, heterogeneity CV 0-0.5, warm-up 50-2,000; N = 1,024, 16 substeps;

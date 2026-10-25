@@ -1,8 +1,8 @@
-# E1, Phase 1 grid: input gain x2-12 x coupling rate 0.1-4 (two-way), around the P centre,
+# Phase 1 grid: input gain x2-12 x coupling rate 0.1-4 (two-way), around the P centre,
 # at three reservoir seeds.
-#    python -m training.run study experiments/v0.2/e1/gain-coupling.yaml --processes N
-#    python -m training.run study-table experiments/v0.2/e1/gain-coupling.yaml --group
-name: e1-gain-coupling
+#    python -m training.run study experiments/v0.2/phase-1/gain-coupling.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/phase-1/gain-coupling.yaml --group
+name: P1-gain-coupling
 description: >-
   Phase 1 grid: input gain x2-12 x coupling rate 0.1-4 (two-way) around the P centre
   (input x5.6, coupling rate 0.6, input connectivity 0.66, heterogeneity CV 0.065

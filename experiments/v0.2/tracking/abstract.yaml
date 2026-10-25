@@ -1,9 +1,9 @@
 # Tracking set: A' #109, at three reservoir seeds. It is rerun at every tagged code version
 # to follow the model's numbers across versions. Run each version in a fresh workspace, or
 # with --storage, so that the trials of an earlier version are not resumed.
-#    python -m training.run study experiments/v0.2/tracking/a-abstract-109.yaml --processes N
-#    python -m training.run study-table experiments/v0.2/tracking/a-abstract-109.yaml --group
-name: tracking-a-abstract-109
+#    python -m training.run study experiments/v0.2/tracking/abstract.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/tracking/abstract.yaml --group
+name: tracking-abstract
 description: >-
   Tracking set: A', the corrected abstract coupling, exploration TPE trial 109 (N =
   1,000, 32 substeps, the v0.1 heterogeneity draw); one image of the LuxI reporter with
