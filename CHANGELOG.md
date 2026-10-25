@@ -53,6 +53,8 @@ Each entry is marked **[science]** if it changes a reported number, or
   and a linear surrogate of a saved run (`reservoir.surrogate: linear`).
 - [engineering] `utils.preprocessing.class_indices(Y)`: the class of each beat from labels,
   one-hot labels or scores.
+- [engineering] `reservoir.params.delay` sets the colonies' feedback delay in input steps;
+  `delay: 0` removes it (an ablation).
 
 ### Removed
 

@@ -75,7 +75,13 @@ def _build_bioreservoir_topology(params: dict[str, Any], seed: int):
 
 
 def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, Any]]:
-    """Build the requested reservoir and return reproducibility metadata."""
+    """Build the requested reservoir and return reproducibility metadata.
+
+    For the bioreservoir, ``params["delay"]`` sets the delay of the colonies' gene-expression
+    feedback (the delayed Hi in the promoter term), in input steps: 0 removes it (an ordinary
+    differential equation). Without it the model default applies
+    (``bioreservoir.dde.DEFAULT_DDE_PARAMS["delay"]``, 10 steps).
+    """
     reservoir_type = normalize_reservoir_type(params.get("reservoir_type", "bioreservoir"))
     units = int(params["units"])
     from optimization.controls import CONTROL_TYPES, build_control
@@ -97,6 +103,13 @@ def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, 
         het_cv = float(params.get("param_heterogeneity_cv", 0.0))
         het_seed_raw = params.get("param_heterogeneity_seed")
         het_seed = int(het_seed_raw) if het_seed_raw is not None else None
+        dde_kwargs = {}
+        if params.get("delay") is not None:
+            delay = float(params["delay"])
+            if not delay >= 0:
+                raise ValueError(f"delay is the feedback delay in input steps; it must be 0 "
+                                 f"(no delay) or more, got {params['delay']}.")
+            dde_kwargs["delay"] = delay
         node = BioReservoir(
             units=units,
             warmup=int(params["warmup"]),
@@ -108,6 +121,7 @@ def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, 
             bias_scaling=float(params["bias_scaling"]),
             cell_coupling=float(params["cell_coupling"]),
             dde_scaling=float(params["dde_scaling"]),
+            dde_kwargs=dde_kwargs,
             noise_in=float(params["noise_in"]),
             noise_rc=recurrent["noise_rc"],
             output_variables=str(params.get("output_variables", "all")),
@@ -136,6 +150,7 @@ def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, 
             "res_units": units,
             "res_geometry": str(params.get("geometry", "per_node")),
             "res_delay_scheme": str(params.get("delay_scheme", "substep")),
+            "res_delay": node.dde_kwargs["delay"],
             "res_coupling": coupling,
             "res_diffusion_rate": float(params.get("diffusion_rate", 1.0)),
             "res_input_encoding": str(params.get("input_encoding", "signed")),
