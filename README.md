@@ -197,28 +197,20 @@ The diffusive solver advances all colonies together and runs on one thread (a pa
 
 ## Realism Options
 
-Three options of the `BioReservoir` (`reservoir.params` in a run config) model how a device departs from the nominal model (`bioreservoir.realism`). Each is off by default, and at its default every result is unchanged, bit for bit.
+Options of the `BioReservoir` for how a device departs from the nominal model ([bioreservoir/realism.py](bioreservoir/realism.py)); all are off by default, which changes no result:
 
-- **Heterogeneity by group.** Colonies differ in three groups of parameters, each with its own coefficient of variation. The factors are mean-preserving log-normal (mean 1):
-  - `param_heterogeneity_cv`: the strain, meaning the 13 intracellular kinetic constants (as before);
-  - `heterogeneity_density_cv`: the cell density `d` of each colony (the volume fraction of cells in its trap), clipped to `[0.05, 0.99 d0]`. The growth factor `1 - (d/d0)^4` of both promoters, and the cell/medium volume ratio `d/(1-d)` that turns the membrane flux `D (Hi - He)` into a change of He, follow each colony's density. Clipping at the carrying capacity lowers the mean density at large CVs: 1% of the colonies are clipped at a CV of 0.1, and 19% at 0.3;
-  - `heterogeneity_dilution_cv`: the washout rate `mu` of extracellular AHL in each trap.
-
-  Each group draws from its own random stream of the heterogeneity seed (`param_heterogeneity_seed`, by default the reservoir seed), so adding a group leaves the draws of the others unchanged. A dense colony exchanges AHL with the medium faster (`d/(1-d) D` grows from 2.3 `D` at the nominal `d = 0.7` to 6.8 `D` at `0.99 d0`), so with the diffusive coupling the step check above may ask for more substeps. The check covers the AHL exchange of He only, so it does not catch every unstable setting: at the P centre, use 32 substeps for kinetic CVs of 0.3 and above (colonies whose LuxI or AiiA degradation is fast for the step can go negative at 16 substeps) and when kinetic and density CVs are both 0.3.
-- **Input levels.** `input_levels: K` gives the input connections `K` levels evenly spaced in `(0, 1] x input_scaling` (`k/K` for k = 1 to K), assigned at random with the reservoir seed; `input_levels: continuous` draws each level uniformly on `(0, 1]`. The default, 1, is one level: with `input_sign: positive` every induced trap receives `input_scaling`. Levels lower the mean input to `(K + 1) / 2K` of the full level (1/2 for `continuous`). Needs `geometry: per_node`.
-- **Imperfect reset.** `reset_noise: cv` starts every beat from the warm-up state multiplied by log-normal factors of mean 1 and coefficient of variation `cv`: one factor per colony and variable (A, I, Hi, He), and Hi's factor also scales the delayed-Hi history. Each beat draws its factors from its own seed, like its input noise, so the features do not depend on the number of worker processes or on the order of the beats. Needs `cv.simulate: once`; the per-fold path (`cv.simulate: per_fold`, the `v0.1` preset) refuses it.
+- `heterogeneity_density_cv` and `heterogeneity_dilution_cv`: per-colony cell density `d` (clipped to `[0.05, 0.99 d0]`, with its growth factor) and washout `mu`, next to the kinetic `param_heterogeneity_cv`. At large CVs use 32 substeps at the P centre.
+- `input_levels: K` (or `continuous`): the induced traps receive `K` levels in `(0, 1] x input_scaling`. Needs `geometry: per_node`.
+- `reset_noise: cv`: each beat starts from the warm-up state times log-normal factors (mean 1), drawn from the beat's own seed. Needs `cv.simulate: once`.
 
 ```yaml
 reservoir:
   params:
-    param_heterogeneity_cv: 0.065     # strain (kinetics)
-    heterogeneity_density_cv: 0.1     # cell density, with its growth factor
-    heterogeneity_dilution_cv: 0.1    # washout of extracellular AHL
-    input_levels: 3                   # or continuous
-    reset_noise: 0.01                 # imperfect reset between beats
+    heterogeneity_density_cv: 0.1
+    heterogeneity_dilution_cv: 0.1
+    input_levels: 3
+    reset_noise: 0.01
 ```
-
-Trials record the options (`res_heterogeneity_density_cv`, `res_heterogeneity_dilution_cv`, `res_input_levels`, `res_reset_noise`).
 
 ## Visualisation
 
