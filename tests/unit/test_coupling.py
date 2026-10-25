@@ -155,6 +155,17 @@ class TestCoupledSolver:
         with pytest.raises(ValueError, match="not 3"):
             _solve(history, 10.0, 8, INPUTS[:1], conductance=np.zeros((2, 2)))
 
+    @pytest.mark.parametrize("delay", [2.0, 0.0])
+    def test_the_compiled_solver_matches_its_python_source(self, monkeypatch, delay):
+        # The uncompiled source runs the same arithmetic where coverage can trace it.
+        history = _history(n=3)
+        compiled = _solve(history, delay, 8, INPUTS, conductance=G3)
+        for name in ("_stage_state", "_stage_derivatives", "_solve_diffusion"):
+            kernel = getattr(dde, name)
+            monkeypatch.setattr(dde, name, getattr(kernel, "py_func", kernel))
+        np.testing.assert_allclose(_solve(history, delay, 8, INPUTS, conductance=G3),
+                                   compiled, rtol=1e-12, atol=1e-15)
+
 
 # ---------------------------------------------------------------------------
 # Layouts and conductances
@@ -187,6 +198,8 @@ class TestLayouts:
         assert scale_conductances(np.zeros((3, 3)), 0.7).nnz == 0
         with pytest.raises(ValueError, match="signed=False"):
             scale_conductances(W - 0.5, 1.0)
+        with pytest.raises(ValueError, match="square"):
+            scale_conductances(np.ones((3, 2)), 1.0)
 
     def test_asymmetry_of_symmetric_and_sparsified_kernels(self):
         assert relative_asymmetry(distance_matrix(30, 30, **KERNEL)) == 0.0
