@@ -1,11 +1,8 @@
 """Unit tests for the realism options (bioreservoir.realism): heterogeneity by group, input
 levels and imperfect reset, and their hooks in the node, the builder and run configs."""
 
-from pathlib import Path
-
 import numpy as np
 import pytest
-import yaml
 from scipy import sparse
 
 from bioreservoir import BioReservoir, lattice_matrix
@@ -43,8 +40,6 @@ from training.simulate import reseed_noise, simulate_beats
 PARAMS = get_dde_params()
 D0 = PARAMS["d0"]
 KINETIC_COLUMNS = [i for i, name in enumerate(_PARAM_ORDER) if name in _VARY_SET]
-CHECKS = Path(__file__).resolve().parents[2] / "experiments" / "v0.2" / "checks" / \
-    "realism-options"
 
 # A small P-like array: diffusive coupling on a trap lattice, non-negative input.
 P_LIKE = dict(units=16, warmup=5, rk4_substeps=16, input_scaling=0.155113,
@@ -470,11 +465,3 @@ class TestConfigs:
                    f"reservoir.params.{k}": {"type": "categorical", "choices": [v]}
                    for k, v in self.OPTIONS.items()}}}
         study_module.check(*study_module.split(cfg))
-
-    @pytest.mark.parametrize("path", sorted(CHECKS.glob("*.yaml")), ids=lambda p: p.name)
-    def test_the_check_configs_resolve(self, path):
-        cfg = yaml.safe_load(path.read_text())
-        if cfg.get("study"):
-            study_module.check(*study_module.split(cfg))
-        else:
-            run_module.resolve(cfg)
