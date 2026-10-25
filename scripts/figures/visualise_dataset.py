@@ -1,7 +1,7 @@
 """Convenience script to generate visualisations for the ECG classification dataset.
 
-This script uses ``load_ecg_data`` from ``utils.preprocessing`` and the
-visualisation helpers in ``utils.visualisation`` to give an overview of:
+This script uses ``load_ecg_data`` from ``utils.preprocessing`` and the figure
+helpers below to give an overview of:
 
 - class-wise mean and variance
 - average waveform per class
@@ -12,14 +12,11 @@ visualisation helpers in ``utils.visualisation`` to give an overview of:
 import argparse
 import os
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from utils.preprocessing import load_ecg_data, standardize_data
-from utils.visualisation import (
-    _save_figure,
-    plot_average_instances_with_band_and_exemplars,
-    plot_noise,
-)
+from utils.visualisation import _save_figure, binary_classes, classes
 
 _ECG_SAMPLING_FREQ_HZ = 125
 
@@ -137,6 +134,202 @@ def _save_ecg_sample_plot(
 
     _save_figure(filename=filename)
     if bool(show):
+        plt.show()
+    plt.close(fig)
+
+
+def plot_average_instances_with_band_and_exemplars(
+    X: np.ndarray,
+    Y: np.ndarray,
+    *,
+    filename: str = "ecg_average_instances.png",
+    show: bool = False,
+    sampling_freq_hz: float = 125.0,
+    example_traces: int = 5,
+    q_low: float = 0.10,
+    q_high: float = 0.90,
+    seed: int = 0,
+    binary: bool | None = None,
+) -> None:
+    """Paper-ready average ECG instances figure.
+
+    Layout: one row per class, one column:
+    - class mean with quantile band (q_low..q_high)
+
+    Notes
+    -----
+    - Expects X to be numeric and shaped (N, T, 1) or (N, T).
+    - If Y is one-hot per timestep (N, T, C) we reduce to class indices.
+    """
+    X_np = np.asarray(X, dtype=np.float64)
+    if X_np.ndim == 3:
+        X_np = X_np[..., 0]
+    if X_np.ndim != 2:
+        raise ValueError(f"X must have shape (N, T) or (N, T, 1); got {X_np.shape}")
+
+    Y_np = np.asarray(Y)
+    if Y_np.ndim > 2:
+        # one-hot per timestep -> class id per sample using first timestep
+        y_classes = np.array([int(np.argmax(y_seq[0])) for y_seq in Y_np], dtype=int)
+    elif Y_np.ndim == 2 and Y_np.shape[1] > 1:
+        # one-hot per sample
+        y_classes = np.array([int(np.argmax(y_row)) for y_row in Y_np], dtype=int)
+    else:
+        y_classes = Y_np.reshape(-1).astype(int)
+
+    unique_classes = np.unique(y_classes)
+    if unique_classes.size == 0:
+        raise ValueError("No classes found in Y")
+
+    # Decide label set
+    if binary is None:
+        binary = unique_classes.size <= 2
+    class_names = binary_classes if binary else classes
+
+    # Time axis in ms
+    sampling_freq_hz = float(sampling_freq_hz)
+    if sampling_freq_hz <= 0:
+        raise ValueError(f"sampling_freq_hz must be > 0; got {sampling_freq_hz}")
+    t_ms = (np.arange(X_np.shape[1], dtype=np.float64) / sampling_freq_hz) * 1000.0
+
+    # Collect per-class stats
+    class_rows = []  # list[(class_idx, mean, q_lo, q_hi)]
+    for c in unique_classes:
+        mask = y_classes == int(c)
+        seqs = X_np[mask].astype(np.float64, copy=False)
+        if seqs.size == 0:
+            continue
+        mean_wave = np.asarray(seqs.mean(axis=0), dtype=np.float64)
+        q_lo = np.asarray(np.quantile(seqs, float(q_low), axis=0), dtype=np.float64)
+        q_hi = np.asarray(np.quantile(seqs, float(q_high), axis=0), dtype=np.float64)
+
+        class_rows.append((int(c), mean_wave, q_lo, q_hi))
+
+    if len(class_rows) == 0:
+        raise ValueError("No class rows could be constructed (empty masks?)")
+
+    # Consistent y-limits across panels
+    all_y = np.concatenate(
+        [np.asarray(y).reshape(-1) for _, y, *_ in class_rows]
+        + [np.asarray(qlo).reshape(-1) for _, _, qlo, *_ in class_rows]
+        + [np.asarray(qhi).reshape(-1) for _, _, _, qhi, *_ in class_rows]
+    )
+    ymin = float(np.nanmin(all_y))
+    ymax = float(np.nanmax(all_y))
+    pad = 0.05 * (ymax - ymin) if ymax > ymin else 1.0
+    ylim = (ymin - pad, ymax + pad)
+
+    # Okabe–Ito palette (colorblind-friendly)
+    okabe_ito = [
+        "#0072B2",  # blue
+        "#D55E00",  # vermillion
+        "#009E73",  # bluish green
+        "#CC79A7",  # reddish purple
+        "#E69F00",  # orange
+        "#56B4E9",  # sky blue
+        "#F0E442",  # yellow
+        "#000000",  # black
+    ]
+
+    fig, axes = plt.subplots(
+        nrows=len(class_rows),
+        ncols=1,
+        sharex=True,
+        sharey=True,
+        figsize=(10.0, 2.0 * len(class_rows) + 0.9),
+        gridspec_kw={"hspace": 0.12},
+        constrained_layout=True,
+    )
+    if len(class_rows) == 1:
+        axes = np.array([axes])
+
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+
+    band_label = f"{int(q_low*100)}–{int(q_high*100)}% band"
+
+    for i, (c, mean_wave, q_lo, q_hi) in enumerate(class_rows):
+        col = okabe_ito[i % len(okabe_ito)]
+        ax_mean = axes[i]
+
+        ax_mean.fill_between(t_ms, q_lo, q_hi, color=col, alpha=0.18, linewidth=0)
+        ax_mean.plot(t_ms, mean_wave, color=col, linewidth=1.9)
+
+        ax_mean.set_ylim(*ylim)
+        ax_mean.grid(True, alpha=0.2)
+
+        name = class_names[c] if int(c) < len(class_names) else f"class {c}"
+        ax_mean.text(
+            0.01,
+            0.88,
+            name,
+            transform=ax_mean.transAxes,
+            fontsize=10,
+            va="top",
+            ha="left",
+            bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 2},
+        )
+
+        # Per-row legend that explains the mark types (mean vs band).
+        # Use the same colour as the plotted traces for consistency.
+        mean_label = f"Mean ({name})"
+        handles = [
+            Line2D([0], [0], color=col, linewidth=1.9, linestyle="-", label=mean_label),
+            Patch(facecolor=col, edgecolor="none", alpha=0.18, label=band_label),
+        ]
+        ax_mean.legend(handles=handles, loc="upper right", fontsize=8, frameon=True)
+
+    axes[-1].set_xlabel("Time (ms)")
+    fig.supylabel("Value")
+    _save_figure(filename=os.path.join("preprocessing/", filename))
+
+    if show:
+        plt.show()
+
+
+def plot_noise(
+    X: np.ndarray,
+    noise: np.ndarray,
+    noisy_X: np.ndarray,
+    *,
+    noise_std: float | None = None,
+    show: bool = True,
+    filename: str = "noise.png",
+) -> None:
+    """
+    Plot the noise in training data.
+
+    Args:
+        X (np.ndarray): Training data.
+        noise (np.ndarray): Noise data.
+        noisy_X (np.ndarray): Augmented data.
+        show (bool, optional): Whether to display the plot. Default is True.
+        filename (str, optional): Filename to save figure to. Default is "noise.png".
+    """
+    sampling_freq = 125
+    num_samples = len(X)
+    time_ms = np.arange(num_samples) / sampling_freq * 1000
+
+    fig, ax = plt.subplots(figsize=(10, 6), constrained_layout=True)
+    ax.plot(time_ms, X, label="Training Data", linestyle="solid", color="orange")
+    noise_label = "Noise"
+    if noise_std is not None:
+        try:
+            noise_label = f"Noise ($\\sigma$={float(noise_std):g})"
+        except Exception:
+            pass
+    ax.plot(time_ms, noise, linestyle="dotted", label=noise_label, color="green")
+    ax.plot(time_ms, noisy_X, linestyle="dashed", label="Augmented Data", color="blue")
+    plt.ylabel('Value')
+    plt.xlabel('Time (ms)')
+    plt.xticks()
+    plt.yticks()
+
+    ax.legend()
+
+    _save_figure(filename=os.path.join("preprocessing/", filename))
+
+    if show:
         plt.show()
     plt.close(fig)
 

@@ -22,11 +22,12 @@ import argparse
 import logging
 import os
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from bioreservoir import BioReservoir
 from utils.preprocessing import load_ecg_data
-from utils.visualisation import plot_dde_ecg_multiscale
+from utils.visualisation import _save_figure, gene_full_name
 
 
 def _simulate_step_only(*, reservoir: BioReservoir, input_series: np.ndarray) -> np.ndarray:
@@ -107,6 +108,203 @@ def _states_to_vars(states_all: np.ndarray) -> dict[str, np.ndarray]:
 		"Hi": states_all[:, 0, 2],
 		"He": states_all[:, 0, 3],
 	}
+
+
+def format_sci(x: float, *, max_decimals: int = 2) -> str:
+    """Format numbers with scientific notation when they would be too long.
+
+    Rule: if rounding to `max_decimals` would change the value materially (or
+    the value is very small), we switch to compact e-notation.
+
+    Examples
+    --------
+    - 0.001  -> 1e-3
+    - 0.0001 -> 1e-4
+    - 0.0123 -> 0.01 (if max_decimals=2)
+    - 1.234  -> 1.23
+    """
+    x = float(x)
+    if x == 0.0:
+        return "0"
+    # Prefer e-notation for very small values.
+    if abs(x) < 10 ** (-(max_decimals + 1)):
+        return f"{x:.0e}".replace("e-0", "e-").replace("e+0", "e+")
+    rounded = round(x, int(max_decimals))
+    if rounded != x:
+        return f"{x:.0e}".replace("e-0", "e-").replace("e+0", "e+")
+    return f"{rounded:.{int(max_decimals)}f}".rstrip("0").rstrip(".")
+
+
+def plot_dde_ecg_multiscale(
+    *,
+    t_axis: np.ndarray,
+    warmup: int,
+    baseline_states_by_var: dict[str, np.ndarray],
+    driven_states_by_scale: dict[float, dict[str, np.ndarray]],
+    driven_input_by_scale: dict[float, np.ndarray],
+    input_trace_unscaled: np.ndarray | None = None,
+    ecg_class_label: str | None = None,
+    filename: str,
+    show: bool = False,
+) -> None:
+    """Plot a compact ECG-driven overlay figure across multiple input scales.
+
+    Layout
+    ------
+    - Row 1: baseline (0 input) for luxI + aiiA.
+    - Rows 2..K: ECG-driven for each requested input scale.
+    - Final row: the ECG input trace (for the *largest* scale), plotted once.
+
+    Notes
+    -----
+    - Warmup (first ``warmup`` steps) is drawn dashed (baseline shown as a reference).
+    - Colors are fixed across all rows to keep the figure consistent and greyscale-friendly.
+    """
+    import numpy as _np
+    from matplotlib.lines import Line2D
+
+    warmup = int(warmup)
+    t_axis = _np.asarray(t_axis)
+
+    # Fixed, colourblind-friendly palette; still readable in greyscale thanks to linestyles.
+    okabe_ito = {
+        "blue": "#0072B2",
+        "vermillion": "#D55E00",
+        "black": "#000000",
+    }
+    styles = {
+        "I": dict(color=okabe_ito["blue"], linewidth=1.8, linestyle="-"),
+        "A": dict(color=okabe_ito["vermillion"], linewidth=1.8, linestyle=(0, (4, 2))),
+    }
+
+    scales = sorted(float(s) for s in driven_states_by_scale.keys())
+    if len(scales) == 0:
+        raise ValueError("driven_states_by_scale must contain at least one scale")
+
+    # Choose a single input trace to show once.
+    # We often want to show the ECG in a fixed, "default" scale, since each state row already
+    # corresponds to a different input scaling.
+    if input_trace_unscaled is not None:
+        u_show = _np.asarray(input_trace_unscaled, dtype=_np.float64).reshape(-1)
+    else:
+        scale_for_input = max(scales)
+        u_show = _np.asarray(driven_input_by_scale[scale_for_input], dtype=_np.float64).reshape(-1)
+
+    n_rows = 1 + len(scales) + 1
+    fig, axes = plt.subplots(
+        nrows=n_rows,
+        ncols=1,
+        sharex=True,
+        figsize=(12.0, 2.0 * n_rows),
+        gridspec_kw={"hspace": 0.10, "height_ratios": [2.2] * (n_rows - 1) + [1.2]},
+        constrained_layout=True,
+    )
+    if n_rows == 1:
+        axes = _np.array([axes])
+
+    def _plot_states_row(ax, states_by_var: dict[str, _np.ndarray], *, show_baseline_warmup: bool) -> None:
+        # Only luxI (I) + aiiA (A)
+        for v in ("I", "A"):
+            if v not in states_by_var:
+                continue
+            y = _np.asarray(states_by_var[v], dtype=_np.float64).reshape(-1)
+            if warmup > 0 and show_baseline_warmup:
+                y_base = _np.asarray(baseline_states_by_var[v], dtype=_np.float64).reshape(-1)
+                ax.plot(t_axis[:warmup], y_base[:warmup], color="black", linestyle="--", linewidth=1.4, alpha=0.75)
+                ax.plot(t_axis[warmup - 1 :], y[warmup - 1 :], **styles[v])
+                ax.axvline(warmup - 1, color="black", alpha=0.25, linewidth=1.0)
+            elif warmup > 0:
+                ax.plot(t_axis[:warmup], y[:warmup], color="black", linestyle="--", linewidth=1.4, alpha=0.75)
+                ax.plot(t_axis[warmup - 1 :], y[warmup - 1 :], **styles[v])
+                ax.axvline(warmup - 1, color="black", alpha=0.25, linewidth=1.0)
+            else:
+                ax.plot(t_axis, y, **styles[v])
+
+        ax.grid(True, alpha=0.22)
+
+    # Row 0: baseline
+    _plot_states_row(axes[0], baseline_states_by_var, show_baseline_warmup=False)
+    axes[0].text(
+        0.01,
+        0.86,
+        "Baseline (0 input)",
+        transform=axes[0].transAxes,
+        fontsize=9,
+        va="top",
+        ha="left",
+        bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 2},
+    )
+
+    # Rows 1..len(scales): driven
+    for i, s in enumerate(scales, start=1):
+        _plot_states_row(axes[i], driven_states_by_scale[s], show_baseline_warmup=True)
+        axes[i].text(
+            0.01,
+            0.86,
+            f"Scale={format_sci(s)}",
+            transform=axes[i].transAxes,
+            fontsize=9,
+            va="top",
+            ha="left",
+            bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 2},
+        )
+
+    # Bottom row: input trace (shown once) – visually separated from state panels.
+    ax_inp = axes[-1]
+    # Plot warmup explicitly as dashed black with a divider, then the ECG drive.
+    if warmup > 0:
+        ax_inp.plot(
+            t_axis[:warmup],
+            u_show[:warmup],
+            color="black",
+            linestyle="--",
+            linewidth=1.4,
+            alpha=0.85,
+        )
+        # Divider marking the start of the driven (ECG) segment.
+        ax_inp.axvline(warmup - 1, color="black", alpha=0.35, linewidth=1.0)
+        # Use a distinct red (separate from aiiA's orange/vermillion) to avoid confusion.
+        ax_inp.plot(t_axis[warmup - 1 :], u_show[warmup - 1 :], color="#CC0000", linewidth=1.6)
+    else:
+        ax_inp.plot(t_axis, u_show, color="#CC0000", linewidth=1.6)
+    ax_inp.grid(True, alpha=0.18)
+    ax_inp.set_ylabel("ECG Input")
+    ax_inp.set_xlabel("")
+
+    # Legend: show ECG class/label and distinguish warmup vs driven segment.
+    if ecg_class_label is not None and str(ecg_class_label).strip() != "":
+        ecg_label_txt = f"ECG Class: {str(ecg_class_label)}"
+    else:
+        ecg_label_txt = "ECG"
+
+    warmup_handle_inp = Line2D([0], [0], color="black", linestyle="--", linewidth=1.4, label="Warmup (0 input)")
+    ecg_handle_inp = Line2D([0], [0], color="#CC0000", linestyle="-", linewidth=1.6, label=ecg_label_txt)
+    ax_inp.legend(
+        handles=[ecg_handle_inp, warmup_handle_inp],
+        loc="upper right",
+        fontsize=8,
+        frameon=True,
+    )
+
+    # Shared labels once (centered) and no per-axes titles.
+    fig.supxlabel("Timestep")
+    fig.supylabel("Genetic Biopixel States")
+
+    # Legend: variable styles + warmup explanation.
+    warmup_handle = Line2D([0], [0], color="black", linestyle="--", linewidth=1.4, label="Warmup (0 input)")
+    luxi_handle = Line2D([0], [0], **styles["I"], label=gene_full_name("I"))
+    aiiA_handle = Line2D([0], [0], **styles["A"], label=gene_full_name("A"))
+    axes[0].legend(
+        handles=[luxi_handle, aiiA_handle, warmup_handle],
+        loc="upper right",
+        fontsize=8,
+        frameon=True,
+    )
+
+    _save_figure(filename=filename)
+    if show:
+        plt.show()
+
 
 def main() -> None:
 	parser = argparse.ArgumentParser(description="ECG-driven DDE multiscale figure")

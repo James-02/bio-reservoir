@@ -53,17 +53,19 @@ import glob
 import os
 from typing import Any
 
+import matplotlib.pyplot as plt
 import numpy as np
+from sklearn.manifold import TSNE
 from sklearn.metrics import cohen_kappa_score, matthews_corrcoef
 
 from utils.analysis import evaluate_performance
 from utils.results import FoldArtifact
 from utils.visualisation import (
+    _save_figure,
     plot_class_metrics,
     plot_confusion_matrix,
     plot_metrics_across_folds,
     plot_tsne_clustering,
-    plot_tsne_states,
 )
 
 # ---------------------------------------------------------------------------
@@ -182,10 +184,82 @@ def _print_model_info(artifacts: list[FoldArtifact]) -> None:
 # Plot helpers
 # ---------------------------------------------------------------------------
 
-def _fig_out(trial_name: str, suffix: str) -> str:
-    """Return filename passed to visualisation helpers.
+def _one_hot_to_class_indices(Y: np.ndarray) -> np.ndarray:
+    """Convert one-hot labels of shape (N, 1, C) or (N, C) to class indices (N,)."""
 
-    All plot_* functions in utils.visualisation already prepend ``metrics/``
+    if Y.ndim == 3 and Y.shape[1] == 1:
+        Y = Y[:, 0, :]
+    if Y.ndim != 2:
+        raise ValueError(f"Expected labels of shape (N, C) or (N, 1, C), got {Y.shape}")
+    return np.argmax(Y, axis=1)
+
+
+def plot_tsne_states(
+    X_states: np.ndarray,
+    Y_true: np.ndarray,
+    show: bool = True,
+    filename: str = "tsne_states.png",
+) -> None:
+    """t-SNE projection of reservoir states coloured by true class.
+
+    Parameters
+    ----------
+    X_states : np.ndarray
+        Array of reservoir states, e.g. shape (N, D) or (N, T, D).
+    Y_true : np.ndarray
+        One-hot labels matching X_states; shape (N, 1, C) or (N, C).
+    show : bool
+        Whether to display the figure interactively.
+    filename : str
+        File name (relative to ``results/figures/metrics/``) used for saving.
+    """
+
+    # Flatten any trailing dimensions of states so we have (N, D)
+    if X_states.ndim != 2:
+        X = X_states.reshape(X_states.shape[0], -1)
+    else:
+        X = X_states
+
+    y_classes = _one_hot_to_class_indices(Y_true)
+
+    tsne = TSNE(
+        n_components=2,
+        learning_rate="auto",
+        init="pca",
+        perplexity=30,
+        random_state=42,
+    )
+    emb = tsne.fit_transform(X)
+
+    plt.figure(figsize=(8, 6))
+    num_classes = int(np.max(y_classes)) + 1
+
+    for c in range(num_classes):
+        mask = y_classes == c
+        if not np.any(mask):
+            continue
+        plt.scatter(
+            emb[mask, 0],
+            emb[mask, 1],
+            s=10,
+            alpha=0.6,
+            label=f"class {c}",
+        )
+
+    plt.title("t-SNE of reservoir states (coloured by true class)")
+    plt.xlabel("t-SNE 1")
+    plt.ylabel("t-SNE 2")
+    plt.legend(markerscale=1.5, fontsize="small", loc="best")
+
+    _save_figure(filename=os.path.join("metrics/", filename))
+    if show:
+        plt.show()
+
+
+def _fig_out(trial_name: str, suffix: str) -> str:
+    """Return filename passed to the plot helpers.
+
+    The plot_* helpers (in this script and in utils.visualisation) prepend ``metrics/``
     themselves before calling ``_save_figure``, which in turn prepends
     ``results/figures/``.  So we only need to provide ``<trial_name>/<suffix>``.
     """
