@@ -1,585 +1,82 @@
-"""Convenience script to generate visualisations for the ECG classification dataset.
+"""Draw the beats of a run config's task: for each class, its mean and the band that holds
+the middle 80% of its beats at each time.
 
-This script uses ``load_ecg_data`` from ``utils.preprocessing`` and the figure
-helpers below to give an overview of:
+The beats are the ones a run of the config reads (:func:`training.run.load_task`): the same
+pool, class balance and scaling, so the counts are those of the runs.
 
-- class-wise mean and variance
-- average waveform per class
-- effect of noise augmentation on a single sample
-- effect of different scalers (min-max vs standard / z-score) on a single sample
+    python scripts/figures/visualise_dataset.py experiments/v0.2/designs/centre.yaml
+
+It writes ``results/figures/dataset/<name>-beats.png`` (and ``.pdf``), where ``<name>`` is
+the config's name, and prints the number of beats of each class.
 """
 
+from __future__ import annotations
+
 import argparse
-import os
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-
-from utils.preprocessing import load_ecg_data, standardize_data
-from utils.visualisation import BINARY_CLASS_NAMES, CLASS_NAMES, STYLE, save_figure
-
-_ECG_SAMPLING_FREQ_HZ = 125
-
-
-def _time_axis_ms(num_samples: int, sampling_freq_hz: float = _ECG_SAMPLING_FREQ_HZ) -> np.ndarray:
-    """Return a milliseconds time axis for a uniformly sampled signal."""
-    sampling_freq_hz = float(sampling_freq_hz)
-    if sampling_freq_hz <= 0:
-        raise ValueError(f"sampling_freq_hz must be > 0; got {sampling_freq_hz}")
-    return (np.arange(int(num_samples), dtype=np.float64) / sampling_freq_hz) * 1000.0
-
-
-def _select_single_sample(
-    X,
-    Y,
-    *,
-    index: int = 0,
-    target_class: int | None = None,
-):
-    """Pick a single (X, y) pair, optionally constrained to a given class index.
-
-    X is expected to be a list/array of sequences shaped (T, 1) and Y a list/array
-    of labels (either class indices or one-hot vectors).
-    """
-    X_arr = np.array(X, dtype=object)
-    Y_arr = np.array(Y)
-
-    # If one-hot, convert to class indices
-    if Y_arr.ndim > 1:
-        labels = np.array([np.argmax(y) for y in Y_arr])
-    else:
-        labels = Y_arr.astype(int)
-
-    n = int(len(X_arr))
-    if n == 0:
-        raise ValueError("Empty dataset: X has no samples")
-
-    # If a target class is requested, interpret `index` as an index *within that class*.
-    if target_class is not None:
-        idx_candidates = np.where(labels == int(target_class))[0]
-        if len(idx_candidates) == 0:
-            raise ValueError(f"No samples found for class {target_class}.")
-        k = int(index)
-        if k < 0 or k >= len(idx_candidates):
-            raise ValueError(
-                f"--single-index out of range for class {target_class}: {k} (class count={len(idx_candidates)})"
-            )
-        idx = int(idx_candidates[k])
-    else:
-        idx = int(index)
-        if idx < 0 or idx >= n:
-            raise ValueError(f"--single-index out of range: {idx} (dataset size={n})")
-
-    x = np.asarray(X_arr[idx]).reshape(-1)
-    y = int(labels[idx])
-    return x, y
-
-
-def _make_noise_example(x: np.ndarray, noise_std: float = 0.1, seed: int | None = 0):
-    """Generate a simple additive Gaussian noise example for a 1D signal x."""
-    rng = np.random.RandomState(seed)
-    noise = rng.normal(scale=noise_std, size=x.shape)
-    noisy_x = x + noise
-    return noise, noisy_x
-
-
-def _class_names(*, binary: bool) -> list[str]:
-    # Keep this local to avoid importing globals from utils.visualisation.
-    return ["Normal", "Arrhythmia"] if bool(binary) else ["Normal", "Supraventricular", "Ventricular", "Fusion", "Unknown"]
-
-
-def _labels_to_class_index(Y: np.ndarray) -> np.ndarray:
-    """Convert Y in common repo formats to a 1D integer class index per sample."""
-    Y_np = np.asarray(Y)
-    if Y_np.ndim > 2:
-        # one-hot per timestep (N, T, C) -> class id from first timestep
-        return np.array([int(np.argmax(y_seq[0])) for y_seq in Y_np], dtype=int)
-    if Y_np.ndim == 2 and Y_np.shape[1] > 1:
-        # one-hot per sample (N, C)
-        return np.array([int(np.argmax(y_row)) for y_row in Y_np], dtype=int)
-    # label per timestep (N, T) or (N, 1)
-    return Y_np.reshape(len(Y_np), -1)[:, 0].astype(int)
-
-
-def _save_ecg_sample_plot(
-    *,
-    x: np.ndarray,
-    class_name: str,
-    index_within_class: int,
-    filename: str,
-    show: bool = False,
-    sampling_freq_hz: float = _ECG_SAMPLING_FREQ_HZ,
-) -> None:
-    """Save a single ECG trace as a clean, paper-friendly plot."""
-    import matplotlib.pyplot as plt
-
-    x = np.asarray(x, dtype=np.float64).reshape(-1)
-    t_ms = _time_axis_ms(len(x), sampling_freq_hz=float(sampling_freq_hz))
-
-    fig, ax = plt.subplots(figsize=(7.5, 2.6), constrained_layout=True)
-    ax.plot(t_ms, x, color="#CC0000", linewidth=1.4)
-    ax.grid(True, alpha=0.18)
-    ax.set_xlabel("Time (ms)")
-    ax.set_ylabel("ECG")
-    ax.text(
-        0.01,
-        0.88,
-        f"{class_name}  (idx={int(index_within_class)})",
-        transform=ax.transAxes,
-        fontsize=10,
-        va="top",
-        ha="left",
-        bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 2},
-    )
-
-    save_figure(fig, os.path.splitext(filename)[0], formats=("png",))
-    if bool(show):
-        plt.show()
-    plt.close(fig)
-
-
-def plot_average_instances_with_band_and_exemplars(
-    X: np.ndarray,
-    Y: np.ndarray,
-    *,
-    filename: str = "ecg_average_instances.png",
-    show: bool = False,
-    sampling_freq_hz: float = 125.0,
-    example_traces: int = 5,
-    q_low: float = 0.10,
-    q_high: float = 0.90,
-    seed: int = 0,
-    binary: bool | None = None,
-) -> None:
-    """Paper-ready average ECG instances figure.
-
-    Layout: one row per class, one column:
-    - class mean with quantile band (q_low..q_high)
-
-    Notes
-    -----
-    - Expects X to be numeric and shaped (N, T, 1) or (N, T).
-    - If Y is one-hot per timestep (N, T, C) we reduce to class indices.
-    """
-    X_np = np.asarray(X, dtype=np.float64)
-    if X_np.ndim == 3:
-        X_np = X_np[..., 0]
-    if X_np.ndim != 2:
-        raise ValueError(f"X must have shape (N, T) or (N, T, 1); got {X_np.shape}")
-
-    Y_np = np.asarray(Y)
-    if Y_np.ndim > 2:
-        # one-hot per timestep -> class id per sample using first timestep
-        y_classes = np.array([int(np.argmax(y_seq[0])) for y_seq in Y_np], dtype=int)
-    elif Y_np.ndim == 2 and Y_np.shape[1] > 1:
-        # one-hot per sample
-        y_classes = np.array([int(np.argmax(y_row)) for y_row in Y_np], dtype=int)
-    else:
-        y_classes = Y_np.reshape(-1).astype(int)
-
-    unique_classes = np.unique(y_classes)
-    if unique_classes.size == 0:
-        raise ValueError("No classes found in Y")
-
-    # Decide label set
-    if binary is None:
-        binary = unique_classes.size <= 2
-    class_names = BINARY_CLASS_NAMES if binary else CLASS_NAMES
-
-    # Time axis in ms
-    sampling_freq_hz = float(sampling_freq_hz)
-    if sampling_freq_hz <= 0:
-        raise ValueError(f"sampling_freq_hz must be > 0; got {sampling_freq_hz}")
-    t_ms = (np.arange(X_np.shape[1], dtype=np.float64) / sampling_freq_hz) * 1000.0
-
-    # Collect per-class stats
-    class_rows = []  # list[(class_idx, mean, q_lo, q_hi)]
-    for c in unique_classes:
-        mask = y_classes == int(c)
-        seqs = X_np[mask].astype(np.float64, copy=False)
-        if seqs.size == 0:
-            continue
-        mean_wave = np.asarray(seqs.mean(axis=0), dtype=np.float64)
-        q_lo = np.asarray(np.quantile(seqs, float(q_low), axis=0), dtype=np.float64)
-        q_hi = np.asarray(np.quantile(seqs, float(q_high), axis=0), dtype=np.float64)
-
-        class_rows.append((int(c), mean_wave, q_lo, q_hi))
-
-    if len(class_rows) == 0:
-        raise ValueError("No class rows could be constructed (empty masks?)")
-
-    # Consistent y-limits across panels
-    all_y = np.concatenate(
-        [np.asarray(y).reshape(-1) for _, y, *_ in class_rows]
-        + [np.asarray(qlo).reshape(-1) for _, _, qlo, *_ in class_rows]
-        + [np.asarray(qhi).reshape(-1) for _, _, _, qhi, *_ in class_rows]
-    )
-    ymin = float(np.nanmin(all_y))
-    ymax = float(np.nanmax(all_y))
-    pad = 0.05 * (ymax - ymin) if ymax > ymin else 1.0
-    ylim = (ymin - pad, ymax + pad)
-
-    # Okabe–Ito palette (colorblind-friendly)
-    okabe_ito = [
-        "#0072B2",  # blue
-        "#D55E00",  # vermillion
-        "#009E73",  # bluish green
-        "#CC79A7",  # reddish purple
-        "#E69F00",  # orange
-        "#56B4E9",  # sky blue
-        "#F0E442",  # yellow
-        "#000000",  # black
-    ]
-
-    fig, axes = plt.subplots(
-        nrows=len(class_rows),
-        ncols=1,
-        sharex=True,
-        sharey=True,
-        figsize=(10.0, 2.0 * len(class_rows) + 0.9),
-        gridspec_kw={"hspace": 0.12},
-        constrained_layout=True,
-    )
-    if len(class_rows) == 1:
-        axes = np.array([axes])
-
-    from matplotlib.lines import Line2D
-    from matplotlib.patches import Patch
-
-    band_label = f"{int(q_low*100)}–{int(q_high*100)}% band"
-
-    for i, (c, mean_wave, q_lo, q_hi) in enumerate(class_rows):
-        col = okabe_ito[i % len(okabe_ito)]
-        ax_mean = axes[i]
-
-        ax_mean.fill_between(t_ms, q_lo, q_hi, color=col, alpha=0.18, linewidth=0)
-        ax_mean.plot(t_ms, mean_wave, color=col, linewidth=1.9)
-
-        ax_mean.set_ylim(*ylim)
-        ax_mean.grid(True, alpha=0.2)
-
-        name = class_names[c] if int(c) < len(class_names) else f"class {c}"
-        ax_mean.text(
-            0.01,
-            0.88,
-            name,
-            transform=ax_mean.transAxes,
-            fontsize=10,
-            va="top",
-            ha="left",
-            bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 2},
-        )
-
-        # Per-row legend that explains the mark types (mean vs band).
-        # Use the same colour as the plotted traces for consistency.
-        mean_label = f"Mean ({name})"
-        handles = [
-            Line2D([0], [0], color=col, linewidth=1.9, linestyle="-", label=mean_label),
-            Patch(facecolor=col, edgecolor="none", alpha=0.18, label=band_label),
-        ]
-        ax_mean.legend(handles=handles, loc="upper right", fontsize=8, frameon=True)
-
-    axes[-1].set_xlabel("Time (ms)")
-    fig.supylabel("Value")
-    save_figure(fig, os.path.splitext(filename)[0], topic="preprocessing")
-
-    if show:
-        plt.show()
-
-
-def plot_noise(
-    X: np.ndarray,
-    noise: np.ndarray,
-    noisy_X: np.ndarray,
-    *,
-    noise_std: float | None = None,
-    show: bool = True,
-    filename: str = "noise.png",
-) -> None:
-    """
-    Plot the noise in training data.
-
-    Args:
-        X (np.ndarray): Training data.
-        noise (np.ndarray): Noise data.
-        noisy_X (np.ndarray): Augmented data.
-        show (bool, optional): Whether to display the plot. Default is True.
-        filename (str, optional): Filename to save figure to. Default is "noise.png".
-    """
-    sampling_freq = 125
-    num_samples = len(X)
-    time_ms = np.arange(num_samples) / sampling_freq * 1000
-
-    fig, ax = plt.subplots(figsize=(10, 6), constrained_layout=True)
-    ax.plot(time_ms, X, label="Training Data", linestyle="solid", color="orange")
-    noise_label = "Noise"
-    if noise_std is not None:
-        try:
-            noise_label = f"Noise ($\\sigma$={float(noise_std):g})"
-        except Exception:
-            pass
-    ax.plot(time_ms, noise, linestyle="dotted", label=noise_label, color="green")
-    ax.plot(time_ms, noisy_X, linestyle="dashed", label="Augmented Data", color="blue")
-    plt.ylabel('Value')
-    plt.xlabel('Time (ms)')
-    plt.xticks()
-    plt.yticks()
-
-    ax.legend()
-
-    save_figure(fig, os.path.splitext(filename)[0], topic="preprocessing")
-
-    if show:
-        plt.show()
-    plt.close(fig)
-
-
-def visualise_dataset(args: argparse.Namespace) -> None:
-    # Load a reasonably sized dataset for visualisation (no noise/augmentation here).
-    # We load the *raw* waveforms (no standardization) so we can control scaling
-    # per-figure: average/noise use sequence_zscore, and scaler_comparison shows
-    # minmax vs standard vs sequence_zscore on the same raw sample.
-    X_train, Y_train, X_test, Y_test = load_ecg_data(
-        rows=args.rows,
-        test_ratio=args.test_ratio,
-        encode_labels=args.encode_labels,
-        standardize=False,           # we apply scaling explicitly per-plot
-        repeat_targets=False,
-        shuffle=True,
-        binary=args.binary,
-        noise_rate=0.0,
-        noise_ratio=0.0,
-        scaler_type="minmax",       # not used when standardize=False
-        balance_classes=True,
-        max_per_class=None,
-    )
-
-    # 2) Average instances figure (mean + quantile band + multiple exemplars)
-    #    We compute it on sequence_zscore-scaled waveforms.
-    X_train_np = np.asarray(X_train, dtype=np.float64)
-    X_train_scaled, _ = standardize_data(X_train_np, X_train_np, scaler_type="sequence_zscore")
-    plot_average_instances_with_band_and_exemplars(
-        X_train_scaled,
-        np.asarray(Y_train),
-        filename="ecg_average_instances.png",
-        show=False,
-        sampling_freq_hz=_ECG_SAMPLING_FREQ_HZ,
-        example_traces=int(args.example_traces),
-        q_low=0.10,
-        q_high=0.90,
-        seed=int(args.seed),
-        binary=bool(args.binary),
-    )
-
-    # 2b) Save per-instance ECG sample plots
-    if bool(args.save_samples) or bool(args.save_all_samples):
-        labels = _labels_to_class_index(np.asarray(Y_train))
-        class_names = _class_names(binary=bool(args.binary))
-        unique_classes = sorted(set(int(c) for c in np.unique(labels)))
-
-        # Build index lists for each class.
-        idx_by_class: dict[int, list[int]] = {}
-        for c in unique_classes:
-            idx_by_class[int(c)] = [int(i) for i in np.where(labels == int(c))[0].tolist()]
-
-        rng = np.random.RandomState(int(args.seed))
-        for c in unique_classes:
-            idxs = idx_by_class.get(int(c), [])
-            if len(idxs) == 0:
-                continue
-
-            # Choose which indices to save.
-            if bool(args.save_all_samples):
-                picked = idxs
-            else:
-                k = int(args.samples_per_class)
-                k = max(1, k)  # default: 1 per class
-                k = min(k, len(idxs))
-                picked = [int(i) for i in rng.choice(idxs, size=k, replace=False).tolist()]
-
-            name = class_names[int(c)] if int(c) < len(class_names) else f"class_{int(c)}"
-            # Folder must be safe for filesystem.
-            folder = name.replace(" ", "_")
-            for i in picked:
-                x = np.asarray(X_train[i]).reshape(-1)
-                # Save to results/figures/dataset/samples/<class>/<index>.png
-                out = os.path.join("dataset", "samples", folder, f"{int(i)}.png")
-                _save_ecg_sample_plot(
-                    x=x,
-                    class_name=name,
-                    index_within_class=int(i),
-                    filename=out,
-                    show=False,
-                    sampling_freq_hz=_ECG_SAMPLING_FREQ_HZ,
-                )
-
-    # 3) Noise example on a single sample
-    x_single, y_single = _select_single_sample(
-        X_train,
-        Y_train,
-        index=int(args.single_index),
-        target_class=(int(args.single_class) if args.single_class is not None else None),
-    )
-    # Noise plot uses sequence_zscore-scaled input (same scaling convention as average-instance figs)
-    # Per-sequence z-score *for this single instance* (avoid object-dtype pitfalls).
-    x_single = np.asarray(x_single, dtype=np.float64).reshape(-1)
-    mu = float(np.mean(x_single))
-    sigma = float(np.std(x_single))
-    if sigma < 1e-8:
-        sigma = 1.0
-    x_single = (x_single - mu) / sigma
-    noise, noisy_x = _make_noise_example(x_single, noise_std=args.noise_std, seed=args.seed)
-    plot_noise(
-        x_single,
-        noise,
-        noisy_x,
-        noise_std=float(args.noise_std),
-        filename="ecg_noise_example.png",
-        show=False,
-    )
-
-    # 4) Comparison of scaling methods for a single sample
-    #    We'll take the same sample, put it in a tiny dataset, and run both scalers.
-    # For the comparison plot we want to compare scalers starting from the same *raw* signal.
-    # Build a small raw subset for fitting scaler parameters.
-    X_single_dataset = np.array(X_train[: min(len(X_train), 128)])  # small subset for fitting scalers
-    X_single_dataset = X_single_dataset.reshape(X_single_dataset.shape[0], -1, 1)
-
-    # Ensure the selected instance is the one we plot after scaling by placing it at index 0.
-    # (standardize_data returns scaled arrays aligned with the input order.)
-    # IMPORTANT: `x_single` above is sequence_zscore-scaled for the noise figure.
-    # For the scaler comparison, we need the raw selected sample again.
-    x_single_raw, _ = _select_single_sample(
-        X_train,
-        Y_train,
-        index=int(args.single_index),
-        target_class=(int(args.single_class) if args.single_class is not None else None),
-    )
-    X_single_dataset[0] = np.asarray(x_single_raw).reshape(-1, 1)
-
-    # Original unscaled version of the chosen sample
-    x_orig = X_single_dataset[0].reshape(-1)
-
-    # Min-max scaling
-    X_mm, _ = standardize_data(X_single_dataset, X_single_dataset, scaler_type="sequence_minmax_pos")
-    x_mm = X_mm[0].reshape(-1)
-
-    # Standard (z-score) scaling
-    X_std, _ = standardize_data(X_single_dataset, X_single_dataset, scaler_type="standard")
-    x_std = X_std[0].reshape(-1)
-
-    # Per-sequence (z-score) scaling
-    X_zscore, _ = standardize_data(X_single_dataset, X_single_dataset, scaler_type="sequence_zscore")
-    x_zscore = X_zscore[0].reshape(-1)
-
-    # Plot comparison
-    import matplotlib.pyplot as plt
-
-
-    # Accessibility + readability: small multiples (4 subplots) instead of 4 overlapping lines.
-    t_ms = _time_axis_ms(len(x_orig))
-
-    # Okabe–Ito palette (https://jfly.uni-koeln.de/color/)
-    palette = {
-        "black": "#000000",
-        "blue": "#0072B2",
-        "vermillion": "#D55E00",
-        "bluish_green": "#009E73",
-    }
-
-    # Single overlay plot is clearer here: we distinguish methods using linestyle/alpha,
-    # and we emphasize the chosen scaler (per-sequence z-score).
-    # Match the noise figure height so the waveform is easy to read.
-    fig, ax = plt.subplots(figsize=(10, 6), constrained_layout=True)
-
-    l_mm = ax.plot(
-        t_ms,
-        x_mm,
-        color=palette["blue"],
-        alpha=0.28,
-        linewidth=1.6,
-        label="Min-max (reference)",
-    )[0]
-    l_std = ax.plot(
-        t_ms,
-        x_std,
-        color=palette["vermillion"],
-        linewidth=1.7,
-        linestyle=(0, (4, 2)),
-        label="Z-score (standard)",
-    )[0]
-    l_z = ax.plot(
-        t_ms,
-        x_zscore,
-        color=palette["bluish_green"],
-        linewidth=2.1,
-        linestyle="-",
-        label="Z-score (per-seq) [used]",
-    )[0]
-
-    ax.grid(True, alpha=0.2)
-    ax.set_xlabel("Time (ms)")
-    ax.set_ylabel("Value")
-    ax.legend(handles=[l_mm, l_std, l_z], loc="upper right", fontsize=9, frameon=True)
-
-    # No figure title (paper-friendly and avoids overlap)
-    save_figure(fig, "ecg_scalers_comparison", topic="preprocessing")
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
+
+from training.run import load_config, load_task, resolve
+from utils.preprocessing import class_indices
+from utils.visualisation import CLASS_COLOURS, SINGLE_COLUMN, STYLE, class_names, save_figure
+
+SAMPLING_HZ = 125  # the beats of the prepared dataset are sampled at 125 Hz
+BAND = (0.1, 0.9)
+
+
+def class_bands(X: np.ndarray, Y: np.ndarray) -> dict[int, tuple]:
+    """For each class: its mean beat, the 10% and 90% quantiles at each time, its count."""
+    beats = np.asarray(X, dtype=float).reshape(len(X), -1)
+    y = class_indices(Y)
+    return {int(c): (beats[y == c].mean(axis=0), *np.quantile(beats[y == c], BAND, axis=0),
+                     int(np.sum(y == c))) for c in np.unique(y)}
+
+
+def draw(bands: dict[int, tuple], names: tuple[str, ...], ylabel: str) -> plt.Figure:
+    """One row per class: the band in a light shade of the class colour, the mean over it."""
+    fig, axes = plt.subplots(len(bands), 1, sharex=True, sharey=True, squeeze=False,
+                             figsize=(SINGLE_COLUMN, 0.75 * len(bands) + 0.7))
+    for ax, (c, (mean, low, high, count)) in zip(axes[:, 0], bands.items(), strict=True):
+        colour = CLASS_COLOURS[names[c]]
+        t = np.arange(len(mean)) * 1000 / SAMPLING_HZ
+        ax.fill_between(t, low, high, color=colour, alpha=0.25, lw=0)
+        ax.plot(t, mean, color=colour)
+        ax.text(0.99, 0.95, f"{names[c]} (n = {count:,})", transform=ax.transAxes,
+                ha="right", va="top")
+    axes[-1, 0].set_xlabel("Time (ms)")
+    fig.supylabel(ylabel, fontsize=STYLE["axes.labelsize"])
+    fig.legend(handles=[Line2D([], [], color="0.3", label="Mean"),
+                        Patch(color="0.3", alpha=0.25, lw=0,
+                              label=f"{BAND[0]:.0%}\u2013{BAND[1]:.0%} of beats")],
+               loc="outside upper center", ncols=2)
+    return fig
 
 
 def main() -> None:
-    plt.style.use(STYLE)
-    parser = argparse.ArgumentParser(description="Visualise ECG classification dataset")
-    parser.add_argument("--rows", type=int, default=5000, help="Number of training rows to load")
-    parser.add_argument("--test-ratio", type=float, default=0.2, help="Test split ratio")
-    parser.add_argument("--encode-labels", action="store_true", help="One-hot encode labels (matches training setup)")
-    parser.add_argument("--binary", action="store_true", help="Use binary classification version of the ECG dataset")
-    parser.add_argument("--noise-std", type=float, default=0.2, help="Std dev of additive Gaussian noise for single-sample example")
-    parser.add_argument("--seed", type=int, default=1337, help="Random seed for noise example")
-    parser.add_argument(
-        "--example-traces",
-        type=int,
-        default=5,
-        help="Number of example ECG instances to overlay per class in the average-instances figure",
-    )
-    parser.add_argument(
-        "--single-index",
-        type=int,
-        default=0,
-        help=(
-            "Index of the single ECG instance used for the noise + scaler comparison figures. "
-            "If --single-class is also set, this is the index *within that class* (after shuffling)."
-        ),
-    )
-    parser.add_argument(
-        "--single-class",
-        type=int,
-        default=None,
-        help=(
-            "Optional class index constraint for selecting the single ECG instance. "
-            "If set, the instance is chosen from this class only (and --single-index is within-class)."
-        ),
-    )
-
-    # Save per-instance ECG trace plots under results/figures/dataset/samples/<class>/<index>.png
-    parser.add_argument(
-        "--save-samples",
-        action="store_true",
-        help="Save ECG instance plots under results/figures/dataset/samples/<class>/<index>.png (defaults to 1 per class)",
-    )
-    parser.add_argument(
-        "--samples-per-class",
-        type=int,
-        default=1,
-        help="How many ECG instances to save per class (ignored if --save-all-samples)",
-    )
-    parser.add_argument(
-        "--save-all-samples",
-        action="store_true",
-        help="Save *all* ECG instances per class (can generate lots of files)",
-    )
-
+    parser = argparse.ArgumentParser(description="Draw the beats of a run config's task.")
+    parser.add_argument("config", type=Path,
+                        help="A run config, e.g. experiments/v0.2/designs/centre.yaml.")
     args = parser.parse_args()
-    visualise_dataset(args)
+
+    cfg = load_config(args.config)
+    cfg.pop("study", None)
+    cfg = resolve(cfg)
+    X, Y, _ = load_task(cfg["task"])
+    names = class_names(2 if cfg["task"]["labels"] == "binary" else 5)
+    scaler = cfg["task"]["scaler"]
+    ylabel = ("ECG, z-score of each beat" if scaler == "sequence_zscore"
+              else f"ECG ({scaler} scaling)")
+    bands = class_bands(X, Y)
+
+    plt.style.use(STYLE)
+    paths = save_figure(draw(bands, names, ylabel), f"{cfg['name']}-beats", topic="dataset")
+    for c, band in bands.items():
+        print(f"{names[c]:<17} {band[-1]:>6,} beats")
+    print("Saved:", ", ".join(str(p) for p in paths))
 
 
 if __name__ == "__main__":

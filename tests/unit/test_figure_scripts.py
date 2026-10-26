@@ -101,14 +101,39 @@ class TestModelFigures:
                                       "topology/weight_vs_distance_matrix.png"]
 
 
-class TestDatasetFigures:
-    def test_average_noise_scaler_and_sample_figures(self, figure_dir, ecg_data, run_script):
-        run_script("figures/visualise_dataset", "--rows", 100, "--save-samples")
-        saved = _saved(figure_dir)
-        assert [p for p in saved if p.startswith("preprocessing/")] == [
-            "preprocessing/ecg_average_instances.png", "preprocessing/ecg_noise_example.png",
-            "preprocessing/ecg_scalers_comparison.png"]
-        assert len([p for p in saved if p.startswith("dataset/samples/")]) == 5
+class TestDatasetFigure:
+    """scripts/figures/visualise_dataset.py draws the beats of a run config's task."""
+
+    def test_each_class_has_its_mean_band_and_count(self, load_script):
+        script = load_script("figures/visualise_dataset")
+        beats = np.array([[0.0, 1.0], [2.0, 3.0], [4.0, 5.0], [9.0, 9.0]])
+        bands = script.class_bands(beats[:, :, None], np.eye(2)[[0, 0, 0, 1]][:, None, :])
+        mean, low, high, count = bands[0]
+        np.testing.assert_allclose(mean, [2.0, 3.0])
+        np.testing.assert_allclose([low, high], [[0.4, 1.4], [3.6, 4.6]])
+        assert (count, bands[1][-1]) == (3, 1)
+
+    def test_one_row_per_class_within_the_journal_rules(self, load_script, pyplot):
+        from utils.visualisation import CLASS_NAMES, STYLE, figure_problems
+
+        script = load_script("figures/visualise_dataset")
+        beats = np.random.default_rng(0).normal(size=(50, 187))
+        with pyplot.style.context(STYLE):
+            fig = script.draw(script.class_bands(beats, np.repeat(np.arange(5), 10)),
+                              CLASS_NAMES, "ECG")
+        assert [ax.texts[0].get_text() for ax in fig.axes] == [f"{name} (n = 10)"
+                                                               for name in CLASS_NAMES]
+        assert figure_problems(fig) == []
+
+    def test_the_script_reads_the_task_of_a_run_config(self, tmp_path, figure_dir, ecg_data,
+                                                       run_script, capsys):
+        config = tmp_path / "toy.yaml"
+        config.write_text("name: toy\ntask: {rows: 100}\nreservoir: {type: none}\n"
+                          "readout: {classifier: RidgeCV}\n")
+        run_script("figures/visualise_dataset", config)
+        assert _saved(figure_dir) == ["dataset/toy-beats.png"]
+        counts = [int(line.split()[1]) for line in capsys.readouterr().out.splitlines()[:5]]
+        assert sum(counts) == 100
 
 
 class TestHeterogeneityFigure:
