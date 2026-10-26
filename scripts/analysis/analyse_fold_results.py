@@ -61,7 +61,6 @@ from utils.preprocessing import class_indices
 from utils.results import FoldArtifact
 from utils.visualisation import (
     CLASS_COLOURS,
-    SINGLE_COLUMN,
     STYLE,
     class_names,
     plot_confusion_matrix,
@@ -193,13 +192,13 @@ def plot_state_pca(states: np.ndarray, labels: np.ndarray, name: str) -> None:
     explained = pca[-1].explained_variance_ratio_
     y = class_indices(labels)
     names = class_names(np.asarray(labels).shape[-1])
-    fig, ax = plt.subplots(figsize=(SINGLE_COLUMN, 2.6))
+    fig, ax = plt.subplots(figsize=(8, 6))
     for c in np.unique(y):
-        ax.scatter(*points[y == c].T, s=6, alpha=0.6, color=CLASS_COLOURS[names[c]],
+        ax.scatter(*points[y == c].T, s=20, alpha=0.6, color=CLASS_COLOURS[names[c]],
                    marker="os^Dv"[c % 5], edgecolors="none", label=names[c])
     ax.set_xlabel(f"PC 1 ({explained[0]:.0%} of the variance)")
     ax.set_ylabel(f"PC 2 ({explained[1]:.0%} of the variance)")
-    ax.legend(markerscale=2)
+    ax.legend(markerscale=2, loc="center left", bbox_to_anchor=(1.0, 0.5), frameon=False)
     save_figure(fig, name, topic="metrics")
 
 

@@ -1,16 +1,13 @@
 """Figure helpers: the house style, the names and colours of the classes, and shared plots.
 
-The house style :data:`STYLE` follows the figure rules of ACS Synthetic Biology. A figure is
-one column (:data:`SINGLE_COLUMN`, 3.25 in) or two columns (:data:`DOUBLE_COLUMN`, 7 in) wide
-and at most :data:`MAX_HEIGHT` (9.5 in) high; its lettering is sans-serif (Arial or Helvetica
-where installed, else matplotlib's DejaVu Sans) and at least 5 pt at that size; its lines are
-at least 1 pt wide. For readers with a colour-vision deficiency, categories take the
-Okabe-Ito colours (:data:`OKABE_ITO`), each ECG class always the same one
-(:data:`CLASS_COLOURS`), and continuous values a single-hue or perceptually uniform colour
-map ("Blues", "viridis"). Figure scripts call ``plt.style.use(STYLE)`` and draw at the printed
-size. :func:`save_figure` writes a PNG and a PDF whose text stays text (TrueType), and warns
-about anything that :func:`figure_problems` finds. Importing this module changes no
-matplotlib setting.
+The house style :data:`STYLE` is the look of the ``v0.1`` figures: seaborn's "ticks" style
+with 15 pt text, on figures drawn large (10 to 14 in wide) and reduced to fit the page.
+Figure scripts call ``plt.style.use(STYLE)``; importing this module changes no matplotlib
+setting. Categories take the Okabe-Ito colours (:data:`OKABE_ITO`), each ECG class always
+the same one (:data:`CLASS_COLOURS`). :func:`save_figure` writes a PNG and a PDF whose text
+stays text (TrueType), and warns about anything that :func:`figure_problems` finds once the
+figure is printed: ACS Synthetic Biology prints a figure at most two columns (7 in) wide and
+asks for text of at least 5 pt and lines of at least 1 pt at that size.
 """
 
 from __future__ import annotations
@@ -22,7 +19,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from cycler import cycler
+import seaborn as sns
 from matplotlib.text import Text
 
 from utils import config
@@ -33,7 +30,7 @@ logger = logging.getLogger(__name__)
 SINGLE_COLUMN, DOUBLE_COLUMN, MAX_HEIGHT = 3.25, 7.0, 9.5
 #: The smallest text size and line width at the printed size, in points.
 MIN_FONT_SIZE, MIN_LINE_WIDTH = 5.0, 1.0
-#: Resolution of the PNG files, in dots per inch.
+#: Resolution of the PNG files at the printed size, in dots per inch.
 DPI = 600
 
 #: The Okabe-Ito colours: blue, vermillion, bluish green, reddish purple, orange, sky blue,
@@ -51,42 +48,8 @@ CLASS_COLOURS = {name: OKABE_ITO[i] for i, name in enumerate(CLASS_NAMES)} | {
 #: the cells and in the medium around them.
 STATE_NAMES = {"I": "LuxI", "A": "AiiA", "Hi": "AHL (cells)", "He": "AHL (medium)"}
 
-STYLE = {
-    "figure.figsize": (SINGLE_COLUMN, 2.4),
-    "figure.dpi": 150,
-    "figure.constrained_layout.use": True,
-    "font.family": "sans-serif",
-    "font.sans-serif": ["Arial", "Helvetica", "Liberation Sans", "DejaVu Sans"],
-    "mathtext.default": "regular",
-    "font.size": 7,
-    "axes.titlesize": 7,
-    "axes.labelsize": 7,
-    "figure.titlesize": 8,
-    "xtick.labelsize": 6,
-    "ytick.labelsize": 6,
-    "legend.fontsize": 6,
-    "legend.title_fontsize": 7,
-    "legend.frameon": False,
-    "axes.linewidth": 1.0,
-    "axes.spines.top": False,
-    "axes.spines.right": False,
-    "axes.prop_cycle": cycler(color=OKABE_ITO),
-    "lines.linewidth": 1.5,
-    "lines.markersize": 4,
-    "patch.linewidth": 1.0,
-    "grid.linewidth": 1.0,
-    "xtick.major.width": 1.0,
-    "ytick.major.width": 1.0,
-    "xtick.minor.width": 1.0,
-    "ytick.minor.width": 1.0,
-    "xtick.major.size": 3,
-    "ytick.major.size": 3,
-    "image.cmap": "viridis",
-    "savefig.dpi": DPI,
-    "pdf.fonttype": 42,
-    "ps.fonttype": 42,
-    "svg.fonttype": "none",
-}
+#: The house style: seaborn's "ticks" style with 15 pt text.
+STYLE = {**sns.axes_style("ticks"), "font.size": 15}
 
 
 def class_names(n_classes: int) -> tuple[str, ...]:
@@ -94,56 +57,70 @@ def class_names(n_classes: int) -> tuple[str, ...]:
     return BINARY_CLASS_NAMES if n_classes == 2 else CLASS_NAMES[:n_classes]
 
 
-def figure_problems(fig) -> list[str]:
-    """What in ``fig`` breaks the journal's rules at its printed size, one sentence each.
+def printed_width(fig) -> float:
+    """The width, in inches, at which ``fig`` is printed: its own as :func:`save_figure`
+    crops it, reduced to two columns (7 in) if it is wider."""
+    fig.draw_without_rendering()
+    return min(fig.get_tightbbox().width, DOUBLE_COLUMN)
 
-    The figure is measured as :func:`save_figure` crops it: its width and height, the size
-    of every visible text, and the width of every line drawn on an Axes or in a legend
-    (tick marks and grid lines follow the style).
+
+def figure_problems(fig, width: float | None = None) -> list[str]:
+    """What in ``fig`` breaks the journal's rules once printed ``width`` inches wide.
+
+    ``width`` defaults to :func:`printed_width`. The figure is measured as
+    :func:`save_figure` crops it and scaled to ``width``, and so are its text and lines.
+    Checked: the printed height, the size of every visible text, and the width of every line
+    drawn on an Axes or in a legend (tick marks and grid lines follow the style). Returns one
+    sentence per problem.
     """
     fig.draw_without_rendering()
     box = fig.get_tightbbox()
+    width = printed_width(fig) if width is None else width
+    scale = width / box.width
     problems = []
-    if box.width > DOUBLE_COLUMN + 0.01:
-        problems.append(f"it is {box.width:.2f} in wide; a page is {DOUBLE_COLUMN:g} in wide "
-                        f"and a column {SINGLE_COLUMN:g} in")
-    if box.height > MAX_HEIGHT + 0.01:
-        problems.append(f"it is {box.height:.2f} in high; a page is {MAX_HEIGHT:g} in high")
-    small = sorted({(t.get_fontsize(), t.get_text()) for t in fig.findobj(Text)
+    if width > DOUBLE_COLUMN + 0.01:
+        problems.append(f"{width:.2f} in is wider than a page ({DOUBLE_COLUMN:g} in)")
+    if box.height * scale > MAX_HEIGHT + 0.01:
+        problems.append(f"it is {box.height * scale:.2f} in high; a page is {MAX_HEIGHT:g} in")
+    small = sorted({(t.get_fontsize() * scale, t.get_text()) for t in fig.findobj(Text)
                     if t.get_visible() and t.get_text().strip()
-                    and t.get_fontsize() < MIN_FONT_SIZE})
+                    and t.get_fontsize() * scale < MIN_FONT_SIZE})
     if small:
-        problems.append(f"{len(small)} texts are smaller than {MIN_FONT_SIZE:g} pt, such as "
-                        f"{small[0][1]!r} at {small[0][0]:g} pt")
+        problems.append(f"{len(small)} texts are under {MIN_FONT_SIZE:g} pt, such as "
+                        f"{small[0][1]!r} at {small[0][0]:.1f} pt")
     legends = [*fig.legends, *(ax.get_legend() for ax in fig.axes if ax.get_legend())]
     lines = [*(line for ax in fig.axes for line in ax.get_lines()),
              *(line for legend in legends for line in legend.get_lines())]
-    thin = [line.get_linewidth() for line in lines
+    thin = [line.get_linewidth() * scale for line in lines
             if line.get_visible() and line.get_linestyle() not in ("None", "", " ")
-            and 0 < line.get_linewidth() < MIN_LINE_WIDTH]
+            and 0 < line.get_linewidth() * scale < MIN_LINE_WIDTH]
     if thin:
-        problems.append(f"{len(thin)} lines are thinner than {MIN_LINE_WIDTH:g} pt, the "
-                        f"thinnest {min(thin):g} pt")
+        problems.append(f"{len(thin)} lines are under {MIN_LINE_WIDTH:g} pt, the thinnest "
+                        f"{min(thin):.2f} pt")
     return problems
 
 
 def save_figure(fig, name: str, *, topic: str = "", folder: str | Path | None = None,
-                formats: Sequence[str] = ("png", "pdf"), dpi: float | None = None) -> list[Path]:
+                formats: Sequence[str] = ("png", "pdf"), width: float | None = None,
+                dpi: float | None = None) -> list[Path]:
     """Save ``fig`` as ``<folder>/<name>.<format>`` in each format and close it.
 
-    ``folder`` defaults to ``results/figures/<topic>`` (see :mod:`utils.config`). The PDF is
-    vector, with its text kept as TrueType text; the PNG has ``dpi`` dots per inch (default
-    :data:`DPI`). A warning is logged for each of :func:`figure_problems`. Returns the files
-    written, in the order of ``formats``.
+    ``folder`` defaults to ``results/figures/<topic>`` (see :mod:`utils.config`). ``width``
+    is the printed width in inches (default :func:`printed_width`): a warning is logged for
+    each of :func:`figure_problems` at that width, and the PNG has :data:`DPI` dots per inch
+    at that width unless ``dpi`` is given. The PDF is vector, with its text kept as TrueType
+    text. Returns the files written, in the order of ``formats``.
     """
-    for problem in figure_problems(fig):
-        logger.warning("Figure %s: %s.", name, problem)
+    width = printed_width(fig) if width is None else width
+    for problem in figure_problems(fig, width):
+        logger.warning("Figure %s, printed %.2g in wide: %s.", name, width, problem)
+    dpi = dpi or DPI * width / fig.get_tightbbox().width
     folder = Path(folder) if folder is not None else config.figures_dir(topic)
     paths = [folder / f"{name}.{fmt}" for fmt in formats]
-    with plt.rc_context({"pdf.fonttype": 42, "ps.fonttype": 42, "svg.fonttype": "none"}):
+    with plt.rc_context({"pdf.fonttype": 42, "ps.fonttype": 42}):
         for path in paths:
             path.parent.mkdir(parents=True, exist_ok=True)
-            fig.savefig(path, dpi=dpi or DPI, bbox_inches="tight", pad_inches=0.02)
+            fig.savefig(path, dpi=dpi, bbox_inches="tight", pad_inches=0.02)
     plt.close(fig)
     return paths
 
@@ -154,11 +131,12 @@ def plot_confusion_matrix(confusion_matrix, ax=None, *, labels: Sequence[str] | 
     the beats of true class ``i`` were labelled and the diagonal is the recall of each class.
 
     ``labels`` defaults to the names of the classes (:func:`class_names`). Without ``ax`` the
-    matrix is drawn in a new one-column figure in the house style. Returns the Axes.
+    matrix is drawn in a new 10 x 8 in figure in the house style, as in ``v0.1``. Returns the
+    Axes.
     """
     if ax is None:
         with plt.style.context(STYLE):
-            _, ax = plt.subplots(figsize=(SINGLE_COLUMN, 2.8))
+            _, ax = plt.subplots(figsize=(10, 8))
             return plot_confusion_matrix(confusion_matrix, ax, labels=labels, colorbar=colorbar)
     counts = np.asarray(confusion_matrix, dtype=float)
     shares = counts / np.maximum(counts.sum(axis=1, keepdims=True), 1.0)
@@ -196,7 +174,7 @@ def plot_sweep(scores: Mapping[float, Sequence[float]], ax=None, *,
     one Axes. Dots are shifted sideways by up to
     ``jitter`` level spacings, the same way every time (``jitter_seed``). ``reference`` adds
     a dashed line, for example the score without the swept effect. Without ``ax`` the sweep
-    is drawn in a new one-column figure in the house style. Returns the Axes.
+    is drawn in a new figure in the house style. Returns the Axes.
 
     Examples
     --------

@@ -213,7 +213,7 @@ def plot_comparison(out: Path, result: dict[str, Any], folds_a: list, folds_b: l
     import matplotlib.pyplot as plt
     from sklearn.metrics import confusion_matrix
 
-    from utils.visualisation import DOUBLE_COLUMN, STYLE, plot_confusion_matrix, save_figure
+    from utils.visualisation import STYLE, plot_confusion_matrix, save_figure
 
     def save(fig, name):
         save_figure(fig, name, folder=out, formats=("png",), dpi=300)
@@ -228,7 +228,7 @@ def plot_comparison(out: Path, result: dict[str, Any], folds_a: list, folds_b: l
         ax.legend()
         save(fig, "fold_f1")
 
-        fig, axes = plt.subplots(1, 2, figsize=(DOUBLE_COLUMN, 2.9))
+        fig, axes = plt.subplots(1, 2, figsize=(16, 7.5), sharey=True)
         for ax, folds, name in ((axes[0], folds_a, result["a"]), (axes[1], folds_b, result["b"])):
             labels = np.arange(np.asarray(folds[0].Y_test).shape[-1])
             y_true = np.concatenate([_classes(f.Y_test) for f in folds])
@@ -236,6 +236,7 @@ def plot_comparison(out: Path, result: dict[str, Any], folds_a: list, folds_b: l
             plot_confusion_matrix(confusion_matrix(y_true, y_pred, labels=labels), ax,
                                   colorbar=ax is axes[1])
             ax.set_title(name)
+        axes[1].set_ylabel("")
         save(fig, "confusion_matrices")
 
         states = []
@@ -244,12 +245,13 @@ def plot_comparison(out: Path, result: dict[str, Any], folds_a: list, folds_b: l
                 states.append(data["test_states"][:3].reshape(3, -1)
                               if "test_states" in data.files else None)
         if all(s is not None for s in states) and states[0].shape == states[1].shape:
-            fig, axes = plt.subplots(3, 1, figsize=(DOUBLE_COLUMN, 4.5), sharex=True)
+            fig, axes = plt.subplots(3, 1, figsize=(7, 5), sharex=True, layout="constrained")
             for k, ax in enumerate(axes):
                 ax.plot(states[0][k], lw=1.0, label=result["a"])
                 ax.plot(states[1][k], lw=1.0, alpha=0.7, label=result["b"])
                 ax.set_ylabel(f"Beat {k}")
-            axes[0].legend()
+            fig.legend(*axes[0].get_legend_handles_labels(), loc="outside lower center",
+                       ncols=2, frameon=False)
             axes[-1].set_xlabel("Feature (unit x observed variable)")
             fig.suptitle("State features of the first test beats of the first fold")
             save(fig, "state_features")

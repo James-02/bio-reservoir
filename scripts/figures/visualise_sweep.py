@@ -79,7 +79,7 @@ def draw(scores: dict, x: str, by: str | None = None, ylabel: str = "Macro-F1",
     if by is None:
         ax.legend()
     else:
-        ax.legend(title=label(by), loc="upper left", bbox_to_anchor=(1.0, 1.0))
+        ax.legend(title=label(by))
     return fig
 
 

@@ -120,7 +120,7 @@ def draw_colony(no_beat: np.ndarray, driven: dict[float, np.ndarray], beat: np.n
     axes[-1].plot(t, beat[:, 0], color="0.3")
     axes[-1].set_ylabel(beat_label)
     axes[-1].set_xlabel("Time from the start of the beat (steps)")
-    fig.supylabel("Level (model units)", fontsize=STYLE["axes.labelsize"])
+    fig.supylabel("Level (model units)", fontsize="medium")
     return fig
 
 

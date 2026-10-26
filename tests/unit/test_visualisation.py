@@ -5,6 +5,7 @@ import subprocess
 import sys
 
 import numpy as np
+import pytest
 
 from utils import visualisation as vis
 
@@ -18,15 +19,12 @@ class TestStyle:
                              check=True)
         assert out.stdout.strip() == "[]"
 
-    def test_text_and_lines_are_large_enough_and_the_pdf_text_is_truetype(self, pyplot):
+    def test_the_style_is_the_v0_1_look(self, pyplot):
         with pyplot.style.context(vis.STYLE):
             rc = pyplot.rcParams
-            sizes = [rc[k] for k in ("font.size", "axes.labelsize", "axes.titlesize",
-                                     "xtick.labelsize", "ytick.labelsize", "legend.fontsize")]
-            widths = [rc[k] for k in ("lines.linewidth", "axes.linewidth", "patch.linewidth",
-                                      "grid.linewidth", "xtick.major.width", "ytick.major.width")]
-            assert min(sizes) >= vis.MIN_FONT_SIZE and min(widths) >= vis.MIN_LINE_WIDTH
-            assert rc["figure.figsize"][0] == vis.SINGLE_COLUMN and rc["pdf.fonttype"] == 42
+            assert rc["font.size"] == 15 and not rc["axes.grid"]
+            assert (rc["xtick.direction"], rc["xtick.bottom"], rc["ytick.left"]) == ("out", True,
+                                                                                     True)
 
     def test_each_class_has_its_own_okabe_ito_colour(self):
         assert set(vis.CLASS_COLOURS) == {*vis.CLASS_NAMES, *vis.BINARY_CLASS_NAMES}
@@ -41,22 +39,38 @@ class TestStyle:
 
 
 class TestFigureProblems:
-    def test_a_figure_in_the_house_style_has_none(self, pyplot):
+    """The check measures a figure at its printed size: at most two columns, 7 in."""
+
+    def test_a_large_figure_in_the_house_style_has_none(self, pyplot):
         with pyplot.style.context(vis.STYLE):
-            fig, ax = pyplot.subplots()
+            fig, ax = pyplot.subplots(figsize=(10, 6))
             ax.plot([0, 1], [1, 0], label="A line")
             ax.set(xlabel="Time (min)", ylabel="LuxI")
             ax.legend()
+        assert vis.printed_width(fig) == vis.DOUBLE_COLUMN
         assert vis.figure_problems(fig) == []
 
-    def test_size_small_text_and_thin_lines_are_reported(self, pyplot):
-        fig, ax = pyplot.subplots(figsize=(10, 14))
-        ax.plot([0, 1], [1, 0], lw=0.5)
-        ax.set_xlabel("tiny", fontsize=4)
-        wide, high, text, lines = vis.figure_problems(fig)
-        assert "wide" in wide and "high" in high
-        assert "1 texts are smaller than 5 pt, such as 'tiny' at 4 pt" == text
-        assert "1 lines are thinner than 1 pt, the thinnest 0.5 pt" == lines
+    def test_text_lines_and_height_are_measured_after_the_reduction(self, pyplot):
+        fig, ax = pyplot.subplots(figsize=(14, 20))
+        ax.plot([0, 1], [1, 0], lw=1.5)
+        ax.set_xlabel("small", fontsize=7)
+        assert vis.printed_width(fig) == vis.DOUBLE_COLUMN
+        box = fig.get_tightbbox()  # cropped to about 11 x 16 in
+        scale = vis.DOUBLE_COLUMN / box.width
+        assert 0.6 < scale < 0.66
+        assert vis.figure_problems(fig) == [
+            f"it is {box.height * scale:.2f} in high; a page is 9.5 in",
+            f"1 texts are under 5 pt, such as 'small' at {7 * scale:.1f} pt",
+            f"1 lines are under 1 pt, the thinnest {1.5 * scale:.2f} pt"]
+
+    def test_a_narrower_printed_width_can_be_asked_for(self, pyplot):
+        fig, ax = pyplot.subplots(figsize=(7, 4))
+        ax.set_xlabel("label", fontsize=8)
+        assert vis.figure_problems(fig) == []  # printed as cropped, about 5.7 in wide
+        scale = vis.SINGLE_COLUMN / fig.get_tightbbox().width
+        assert vis.figure_problems(fig, vis.SINGLE_COLUMN)[0] == (
+            f"1 texts are under 5 pt, such as 'label' at {8 * scale:.1f} pt")
+        assert vis.figure_problems(fig, 8.0)[0] == "8.00 in is wider than a page (7 in)"
 
 
 class TestSaveFigure:
@@ -76,15 +90,22 @@ class TestSaveFigure:
         content = pdf.read_bytes()
         assert b"/FontFile2" in content and b"/Type3" not in content
 
+    def test_the_png_has_600_dots_per_inch_at_the_printed_size(self, tmp_path, pyplot):
+        fig, ax = pyplot.subplots(figsize=(14, 4))
+        ax.plot([0, 1], [1, 0])
+        (png,) = vis.save_figure(fig, "wide", folder=tmp_path, formats=("png",))
+        assert pyplot.imread(png).shape[1] == pytest.approx(vis.DPI * vis.DOUBLE_COLUMN, rel=0.01)
+
     def test_a_figure_that_breaks_the_rules_is_saved_with_a_warning(self, figure_dir, pyplot,
                                                                      caplog):
-        fig, ax = pyplot.subplots()
+        fig, ax = pyplot.subplots(figsize=(6, 4))
         ax.set_title("small", fontsize=3)
         with caplog.at_level(logging.WARNING, logger="utils.visualisation"):
             (png,) = vis.save_figure(fig, "small", formats=("png",))
         assert png.is_file()
-        assert caplog.messages == ["Figure small: 1 texts are smaller than 5 pt, such as "
-                                   "'small' at 3 pt."]
+        (message,) = caplog.messages
+        assert message.startswith("Figure small, printed ")
+        assert message.endswith("in wide: 1 texts are under 5 pt, such as 'small' at 3.0 pt.")
 
     def test_a_folder_can_be_given(self, tmp_path, pyplot):
         fig, _ = pyplot.subplots()
@@ -113,10 +134,10 @@ class TestConfusionMatrix:
         ax = vis.plot_confusion_matrix(np.array([[2, 0], [0, 0]]))
         np.testing.assert_array_equal(ax.images[0].get_array(), [[1, 0], [0, 0]])
 
-    def test_alone_it_is_a_one_column_figure_in_the_house_style(self, pyplot):
+    def test_alone_it_is_the_v0_1_figure_in_the_house_style(self, pyplot):
         pyplot.rcParams["font.size"] = 12
         ax = vis.plot_confusion_matrix(self.COUNTS)
-        assert ax.figure.get_size_inches()[0] == vis.SINGLE_COLUMN
+        assert tuple(ax.figure.get_size_inches()) == (10, 8)
         assert ax.texts[0].get_fontsize() == vis.STYLE["font.size"]
         assert pyplot.rcParams["font.size"] == 12
         assert vis.figure_problems(ax.figure) == []
@@ -192,7 +213,7 @@ class TestSweep:
         ax = self._draw(pyplot, scores={"final": [0.8, 0.82], "images:2": [0.85, 0.86]})
         assert [t.get_text() for t in ax.get_xticklabels()] == ["final", "images:2"]
 
-    def test_alone_it_is_a_one_column_figure(self, pyplot):
+    def test_alone_it_is_drawn_in_the_house_style(self, pyplot):
         ax = vis.plot_sweep(self.SCORES)
-        assert ax.figure.get_size_inches()[0] == vis.SINGLE_COLUMN
+        assert ax.xaxis.label.get_fontsize() == vis.STYLE["font.size"]
         assert vis.figure_problems(ax.figure) == []

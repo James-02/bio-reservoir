@@ -48,7 +48,7 @@ def draw(bands: dict[int, tuple], names: tuple[str, ...], ylabel: str) -> plt.Fi
         ax.text(0.99, 0.95, f"{names[c]} (n = {count:,})", transform=ax.transAxes,
                 ha="right", va="top")
     axes[-1, 0].set_xlabel("Time (ms)")
-    fig.supylabel(ylabel, fontsize=STYLE["axes.labelsize"])
+    fig.supylabel(ylabel, fontsize="medium")
     fig.legend(handles=[Line2D([], [], color="0.3", label="Mean"),
                         Patch(color="0.3", alpha=0.25, lw=0,
                               label=f"{BAND[0]:.0%}\u2013{BAND[1]:.0%} of beats")],
