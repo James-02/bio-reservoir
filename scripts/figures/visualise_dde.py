@@ -10,7 +10,8 @@ input, is drawn dashed (its last ``--warmup-steps``), and the beat starts at tim
 
     python scripts/figures/visualise_dde.py experiments/v0.2/designs/centre.yaml --beat 0
 
-It writes ``results/figures/states/<name>-dde-beat<N>.png`` (and ``.pdf``).
+It writes ``results/figures/states/<name>-dde-beat<N>.png`` (``--formats pdf,svg`` adds a PDF
+and an SVG).
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ import numpy as np
 from matplotlib.lines import Line2D
 
 from training.figures import VARIABLES, colony_states, encoded_input, run_config, task_beat
-from utils.visualisation import OKABE_ITO, STATE_NAMES, STYLE, save_figure
+from utils.visualisation import OKABE_ITO, STATE_NAMES, STYLE, add_formats_option, save_figure
 
 LINES = {"I": {"color": OKABE_ITO[0], "lw": 1.8, "ls": "-"},
          "A": {"color": OKABE_ITO[1], "lw": 1.8, "ls": (0, (4, 2))}}
@@ -90,6 +91,7 @@ def main() -> None:
                                          "10 times the config's input_scaling).")
     parser.add_argument("--warmup-steps", type=int, default=100,
                         help="Steps at the end of the warm-up to draw (default: 100).")
+    add_formats_option(parser)
     args = parser.parse_args()
 
     cfg = run_config(args.config)
@@ -102,7 +104,8 @@ def main() -> None:
     plt.style.use(STYLE)
     fig = draw(shown, rest, driven, encoded_input(cfg, beat), beat_class, gain)
     print(f"Beat {args.beat}: {beat_class}")
-    paths = save_figure(fig, f"{cfg['name']}-dde-beat{args.beat}", topic="states")
+    paths = save_figure(fig, f"{cfg['name']}-dde-beat{args.beat}", topic="states",
+                        formats=args.formats)
     print("Saved:", ", ".join(str(p) for p in paths))
 
 

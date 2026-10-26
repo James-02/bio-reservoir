@@ -746,8 +746,7 @@ def plot_run(fig_dir: Path, metrics: dict[str, Any]) -> list[Path]:
     with plt.style.context(STYLE):
         ax = plot_confusion_matrix(metrics["pooled"]["confusion_matrix"])
         ax.set_title("All folds together")
-        paths = save_figure(ax.figure, "confusion_matrix", folder=fig_dir, formats=("png",),
-                            dpi=300)
+        paths = save_figure(ax.figure, "confusion_matrix", folder=fig_dir, dpi=300)
         folds = metrics["folds"]
         fig, ax = plt.subplots()
         for key, marker, label in (("f1", "o", "F1"), ("accuracy", "s", "Accuracy")):
@@ -755,7 +754,7 @@ def plot_run(fig_dir: Path, metrics: dict[str, Any]) -> list[Path]:
                     label=label)
         ax.set(xlabel="Fold", ylabel="Score", xticks=[f["fold"] for f in folds])
         ax.legend()
-        paths += save_figure(fig, "fold_metrics", folder=fig_dir, formats=("png",), dpi=300)
+        paths += save_figure(fig, "fold_metrics", folder=fig_dir, dpi=300)
     return paths
 
 

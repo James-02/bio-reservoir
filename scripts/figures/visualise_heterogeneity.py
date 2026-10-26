@@ -17,8 +17,8 @@ sample SD over the seeds of a study), and the dashed line is the mean at the fir
 
 It writes ``results/figures/diagnostics/heterogeneity_robustness.png`` from runs, or
 ``results/figures/diagnostics/<study name>.png`` from a study, with ``-<setting><value>`` for
-each fixed setting (and ``.pdf``), and prints the mean, SD and number of runs or seeds at
-each level.
+each fixed setting (``--formats pdf,svg`` adds a PDF and an SVG), and prints the mean, SD and
+number of runs or seeds at each level.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from training.study import name as study_name
 from training.study import trials_table
 from utils import config
 from utils.results import FoldArtifact
-from utils.visualisation import plot_sweep, save_figure
+from utils.visualisation import add_formats_option, plot_sweep, save_figure
 
 RUN_NAME = re.compile(r"heterogeneity-cv(?P<cv>\d+(?:\.\d+)?)-seed\d+(?:-array\d+)?")
 SEED_PATHS = ("seed", "reservoir.seed")
@@ -125,6 +125,7 @@ def main() -> None:
     parser.add_argument("--ylim", metavar="LOW,HIGH",
                         help="Limits of the F1 axis, to draw several figures on one scale "
                              "(runs: 0.875,0.905, as published).")
+    add_formats_option(parser)
     args = parser.parse_args()
 
     band = tuple(float(v) for v in args.range.split(",")) if args.range else None
@@ -152,7 +153,8 @@ def main() -> None:
         unit = "seeds"
         drawn = dict(band=band, ddof=1, ylim=ylim, xlabel=LABELS.get(x, x.rsplit(".", 1)[-1]))
     with plt.style.context("default"):
-        paths = save_figure(draw(scores, **drawn), name, topic="diagnostics")
+        paths = save_figure(draw(scores, **drawn), name, topic="diagnostics",
+                            formats=args.formats)
 
     print(f"Level   mean F1   SD      {unit}")
     for level, values in scores.items():

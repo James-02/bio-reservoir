@@ -14,8 +14,9 @@ fewer colonies, as ``v0.1`` drew 250 of its 1,000.
 
     python scripts/figures/visualise_topology.py experiments/v0.2/designs/abstract.yaml --units 250
 
-It writes ``results/figures/topology/<name>-kernel.png`` and ``<name>-topology.png`` (and
-``.pdf``), with ``-<units>`` after the name when ``--units`` is given.
+It writes ``results/figures/topology/<name>-kernel.png`` and ``<name>-topology.png``
+(``--formats pdf,svg`` adds a PDF and an SVG of each), with ``-<units>`` after the name when
+``--units`` is given.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from matplotlib.lines import Line2D
 from scipy import sparse
 
 from training.figures import coupling, raw_kernel, run_config, strongest
-from utils.visualisation import STYLE, save_figure
+from utils.visualisation import STYLE, add_formats_option, save_figure
 
 
 def draw_kernel(distances: np.ndarray, weights: np.ndarray, nearest: float, reach: float,
@@ -81,6 +82,7 @@ def main() -> None:
     parser.add_argument("--units", type=int, help="Draw the design with this many colonies.")
     parser.add_argument("--links", type=int, help="Links drawn for each colony (default: 3, "
                                                   "or all with the diffusive coupling).")
+    add_formats_option(parser)
     args = parser.parse_args()
 
     cfg = run_config(args.config)
@@ -98,8 +100,8 @@ def main() -> None:
                         f"{name}-kernel"))
     figures.append((draw_topology(*coupling(cfg), links, diffusive), f"{name}-topology"))
     for fig, figure_name in figures:
-        print("Saved:", ", ".join(str(p) for p in save_figure(fig, figure_name,
-                                                               topic="topology")))
+        paths = save_figure(fig, figure_name, topic="topology", formats=args.formats)
+        print("Saved:", ", ".join(str(p) for p in paths))
 
 
 if __name__ == "__main__":

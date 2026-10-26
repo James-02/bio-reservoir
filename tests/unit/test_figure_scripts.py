@@ -339,3 +339,34 @@ class TestHeterogeneityFigure:
             "diagnostics/toy-density-param_heterogeneity_cv0.png"]
         out = capsys.readouterr().out
         assert "0.1     0.9070    0.0010  3" in out and "0.1     0.8420    0.0010  3" in out
+
+
+class TestFormats:
+    """Every figure script saves PNGs, and PDFs or SVGs as well on request (``--formats``)."""
+
+    SCRIPTS = ("figures/visualise_dataset", "figures/visualise_dde",
+               "figures/visualise_reservoir_states", "figures/visualise_topology",
+               "figures/visualise_heterogeneity", "analysis/analyse_fold_results")
+
+    @pytest.mark.parametrize("script", SCRIPTS)
+    def test_every_figure_script_has_the_option(self, script, run_script, capsys):
+        with pytest.raises(SystemExit):
+            run_script(script, "--help")
+        assert "--formats FORMATS" in capsys.readouterr().out
+
+    def test_a_png_unless_other_formats_are_asked_for(self, tmp_path, figure_dir, run_script):
+        runs = TestHeterogeneityFigure._runs(tmp_path / "runs")
+
+        def saved():
+            return sorted(p.name for p in (figure_dir / "diagnostics").iterdir())
+
+        run_script("figures/visualise_heterogeneity", "--runs_dir", runs)
+        assert saved() == ["heterogeneity_robustness.png"]
+        run_script("figures/visualise_heterogeneity", "--runs_dir", runs, "--formats", "pdf,svg")
+        assert saved() == ["heterogeneity_robustness.pdf", "heterogeneity_robustness.png",
+                           "heterogeneity_robustness.svg"]
+
+    def test_an_unknown_format_is_an_error(self, run_script, capsys):
+        with pytest.raises(SystemExit):
+            run_script("figures/visualise_heterogeneity", "--formats", "jpg")
+        assert "choose one or more of png, pdf, svg" in capsys.readouterr().err

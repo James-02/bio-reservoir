@@ -216,7 +216,7 @@ def plot_comparison(out: Path, result: dict[str, Any], folds_a: list, folds_b: l
     from utils.visualisation import STYLE, plot_confusion_matrix, save_figure
 
     def save(fig, name):
-        save_figure(fig, name, folder=out, formats=("png",), dpi=300)
+        save_figure(fig, name, folder=out, dpi=300)
 
     with plt.style.context(STYLE):
         rows = result["folds"]

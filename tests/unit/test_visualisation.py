@@ -1,5 +1,6 @@
 """utils.visualisation: the house style, its check of the journal's rules, and the shared plots."""
 
+import argparse
 import logging
 import subprocess
 import sys
@@ -74,26 +75,25 @@ class TestFigureProblems:
 
 
 class TestSaveFigure:
-    def test_each_format_is_written_and_the_figure_closed(self, figure_dir, pyplot):
+    def test_a_png_by_default_and_the_figure_closed(self, figure_dir, pyplot):
         fig, ax = pyplot.subplots()
         ax.plot([0, 1], [1, 0])
-        paths = vis.save_figure(fig, "line", topic="checks")
-        assert [p.relative_to(figure_dir).as_posix() for p in paths] == ["checks/line.png",
-                                                                         "checks/line.pdf"]
-        assert all(p.stat().st_size > 0 for p in paths)
-        assert not pyplot.fignum_exists(fig.number)
+        (png,) = vis.save_figure(fig, "line", topic="checks")
+        assert png.relative_to(figure_dir).as_posix() == "checks/line.png"
+        assert png.stat().st_size > 0 and not pyplot.fignum_exists(fig.number)
 
-    def test_the_pdf_keeps_its_text_as_truetype_text(self, figure_dir, pyplot):
+    def test_pdf_and_svg_keep_their_text_as_text(self, figure_dir, pyplot):
         fig, ax = pyplot.subplots()
         ax.set_xlabel("Time (min)")
-        (pdf,) = vis.save_figure(fig, "text", formats=("pdf",))
+        png, pdf, svg = vis.save_figure(fig, "text", formats=("png", "pdf", "svg"))
         content = pdf.read_bytes()
         assert b"/FontFile2" in content and b"/Type3" not in content
+        assert "Time (min)" in svg.read_text()
 
     def test_the_png_has_600_dots_per_inch_at_the_printed_size(self, tmp_path, pyplot):
         fig, ax = pyplot.subplots(figsize=(14, 4))
         ax.plot([0, 1], [1, 0])
-        (png,) = vis.save_figure(fig, "wide", folder=tmp_path, formats=("png",))
+        (png,) = vis.save_figure(fig, "wide", folder=tmp_path)
         assert pyplot.imread(png).shape[1] == pytest.approx(vis.DPI * vis.DOUBLE_COLUMN, rel=0.01)
 
     def test_a_figure_that_breaks_the_rules_is_saved_with_a_warning(self, figure_dir, pyplot,
@@ -101,7 +101,7 @@ class TestSaveFigure:
         fig, ax = pyplot.subplots(figsize=(6, 4))
         ax.set_title("small", fontsize=3)
         with caplog.at_level(logging.WARNING, logger="utils.visualisation"):
-            (png,) = vis.save_figure(fig, "small", formats=("png",))
+            (png,) = vis.save_figure(fig, "small")
         assert png.is_file()
         (message,) = caplog.messages
         assert message.startswith("Figure small, printed ")
@@ -109,9 +109,22 @@ class TestSaveFigure:
 
     def test_a_folder_can_be_given(self, tmp_path, pyplot):
         fig, _ = pyplot.subplots()
-        (png,) = vis.save_figure(fig, "fig", folder=tmp_path / "run" / "figures",
-                                 formats=("png",), dpi=20)
+        (png,) = vis.save_figure(fig, "fig", folder=tmp_path / "run" / "figures", dpi=20)
         assert png == tmp_path / "run" / "figures" / "fig.png" and png.is_file()
+
+
+class TestFormatsOption:
+    def test_formats_are_read_from_a_comma_separated_list(self):
+        assert vis.figure_formats("png") == ("png",)
+        assert vis.figure_formats("png, PDF,svg,pdf") == ("png", "pdf", "svg")
+        with pytest.raises(argparse.ArgumentTypeError, match="choose one or more"):
+            vis.figure_formats("jpg")
+
+    def test_scripts_save_pngs_unless_asked(self):
+        parser = argparse.ArgumentParser()
+        vis.add_formats_option(parser)
+        assert parser.parse_args([]).formats == ("png",)
+        assert parser.parse_args(["--formats", "pdf,svg"]).formats == ("pdf", "svg")
 
 
 class TestConfusionMatrix:

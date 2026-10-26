@@ -26,7 +26,8 @@ Via glob pattern::
 
 Notes
 -----
-- All figures are saved under ``results/figures/metrics/<trial_name>/``.
+- All figures are saved under ``results/figures/metrics/<trial_name>/`` as PNG
+  (``--formats pdf,svg`` adds a PDF and an SVG).
 - ``--plots`` alone saves all plot types (equivalent to ``--plots all``).
 - The PCA of the states is skipped if the fold files were saved without
   ``save_states=True``.
@@ -62,6 +63,7 @@ from utils.results import FoldArtifact
 from utils.visualisation import (
     CLASS_COLOURS,
     STYLE,
+    add_formats_option,
     class_names,
     plot_confusion_matrix,
     save_figure,
@@ -179,9 +181,10 @@ def _print_model_info(artifacts: list[FoldArtifact]) -> None:
 # Plot helpers
 # ---------------------------------------------------------------------------
 
-def plot_state_pca(states: np.ndarray, labels: np.ndarray, name: str) -> None:
+def plot_state_pca(states: np.ndarray, labels: np.ndarray, name: str,
+                   formats: tuple[str, ...] = ("png",)) -> None:
     """Draw the states on their first two principal components, one colour and marker per
-    true class, and save the figure as ``results/figures/metrics/<name>``.
+    true class, and save the figure as ``results/figures/metrics/<name>`` in ``formats``.
 
     Each feature is scaled to unit variance first, so that no state variable dominates by
     its units. ``labels`` are the true labels of the states, in any shape that
@@ -199,22 +202,24 @@ def plot_state_pca(states: np.ndarray, labels: np.ndarray, name: str) -> None:
     ax.set_xlabel(f"PC 1 ({explained[0]:.0%} of the variance)")
     ax.set_ylabel(f"PC 2 ({explained[1]:.0%} of the variance)")
     ax.legend(markerscale=2, loc="center left", bbox_to_anchor=(1.0, 0.5), frameon=False)
-    save_figure(fig, name, topic="metrics")
+    save_figure(fig, name, topic="metrics", formats=formats)
 
 
-def _run_plots(artifacts: list[FoldArtifact], trial_name: str, wanted: set) -> None:
+def _run_plots(artifacts: list[FoldArtifact], trial_name: str, wanted: set,
+               formats: tuple[str, ...] = ("png",)) -> None:
     if "confusion" in wanted:
         Y_test = np.concatenate([a.Y_test for a in artifacts])
         Y_pred = np.concatenate([a.Y_pred for a in artifacts])
         ax = plot_confusion_matrix(evaluate_performance(Y_test, Y_pred).confusion_matrix)
-        save_figure(ax.figure, f"{trial_name}/confusion-matrix", topic="metrics")
+        save_figure(ax.figure, f"{trial_name}/confusion-matrix", topic="metrics",
+                    formats=formats)
 
     if "states" in wanted:
         with_states = [a for a in artifacts if a.test_states is not None]
         if with_states:
             plot_state_pca(np.concatenate([a.test_states for a in with_states]),
                            np.concatenate([a.Y_test for a in with_states]),
-                           f"{trial_name}/states-pca")
+                           f"{trial_name}/states-pca", formats)
         else:
             print("  No test_states in fold files: no PCA of the states.")
 
@@ -256,6 +261,7 @@ plot types:
         help="Comma-separated plot types to generate (default: none; bare flag = all).",
     )
 
+    add_formats_option(parser)
     args = parser.parse_args()
 
     # --- Load artifacts ---
@@ -292,7 +298,7 @@ plot types:
                          "or all.")
 
     if wanted:
-        _run_plots(artifacts, trial_name, wanted)
+        _run_plots(artifacts, trial_name, wanted, args.formats)
         print(f"Figures saved to results/figures/metrics/{trial_name}/")
 
     return 0

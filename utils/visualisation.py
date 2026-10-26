@@ -4,14 +4,16 @@ The house style :data:`STYLE` is the look of the ``v0.1`` figures: seaborn's "ti
 with 15 pt text, on figures drawn large (10 to 14 in wide) and reduced to fit the page.
 Figure scripts call ``plt.style.use(STYLE)``; importing this module changes no matplotlib
 setting. Categories take the Okabe-Ito colours (:data:`OKABE_ITO`), each ECG class always
-the same one (:data:`CLASS_COLOURS`). :func:`save_figure` writes a PNG and a PDF whose text
-stays text (TrueType), and warns about anything that :func:`figure_problems` finds once the
-figure is printed: ACS Synthetic Biology prints a figure at most two columns (7 in) wide and
-asks for text of at least 5 pt and lines of at least 1 pt at that size.
+the same one (:data:`CLASS_COLOURS`). :func:`save_figure` writes a PNG, and on request a PDF
+or an SVG whose text stays text (the scripts' ``--formats`` option, :func:`add_formats_option`).
+It warns about anything that :func:`figure_problems` finds once the figure is printed: ACS
+Synthetic Biology prints a figure at most two columns (7 in) wide and asks for text of at
+least 5 pt and lines of at least 1 pt at that size.
 """
 
 from __future__ import annotations
 
+import argparse
 import logging
 import numbers
 from collections.abc import Mapping, Sequence
@@ -32,6 +34,9 @@ SINGLE_COLUMN, DOUBLE_COLUMN, MAX_HEIGHT = 3.25, 7.0, 9.5
 MIN_FONT_SIZE, MIN_LINE_WIDTH = 5.0, 1.0
 #: Resolution of the PNG files at the printed size, in dots per inch.
 DPI = 600
+#: The file formats that :func:`save_figure` writes: PNG to look at, and PDF and SVG (vector,
+#: their text kept as text) for a paper or for editing.
+FORMATS = ("png", "pdf", "svg")
 
 #: The Okabe-Ito colours: blue, vermillion, bluish green, reddish purple, orange, sky blue,
 #: black and yellow (last: it is faint on white).
@@ -100,16 +105,33 @@ def figure_problems(fig, width: float | None = None) -> list[str]:
     return problems
 
 
+def figure_formats(text: str) -> tuple[str, ...]:
+    """The file formats in ``text``, comma-separated, such as ``"png,pdf"``: the type of a
+    script's ``--formats`` option."""
+    formats = tuple(dict.fromkeys(f.strip().lower() for f in text.split(",") if f.strip()))
+    if not formats or set(formats) - set(FORMATS):
+        raise argparse.ArgumentTypeError(
+            f"{text!r}: choose one or more of {', '.join(FORMATS)}, comma-separated")
+    return formats
+
+
+def add_formats_option(parser: argparse.ArgumentParser) -> None:
+    """Add ``--formats`` to a figure script: the file formats of its figures (default PNG)."""
+    parser.add_argument("--formats", type=figure_formats, default=("png",),
+                        help="File formats of the figures, comma-separated, from "
+                             f"{', '.join(FORMATS)} (default: png).")
+
+
 def save_figure(fig, name: str, *, topic: str = "", folder: str | Path | None = None,
-                formats: Sequence[str] = ("png", "pdf"), width: float | None = None,
+                formats: Sequence[str] = ("png",), width: float | None = None,
                 dpi: float | None = None) -> list[Path]:
     """Save ``fig`` as ``<folder>/<name>.<format>`` in each format and close it.
 
     ``folder`` defaults to ``results/figures/<topic>`` (see :mod:`utils.config`). ``width``
     is the printed width in inches (default :func:`printed_width`): a warning is logged for
     each of :func:`figure_problems` at that width, and the PNG has :data:`DPI` dots per inch
-    at that width unless ``dpi`` is given. The PDF is vector, with its text kept as TrueType
-    text. Returns the files written, in the order of ``formats``.
+    at that width unless ``dpi`` is given. PDF and SVG files are vector, with their text kept
+    as text (TrueType in the PDF). Returns the files written, in the order of ``formats``.
     """
     width = printed_width(fig) if width is None else width
     for problem in figure_problems(fig, width):
@@ -117,7 +139,7 @@ def save_figure(fig, name: str, *, topic: str = "", folder: str | Path | None = 
     dpi = dpi or DPI * width / fig.get_tightbbox().width
     folder = Path(folder) if folder is not None else config.figures_dir(topic)
     paths = [folder / f"{name}.{fmt}" for fmt in formats]
-    with plt.rc_context({"pdf.fonttype": 42, "ps.fonttype": 42}):
+    with plt.rc_context({"pdf.fonttype": 42, "ps.fonttype": 42, "svg.fonttype": "none"}):
         for path in paths:
             path.parent.mkdir(parents=True, exist_ok=True)
             fig.savefig(path, dpi=dpi, bbox_inches="tight", pad_inches=0.02)

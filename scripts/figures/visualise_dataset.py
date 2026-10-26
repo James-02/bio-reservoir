@@ -12,7 +12,8 @@ the config's scaling as used.
     python scripts/figures/visualise_dataset.py experiments/v0.2/designs/centre.yaml
 
 It writes ``results/figures/dataset/<name>-beats.png``, ``<name>-noise-beat<N>.png`` and
-``<name>-scalers-beat<N>.png`` (and ``.pdf``), and prints the number of beats of each class.
+``<name>-scalers-beat<N>.png`` (``--formats pdf,svg`` adds a PDF and an SVG of each), and
+prints the number of beats of each class.
 """
 
 from __future__ import annotations
@@ -27,7 +28,14 @@ from matplotlib.patches import Patch
 
 from training.run import load_config, load_task, resolve
 from utils.preprocessing import class_indices, standardize_data
-from utils.visualisation import CLASS_COLOURS, OKABE_ITO, STYLE, class_names, save_figure
+from utils.visualisation import (
+    CLASS_COLOURS,
+    OKABE_ITO,
+    STYLE,
+    add_formats_option,
+    class_names,
+    save_figure,
+)
 
 SAMPLING_HZ = 125  # the beats of the prepared dataset are sampled at 125 Hz
 BAND = (0.1, 0.9)
@@ -105,6 +113,7 @@ def main() -> None:
                         help="SD of the noise of the noise figure (default: 0.2862, as in "
                              "v0.1).")
     parser.add_argument("--seed", type=int, default=1337, help="Seed of the noise.")
+    add_formats_option(parser)
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -125,11 +134,11 @@ def main() -> None:
 
     plt.style.use(STYLE)
     name = cfg["name"]
-    paths = [*save_figure(draw(bands, names, ylabel), f"{name}-beats", topic="dataset"),
-             *save_figure(draw_noise(beat, noise, args.noise_std),
-                          f"{name}-noise-beat{args.beat}", topic="dataset"),
-             *save_figure(draw_scalers(scaled, scaler), f"{name}-scalers-beat{args.beat}",
-                          topic="dataset")]
+    figures = ((draw(bands, names, ylabel), f"{name}-beats"),
+               (draw_noise(beat, noise, args.noise_std), f"{name}-noise-beat{args.beat}"),
+               (draw_scalers(scaled, scaler), f"{name}-scalers-beat{args.beat}"))
+    paths = [path for fig, figure_name in figures
+             for path in save_figure(fig, figure_name, topic="dataset", formats=args.formats)]
     for c, band in bands.items():
         print(f"{names[c]:<17} {band[-1]:>6,} beats")
     print(f"Beat {args.beat}: {names[class_indices(Y)[args.beat]]}")
