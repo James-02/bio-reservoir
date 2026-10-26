@@ -1,0 +1,19 @@
+# Slow sensing: the memory of the array: the P centre imaged 0-240 min after the pattern
+# ends (baseline delivery in between).
+#    python -m training.run study experiments/v0.2/slow-sensing/centre-delay.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/slow-sensing/centre-delay.yaml --group
+base: ../designs/centre.yaml
+name: slow-sensing-centre-delay
+description: >-
+  The P centre imaged 0, 15, 30, 60, 120 or 240 min after the pattern x the freq, order,
+  ramp and shape tasks (pump delivery) x three reservoir seeds.
+task: {type: inducer, pattern: order, condition: device, n_per_class: 400, scale: sd, image_delay: 0}
+reservoir: {seed: 6337, params: {input_range: [0.0, 20.0]}}
+study:
+  trials: 72
+  metric: f1
+  sampler: {type: grid, seed: 6337}
+  search:
+    task.image_delay: {type: int, choices: [0, 15, 30, 60, 120, 240]}
+    task.pattern: {type: categorical, choices: [freq, order, ramp, shape]}
+    reservoir.seed: {type: categorical, choices: [6337, 6338, 6339]}

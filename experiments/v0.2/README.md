@@ -12,6 +12,7 @@ the commit, the host and its resolved config.
 | `tracking/` | The tracking set, rerun at every tagged code version: each design at three reservoir seeds | 5 | 15 |
 | `phase-1/` | Phase 1 grids: one or two design parameters at a time around the P centre, at three reservoir seeds | 13 | 549 |
 | `phase-2/` | Phase 2 seeded TPE searches over every design parameter: P lattice, A′, U and the ESN (clean mean and one noisy image); and the five best trials of each at reservoir seeds 6338–6340 (`P2-<design>-top`) | 5 + 5 | 1,200 + 75 |
+| `slow-sensing/` | The designs on the eight inducer-pattern tasks, and the colony budget, coupling and memory of P (below) | 13 | 924 |
 
 Study names follow the convention of the `v0.1` studies (SI Table S5): a phase prefix and
 a descriptor, with each phase keeping its `v0.1` meaning. Phase 1 (`P1-`, folder `phase-1/`)
@@ -92,6 +93,27 @@ lattice; the `v0.1` ESN for the ESN).
 For the selection table, `P2-<design>-top` reruns the five best trials of each search at
 reservoir seeds 6338–6340: written from the finished search, the trials' values are
 enqueued and run exactly (random sampler, 15 trials).
+
+## Slow sensing (`slow-sensing/`)
+
+The designs on the eight inducer-pattern tasks ([training/inducer.py](../../training/inducer.py);
+`python scripts/figures/visualise_inducer_tasks.py` draws them): 400 traces per class, one
+noisy image at the end of the trace, ridge readout, three reservoir seeds. The bioreservoirs
+read the inducer from 0 (`input_range: [0.0, 20.0]`). Pump delivery is `condition: device`.
+
+| Study | What | Trials |
+|---|---|---|
+| `slow-sensing-centre` | P centre: 8 tasks × ideal or pump × input gain ×0.5–2 | 144 |
+| `slow-sensing-uncoupled-centre` | As above without coupling | 144 |
+| `slow-sensing-uncoupled-best` | U at P2-uncoupled trial 182: 8 tasks × ideal or pump | 48 |
+| `slow-sensing-esn` | The `v0.1` ESN read like the bioreservoirs: 8 tasks × ideal or pump | 48 |
+| `slow-sensing-esn-image-best` | The ESN of P2-esn-image trial 178 (slow leak): 8 tasks × ideal or pump | 48 |
+| `slow-sensing-leaky-bank` | Leaky-integrator bank, clean or noisy image: 8 tasks × ideal or pump | 32 |
+| `slow-sensing-raw` | Ridge on the whole trace: 8 tasks × ideal or pump | 16 |
+| `slow-sensing-centre-units-noise` | P centre on 100–1,024 traps × 1% or 3% noise, 4 tasks | 96 |
+| `slow-sensing-centre-units-traces` | P centre on 256–1,024 traps × 400 or 800 traces per class, 2 tasks | 60 |
+| `slow-sensing-centre-coupling` | P centre at coupling rate 0–3, 4 tasks | 72 |
+| `slow-sensing-centre-delay`, `-uncoupled-centre-delay`, `-esn-delay` | Image 0–240 min after the pattern, 4 tasks | 72 each |
 
 ## Running and reading
 

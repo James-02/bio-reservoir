@@ -1,0 +1,24 @@
+# Slow sensing: a bank of 24 leaky integrators of the input (time constants 1-256 min) with
+# their band-pass differences, read at the end of the trace: linear fading
+# memory without a reservoir.
+#    python -m training.run study experiments/v0.2/slow-sensing/leaky-bank.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/slow-sensing/leaky-bank.yaml --group
+name: slow-sensing-leaky-bank
+description: >-
+  Leaky-integrator bank (24 time constants 1-256 min and 23 band-pass differences) read at
+  the end of the trace, clean or with 1% measurement noise; ridge readout; the eight tasks
+  x ideal or pump delivery.
+seed: 6337
+task: {type: inducer, pattern: freq, condition: ideal, n_per_class: 400, scale: sd}
+reservoir: {type: leaky_bank, seed: 6337, params: {units: 24}}
+features: {aggregation: final}
+readout: {classifier: RidgeCV, scale: true, params: {scoring: f1_macro}}
+cv: {folds: 5, seed: 6337}
+study:
+  trials: 32
+  metric: f1
+  sampler: {type: grid, seed: 6337}
+  search:
+    task.pattern: {type: categorical, choices: [freq, ramp, order, shape, xor, parity3, xor_tr, parity3_tr]}
+    task.condition: {type: categorical, choices: [ideal, device]}
+    features.measurement_noise: {type: float, choices: [0.0, 0.01]}

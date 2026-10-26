@@ -1,0 +1,19 @@
+# Slow sensing: ridge on the whole input trace (240 values): a linear readout of the full record,
+# which no sensor has; what a linear map of the input can do.
+#    python -m training.run study experiments/v0.2/slow-sensing/raw.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/slow-sensing/raw.yaml --group
+name: slow-sensing-raw
+description: >-
+  No reservoir: ridge on the whole input trace, the eight tasks x ideal or pump delivery.
+seed: 6337
+task: {type: inducer, pattern: freq, condition: ideal, n_per_class: 400, scale: sd}
+reservoir: {type: none}
+readout: {classifier: RidgeCV, scale: true, params: {scoring: f1_macro}}
+cv: {folds: 5, seed: 6337}
+study:
+  trials: 16
+  metric: f1
+  sampler: {type: grid, seed: 6337}
+  search:
+    task.pattern: {type: categorical, choices: [freq, ramp, order, shape, xor, parity3, xor_tr, parity3_tr]}
+    task.condition: {type: categorical, choices: [ideal, device]}
