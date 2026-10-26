@@ -149,7 +149,7 @@ class TestConfusionMatrix:
 
 
 class TestSweep:
-    """plot_sweep: a score against the levels of a swept setting, one dot per seed."""
+    """plot_sweep: a score against the levels of a swept setting, as in S10 of v0.1."""
 
     SCORES = {0.0: [0.80, 0.82, 0.84], 0.5: [0.70, 0.74], 0.1: [0.90, 0.91, 0.92]}
     MEANS = [0.82, 0.91, 0.72]  # at the sorted levels 0, 0.1, 0.5
@@ -164,17 +164,22 @@ class TestSweep:
         assert [t.get_text() for t in ax.get_xticklabels()] == ["0", "0.1", "0.5"]
         assert ax.get_xlim() == (-0.5, 2.5)
 
-    def test_every_seed_is_a_dot_near_its_level(self, pyplot):
-        dots = self._draw(pyplot, jitter=0.15).collections[0].get_offsets()
-        np.testing.assert_allclose(dots[:, 1], [0.80, 0.82, 0.84, 0.90, 0.91, 0.92, 0.70, 0.74])
-        assert np.all(np.abs(dots[:, 0] - [0, 0, 0, 1, 1, 1, 2, 2]) <= 0.15)
+    def test_every_seed_is_a_blue_dot_near_its_level(self, pyplot):
+        dots = self._draw(pyplot, jitter=0.15).collections[0]
+        offsets = dots.get_offsets()
+        np.testing.assert_allclose(offsets[:, 1], [0.80, 0.82, 0.84, 0.90, 0.91, 0.92, 0.70,
+                                                   0.74])
+        assert np.all(np.abs(offsets[:, 0] - [0, 0, 0, 1, 1, 1, 2, 2]) <= 0.15)
+        assert pyplot.matplotlib.colors.to_hex(dots.get_facecolor()[0]) == "#1f77b4"
 
-    def test_the_line_joins_the_means_and_the_band_spans_one_sample_sd(self, pyplot):
-        ax = self._draw(pyplot)
+    @pytest.mark.parametrize("ddof", [1, 0])
+    def test_a_red_line_joins_the_means_and_the_band_spans_one_sd(self, pyplot, ddof):
+        ax = self._draw(pyplot, ddof=ddof)
         np.testing.assert_allclose(ax.lines[0].get_ydata(), self.MEANS)
+        assert ax.lines[0].get_color() == "#d62728"
         corners = ax.collections[1].get_paths()[0].vertices
         for x, level in enumerate((0.0, 0.1, 0.5)):
-            sd = np.std(self.SCORES[level], ddof=1)
+            sd = np.std(self.SCORES[level], ddof=ddof)
             for y in (self.MEANS[x] - sd, self.MEANS[x] + sd):
                 assert np.isclose(corners, [x, y]).all(axis=1).any()
 
@@ -186,21 +191,12 @@ class TestSweep:
         ax = self._draw(pyplot, reference=0.82, reference_label="Without the setting")
         assert list(ax.lines[0].get_ydata()) == [0.82, 0.82]
         assert ax.get_legend_handles_labels()[1] == ["Without the setting", "Seeds",
-                                                     "Mean \u00b1 SD"]
+                                                     "Mean (\u00b11 SD)"]
 
     def test_a_level_with_one_seed_has_a_mean_but_no_band(self, pyplot, recwarn):
         ax = self._draw(pyplot, scores={0.0: [0.8, 0.9], 1.0: [0.7]})
         np.testing.assert_allclose(ax.lines[0].get_ydata(), [0.85, 0.7])
         assert not [w for w in recwarn.list if issubclass(w.category, RuntimeWarning)]
-
-    def test_sweeps_on_one_axes_share_their_levels(self, pyplot):
-        _, ax = pyplot.subplots()
-        levels = [0.0, 0.1, 0.5]
-        vis.plot_sweep(self.SCORES, ax, levels=levels)
-        vis.plot_sweep({0.0: [0.6], 0.5: [0.5]}, ax, levels=levels, color=vis.OKABE_ITO[1],
-                       marker="s", label="Other", seed_label=None)
-        assert list(ax.lines[1].get_xdata()) == [0, 2]
-        assert ax.get_legend_handles_labels()[1] == ["Seeds", "Mean \u00b1 SD", "Other"]
 
     def test_one_seed_per_level_draws_the_scores_without_dots(self, pyplot):
         from matplotlib.collections import PathCollection
@@ -209,11 +205,14 @@ class TestSweep:
         assert not [c for c in ax.collections if isinstance(c, PathCollection)]
         assert [t.get_text() for t in ax.get_xticklabels()] == ["0.0554", "0.111"]
 
-    def test_levels_can_be_names(self, pyplot):
-        ax = self._draw(pyplot, scores={"final": [0.8, 0.82], "images:2": [0.85, 0.86]})
-        assert [t.get_text() for t in ax.get_xticklabels()] == ["final", "images:2"]
+    def test_levels_can_be_names_and_shared(self, pyplot):
+        ax = self._draw(pyplot, scores={"final": [0.8, 0.82], "images:4": [0.85, 0.86]},
+                        levels=["final", "images:2", "images:4"])
+        assert [t.get_text() for t in ax.get_xticklabels()] == ["final", "images:2",
+                                                                "images:4"]
+        assert list(ax.lines[0].get_xdata()) == [0, 2]
 
-    def test_alone_it_is_drawn_in_the_house_style(self, pyplot):
+    def test_alone_it_is_the_size_of_s10(self, pyplot):
         ax = vis.plot_sweep(self.SCORES)
-        assert ax.xaxis.label.get_fontsize() == vis.STYLE["font.size"]
+        assert tuple(ax.figure.get_size_inches()) == (5.5, 3.8)
         assert vis.figure_problems(ax.figure) == []
