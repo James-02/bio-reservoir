@@ -213,13 +213,30 @@ class TestDatasetFigure:
                                                                for name in CLASS_NAMES]
         assert figure_problems(fig) == []
 
+    def test_a_beat_with_noise_added(self, load_script, pyplot):
+        script = load_script("figures/visualise_dataset")
+        ax = script.draw_noise(np.array([1.0, 2.0]), np.array([0.5, -0.5]), 0.3).axes[0]
+        assert [line.get_label() for line in ax.lines] == ["Training Data",
+                                                           "Noise ($\\sigma$=0.3)",
+                                                           "Augmented Data"]
+        np.testing.assert_array_equal(ax.lines[2].get_ydata(), [1.5, 1.5])
+
+    def test_the_scaling_of_the_runs_is_marked(self, load_script, pyplot):
+        script = load_script("figures/visualise_dataset")
+        scaled = {name: np.arange(3.0) * k for k, (name, *_) in enumerate(script.SCALERS)}
+        ax = script.draw_scalers(scaled, "standard").axes[0]
+        assert [line.get_label() for line in ax.lines] == ["Min-max (reference)",
+                                                           "Z-score (standard) [used]",
+                                                           "Z-score (per-seq)"]
+
     def test_the_script_reads_the_task_of_a_run_config(self, tmp_path, figure_dir, ecg_data,
                                                        run_script, capsys):
         config = tmp_path / "toy.yaml"
         config.write_text("name: toy\ntask: {rows: 100}\nreservoir: {type: none}\n"
                           "readout: {classifier: RidgeCV}\n")
-        run_script("figures/visualise_dataset", config)
-        assert _saved(figure_dir) == ["dataset/toy-beats.png"]
+        run_script("figures/visualise_dataset", config, "--beat", "3", "--noise-std", "0.1")
+        assert _saved(figure_dir) == ["dataset/toy-beats.png", "dataset/toy-noise-beat3.png",
+                                      "dataset/toy-scalers-beat3.png"]
         counts = [int(line.split()[1]) for line in capsys.readouterr().out.splitlines()[:5]]
         assert sum(counts) == 100
 
