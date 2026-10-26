@@ -72,7 +72,7 @@ def small_design(tmp_path):
 
 @pytest.fixture
 def load_script(monkeypatch):
-    """Import ``scripts/<name>.py`` as a module, e.g. ``load_script("figures/visualise_model")``."""
+    """Import ``scripts/<name>.py`` as a module, e.g. ``load_script("figures/visualise_dde")``."""
 
     def load(name):
         spec = importlib.util.spec_from_file_location(f"script_{name.replace('/', '_')}",

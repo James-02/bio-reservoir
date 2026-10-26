@@ -3,7 +3,6 @@ dataset in place of the prepared one): each test runs a script as
 ``python scripts/<name>.py ARGS`` would, or calls its functions, and checks what it draws.
 """
 
-import logging
 
 import numpy as np
 import pytest
@@ -188,28 +187,6 @@ class TestTopologyFigure:
         assert _saved(figure_dir) == ["topology/toy-abstract-25-kernel.png",
                                       "topology/toy-abstract-25-topology.png",
                                       "topology/toy-centre-topology.png"]
-
-
-class TestModelFigures:
-    """scripts/figures/visualise_model.py draws a run config's model, built as a run builds it."""
-
-    def test_the_script_draws_each_figure_within_the_journal_rules(self, small_design,
-                                                                   figure_dir, ecg_data,
-                                                                   run_script, caplog):
-        with caplog.at_level(logging.WARNING, logger="utils.visualisation"):
-            run_script("figures/visualise_model", small_design("centre"), "--gains", "1,2")
-            run_script("figures/visualise_model", small_design("uncoupled"),
-                       "--plots", "coupling")
-        assert _saved(figure_dir) == ["model/toy-centre-array-beat0-I.png",
-                                      "model/toy-centre-colony-beat0.png",
-                                      "model/toy-centre-coupling.png",
-                                      "model/toy-uncoupled-coupling.png"]
-        assert caplog.messages == []
-
-    def test_an_unknown_plot_is_an_error(self, small_design, run_script):
-        with pytest.raises(SystemExit, match="Unknown plots"):
-            run_script("figures/visualise_model", small_design("centre"), "--plots",
-                       "topology")
 
 
 class TestDatasetFigure:
