@@ -224,6 +224,18 @@ Three controls ask what the colony array adds to a readout of the beat. They run
 
 The controls have one state per input step, so `features.aggregation`, `measurement_noise` and `calibration_error` apply as to the reservoir; `features.variables` does not. `activation: linear` gives a random linear map, and `expansion: N` maps the leaky bank to `N` random features.
 
+## Slow Sensing: Inducer-Pattern Tasks
+
+Besides ECG beats, a run can classify designed inducer traces ([training/inducer.py](training/inducer.py)): four hours at one input step per minute, where the class lies in the timing, order or shape of the pulses, not in the mean input. Eight patterns: `freq` (pulse period, 5 classes), `ramp` (slow or fast rise), `order` (A then B or B then A), `shape` (4 pulse shapes), `xor` and `parity3` (parity of the B pulses in 2 or 3 slots), and `xor_tr` and `parity3_tr` (the same with rising or falling sawtooths, which no statistic of the input values separates). `condition: device` delivers the trace as a syringe pump would (2-min steps, 16 levels, mixing in the chamber), and `image_delay: D` images the array `D` minutes after the pattern ends, to measure its memory. Any design can run a task by replacing its `task` section:
+
+```yaml
+base: ../designs/centre.yaml
+task: {type: inducer, pattern: order, condition: device, image_delay: 0}
+reservoir: {params: {input_range: [0.0, 20.0]}}   # from 0, so the zero baseline stays zero
+```
+
+A study can search `task.pattern`, `task.condition`, `task.n_per_class`, `task.scale` and `task.image_delay`; [experiments/v0.2/slow-sensing/](experiments/v0.2/slow-sensing/) holds the slow-sensing studies. `python scripts/figures/visualise_inducer_tasks.py [--condition device] [--image-delay 60]` draws example traces of every class, and the colony and array figures below draw a design driven by a trace when its config has an inducer task.
+
 ## Visualisation
 
 The figures below are from the `v0.1` paper. The figure scripts draw the same designs, in the same look, from this repository's configs and runs. Each saves a PNG under `results/figures/<topic>/` (`--formats pdf,svg` adds a PDF and an SVG) and warns if the figure would break the ACS figure rules at its printed size.
@@ -234,6 +246,7 @@ The figures below are from the `v0.1` paper. The figure scripts draw the same de
 | [visualise_reservoir_states.py](scripts/figures/visualise_reservoir_states.py) | the array's states during a beat (4c); with `--drive`, its drive (4a) | run config |
 | [visualise_topology.py](scripts/figures/visualise_topology.py) | the kernel (4b) and the colonies' strongest links (4d) | run config |
 | [visualise_dataset.py](scripts/figures/visualise_dataset.py) | class means, a beat with noise, a beat under three scalings (5) | run config |
+| [visualise_inducer_tasks.py](scripts/figures/visualise_inducer_tasks.py) | example traces of every class of the eight slow-sensing tasks | options |
 | [visualise_heterogeneity.py](scripts/figures/visualise_heterogeneity.py) | macro F1 against heterogeneity (S10), also for the realism studies | `--archive v0.1` or a study config |
 | [analyse_fold_results.py](scripts/analysis/analyse_fold_results.py) | metric tables; with `--plots`, the confusion matrix, each fold's scores and a PCA of the states | fold files |
 

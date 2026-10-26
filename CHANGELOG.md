@@ -51,6 +51,9 @@ Each entry is marked **[science]** if it changes a reported number, or
   and a linear surrogate of a saved run (`reservoir.surrogate: linear`).
 - [engineering] `utils.preprocessing.class_indices(Y)`: the class of each beat from labels,
   one-hot labels or scores.
+- [engineering] Slow sensing: eight inducer-pattern tasks (`task: {type: inducer}`,
+  `training/inducer.py`), ideal or pump delivery, an image delay, and their figures.
+- [engineering] A config section that names another `type` replaces its base's section.
 
 ### Removed
 

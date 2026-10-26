@@ -18,10 +18,9 @@ from scipy import sparse
 
 from bioreservoir import distance_matrix
 from optimization.reservoirs import _build_bioreservoir_topology, build_reservoir
-from training.run import load_config, load_task, resolve
+from training.run import class_names, load_config, load_task, resolve
 from training.simulate import beat_seed, reseed_noise
 from utils.preprocessing import class_indices, standardize_data
-from utils.visualisation import class_names
 
 #: The oscillator's variables, in the order of its state: AiiA, LuxI, and AHL in the cells
 #: and in the medium.
@@ -42,12 +41,17 @@ def run_config(path: str | Path) -> dict:
     return cfg
 
 
+def input_name(cfg: dict) -> str:
+    """What the config's task feeds the colonies, for labels: ``ECG`` or ``Inducer``."""
+    return "Inducer" if cfg["task"].get("type") == "inducer" else "ECG"
+
+
 def task_beat(cfg: dict, index: int) -> tuple[np.ndarray, str]:
-    """Beat ``index`` of the config's beat pool, scaled as a run scales it, as a
-    (steps, 1) array, and the name of its class."""
+    """Beat ``index`` of the config's beat pool (an ECG beat or an inducer trace), scaled as
+    a run scales it, as a (steps, 1) array, and the name of its class."""
     X, Y, _ = load_task(cfg["task"])
     X, _ = standardize_data(X, X[:1], scaler_type=str(cfg["task"]["scaler"]))
-    names = class_names(2 if cfg["task"]["labels"] == "binary" else 5)
+    names = class_names(cfg["task"])
     return np.asarray(X[index], dtype=float).reshape(-1, 1), names[class_indices(Y)[index]]
 
 

@@ -27,7 +27,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LogNorm
 
-from training.figures import VARIABLES, array_states, encoded_input, run_config, task_beat
+from training.figures import (
+    VARIABLES,
+    array_states,
+    encoded_input,
+    input_name,
+    run_config,
+    task_beat,
+)
 from utils.visualisation import STATE_NAMES, STYLE, add_formats_option, save_figure
 
 #: The drive terms: label, Okabe-Ito colour, line width and style (readable in greyscale).
@@ -53,9 +60,9 @@ def draw_states(states: np.ndarray, var: str = "I", log: bool = False) -> plt.Fi
 
 
 def draw_drive(terms: np.ndarray, beat_input: np.ndarray, beat_class: str,
-               input_scaling: float, rc_scaling: float) -> plt.Figure:
+               input_scaling: float, rc_scaling: float, source: str = "ECG") -> plt.Figure:
     """The mean size over the colonies of each drive term (``terms``, steps x 3) above the
-    beat's input."""
+    beat's input (``source``: ECG or inducer)."""
     fig, (ax, ax_ecg) = plt.subplots(2, 1, figsize=(14, 6), sharex=True, layout="constrained",
                                      gridspec_kw={"height_ratios": [2.2, 1.2]})
     t = np.arange(len(terms))
@@ -71,8 +78,8 @@ def draw_drive(terms: np.ndarray, beat_input: np.ndarray, beat_class: str,
         scalings.append(rf"$\alpha_r = {rc_scaling:.2g}$")
     ax.annotate(",\u2002".join(scalings), xy=(0.02, 0.05), xycoords="axes fraction",
                 fontsize=9, bbox=BOX)
-    ax_ecg.plot(t, beat_input, color="#CC0000", lw=1.6, label=f"ECG: {beat_class}")
-    ax_ecg.set(ylabel="ECG input", xlabel="Timestep")
+    ax_ecg.plot(t, beat_input, color="#CC0000", lw=1.6, label=f"{source}: {beat_class}")
+    ax_ecg.set(ylabel=f"{source} input", xlabel="Timestep")
     ax_ecg.legend(loc="upper right", fontsize=8)
     for a, grid in ((ax, 0.25), (ax_ecg, 0.18)):
         a.grid(True, alpha=grid)
@@ -105,7 +112,7 @@ def main() -> None:
     if args.drive:
         figures.append((draw_drive(terms, encoded_input(cfg, beat), beat_class,
                                    float(params["input_scaling"]),
-                                   float(params.get("rc_scaling", 0.0))),
+                                   float(params.get("rc_scaling", 0.0)), input_name(cfg)),
                         f"{name}-drive-beat{args.beat}"))
     print(f"Beat {args.beat}: {beat_class}")
     for fig, figure_name in figures:

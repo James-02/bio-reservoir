@@ -173,6 +173,43 @@ class TestStatesFigure:
         assert _saved(figure_dir) == ["states/toy-abstract-drive-beat2.png",
                                       "states/toy-abstract-states-beat2-He.png"]
 
+    def test_an_inducer_trace_is_labelled_as_one(self, small_design, load_script, pyplot,
+                                                 monkeypatch, capsys):
+        design = small_design("centre")
+        config = design.with_name("inducer.yaml")
+        config.write_text(f"base: {design.name}\n"
+                          "task: {type: inducer, pattern: shape, n_per_class: 5}\n")
+        script = load_script("figures/visualise_reservoir_states")
+        drawn = []
+        monkeypatch.setattr(script, "save_figure",
+                            lambda fig, name, **kw: drawn.append(fig) or [])
+        monkeypatch.setattr("sys.argv", ["visualise_reservoir_states", str(config), "--drive"])
+        script.main()
+        beat_axes = drawn[1].axes[1]
+        assert beat_axes.get_ylabel() == "Inducer input"
+        assert beat_axes.get_legend().get_texts()[0].get_text() == "Inducer: Square"
+        assert capsys.readouterr().out.startswith("Beat 0: Square")
+
+
+class TestInducerTasksFigure:
+    """scripts/figures/visualise_inducer_tasks.py: example traces of every class of every task."""
+
+    def test_a_panel_per_pattern_and_a_labelled_row_per_class(self, load_script, pyplot):
+        from training import inducer
+
+        script = load_script("figures/visualise_inducer_tasks")
+        fig = script.draw("device", per_class=2, image_delay=30)
+        assert len(fig.axes) == len(inducer.PATTERNS)
+        for ax, pattern in zip(fig.axes, inducer.PATTERNS, strict=True):
+            names = inducer.CLASS_NAMES[pattern]
+            assert [t.get_text() for t in ax.texts] == list(names)
+            assert len(ax.lines) == 2 * len(names)
+            assert len(ax.lines[0].get_xdata()) == 240 + 30
+
+    def test_the_script_saves_the_figure(self, figure_dir, run_script):
+        run_script("figures/visualise_inducer_tasks", "--per-class", "1")
+        assert _saved(figure_dir) == ["inducer/inducer-tasks-ideal.png"]
+
 
 class TestTopologyFigure:
     """scripts/figures/visualise_topology.py: the kernel and the colonies with their links."""

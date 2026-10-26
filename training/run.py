@@ -50,6 +50,7 @@ import hashlib
 import json
 import logging
 import resource
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -129,7 +130,9 @@ PRESETS: dict[str, dict[str, dict[str, Any]]] = {
 
 def load_config(path: str | Path) -> dict[str, Any]:
     """A config file. With ``base: <file>`` (relative to the config) it is the base config
-    with this file's settings merged over it: sections merge key by key, other values replace."""
+    with this file's settings merged over it: sections merge key by key, other values replace.
+    A section that names another ``type`` (``task: {type: inducer}`` over an ECG task)
+    replaces the base's section."""
     path = Path(path)
     with open(path) as f:
         cfg = yaml.safe_load(f) or {}
@@ -142,6 +145,8 @@ def _merged(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     out = dict(base)
     for key, value in override.items():
         both = isinstance(value, dict) and isinstance(out.get(key), dict)
+        if both and value.get("type", out[key].get("type")) != out[key].get("type"):
+            both = False
         out[key] = _merged(out[key], value) if both else value
     return out
 
@@ -337,7 +342,14 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
         sections[key].update(cfg.get(key) or {})
     sections["task"].setdefault("seed", seed)
     sections["cv"].setdefault("seed", seed)
-    if sections["task"]["labels"] not in ("five-class", "binary"):
+    task_type = (cfg.get("task") or {}).get("type", "ecg")
+    if task_type == "inducer":
+        from training import inducer
+
+        sections["task"] = inducer.resolve_task(dict(cfg["task"]), seed)
+    elif task_type != "ecg":
+        raise ValueError("task.type must be 'ecg' (the default) or 'inducer'.")
+    elif sections["task"]["labels"] not in ("five-class", "binary"):
         raise ValueError("task.labels must be 'five-class' or 'binary'.")
     _check_raw(sections, resolved_reservoir)
     _check_simulation(sections, resolved_reservoir)
@@ -349,7 +361,7 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
         if split not in SPLITS.values():
             raise ValueError(f"Unknown held-out split {split!r}; choose from "
                              f"{sorted(SPLITS.values())}.")
-        if sections["task"]["labels"] != "five-class":
+        if sections["task"].get("labels") != "five-class":
             raise ValueError("The held-out splits hold five-class beats.")
         if "states_from" in resolved_reservoir:
             raise ValueError("A held-out evaluation simulates the reservoir; it cannot reuse "
@@ -454,8 +466,13 @@ def load_task(task: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, list[Path]]
     The beats come from the prepared dataset (``ecg/ecg_data.npz`` or
     ``ecg/binary_ecg_data.npz`` in the data folder), or from ``task.data_file`` (relative
     to the data folder) when it is set. ``task.data_sha256``, when set, must be the file's
-    SHA-256.
+    SHA-256. An inducer task (``task.type: inducer``) generates its traces instead
+    (:mod:`training.inducer`).
     """
+    if task.get("type") == "inducer":
+        from training import inducer
+
+        return inducer.load(task)
     from utils.preprocessing import load_ecg_data
 
     binary = task["labels"] == "binary"
@@ -734,9 +751,22 @@ def summarise(artifacts: list, primary_average: str = "macro",
     }
 
 
-def plot_run(fig_dir: Path, metrics: dict[str, Any]) -> list[Path]:
+def class_names(task: dict[str, Any]) -> tuple[str, ...]:
+    """The names of the classes of a resolved task, in label order."""
+    if task.get("type") == "inducer":
+        from training import inducer
+
+        return inducer.CLASS_NAMES[task["pattern"]]
+    from utils.visualisation import BINARY_CLASS_NAMES, CLASS_NAMES
+
+    return BINARY_CLASS_NAMES if task["labels"] == "binary" else CLASS_NAMES
+
+
+def plot_run(fig_dir: Path, metrics: dict[str, Any],
+             names: Sequence[str] | None = None) -> list[Path]:
     """The run's figures in ``fig_dir``: the confusion matrix of all folds together, and the
-    scores of each fold with their mean and SD (:func:`utils.visualisation.plot_fold_metrics`)."""
+    scores of each fold with their mean and SD (:func:`utils.visualisation.plot_fold_metrics`);
+    ``names`` are the classes' (default: the ECG classes)."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -749,10 +779,13 @@ def plot_run(fig_dir: Path, metrics: dict[str, Any]) -> list[Path]:
     )
 
     with plt.style.context(STYLE):
-        ax = plot_confusion_matrix(metrics["pooled"]["confusion_matrix"])
+        matrix = metrics["pooled"]["confusion_matrix"]
+        # A pool can lack classes of its task; then the classes are numbered by the matrix.
+        names = list(names) if names is not None and len(names) == len(matrix) else None
+        ax = plot_confusion_matrix(matrix, labels=names)
         ax.set_title("All folds together")
         paths = save_figure(ax.figure, "confusion_matrix", folder=fig_dir, dpi=300)
-    fig = plot_fold_metrics(metrics["folds"], metrics["primary_average"])
+    fig = plot_fold_metrics(metrics["folds"], metrics["primary_average"], names=names)
     paths += save_figure(fig, "fold_metrics", folder=fig_dir, dpi=300)
     return paths
 
@@ -857,7 +890,7 @@ def execute(cfg: dict[str, Any], *, out: str | Path | None = None, processes: in
             metrics["summary"].update(f1_macro_ci95_low=evaluation["f1_macro_ci95"][0],
                                       f1_macro_ci95_high=evaluation["f1_macro_ci95"][1])
         (run_dir / "metrics.json").write_text(json.dumps(metrics, indent=1) + "\n")
-        plot_run(run_dir / "figures", metrics)
+        plot_run(run_dir / "figures", metrics, class_names(cfg["task"]))
         if evaluation:
             logger.info("Held-out split %s: F1 %.4f (95%% CI %.4f to %.4f), accuracy %.4f",
                         split, metrics["mean"]["f1"], *evaluation["f1_macro_ci95"],

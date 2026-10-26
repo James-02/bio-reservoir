@@ -23,7 +23,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
 
-from training.figures import VARIABLES, colony_states, encoded_input, run_config, task_beat
+from training.figures import (
+    VARIABLES,
+    colony_states,
+    encoded_input,
+    input_name,
+    run_config,
+    task_beat,
+)
 from utils.visualisation import OKABE_ITO, STATE_NAMES, STYLE, add_formats_option, save_figure
 
 LINES = {"I": {"color": OKABE_ITO[0], "lw": 1.8, "ls": "-"},
@@ -34,10 +41,10 @@ BOX = {"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 2}
 
 
 def draw(warm: np.ndarray, rest: np.ndarray, driven: dict[float, np.ndarray],
-         beat_input: np.ndarray, beat_class: str, config_scaling: float | None = None
-         ) -> plt.Figure:
+         beat_input: np.ndarray, beat_class: str, config_scaling: float | None = None,
+         source: str = "ECG") -> plt.Figure:
     """The colony's LuxI and AiiA without input and at each scaling in ``driven``, after the
-    ``warm`` steps of the warm-up, and the beat's input below."""
+    ``warm`` steps of the warm-up, and the beat's input (``source``: ECG or inducer) below."""
     w = len(warm)
     t = np.arange(-w, len(beat_input))
     start = max(w - 1, 0)  # each trace continues from the last step of the warm-up
@@ -72,9 +79,9 @@ def draw(warm: np.ndarray, rest: np.ndarray, driven: dict[float, np.ndarray],
         ax.axvline(-1, color="black", alpha=0.35, lw=1.0)
     ax.plot(t[start:], u[start:], **ECG)
     ax.grid(True, alpha=0.18)
-    ax.set_ylabel("ECG Input")
-    ax.legend(handles=[Line2D([], [], **ECG, label=f"ECG Class: {beat_class}"), warm_handle],
-              loc="upper right", fontsize=8)
+    ax.set_ylabel(f"{source} Input")
+    ax.legend(handles=[Line2D([], [], **ECG, label=f"{source} Class: {beat_class}"),
+                       warm_handle], loc="upper right", fontsize=8)
     fig.supxlabel("Timestep")
     fig.supylabel("Genetic Biopixel States")
     return fig
@@ -102,7 +109,8 @@ def main() -> None:
     warm, rest, driven = colony_states(cfg, beat, args.beat, scales)
     shown = warm[len(warm) - min(max(args.warmup_steps, 0), len(warm)):]
     plt.style.use(STYLE)
-    fig = draw(shown, rest, driven, encoded_input(cfg, beat), beat_class, gain)
+    fig = draw(shown, rest, driven, encoded_input(cfg, beat), beat_class, gain,
+               input_name(cfg))
     print(f"Beat {args.beat}: {beat_class}")
     paths = save_figure(fig, f"{cfg['name']}-dde-beat{args.beat}", topic="states",
                         formats=args.formats)

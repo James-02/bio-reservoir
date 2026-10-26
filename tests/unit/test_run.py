@@ -207,6 +207,16 @@ def test_a_config_lists_only_what_differs_from_its_base(tmp_path):
                     "scale": True}}
 
 
+def test_a_section_of_another_type_replaces_the_base_section(tmp_path):
+    (tmp_path / "design.yaml").write_text(
+        "seed: 3\ntask: {rows: 100, labels: binary}\nreservoir: {params: {units: 4}}\n")
+    (tmp_path / "study.yaml").write_text(
+        "base: design.yaml\nname: s\ntask: {type: inducer, pattern: order}\n")
+    assert run_module.load_config(tmp_path / "study.yaml") == {
+        "seed": 3, "name": "s", "task": {"type": "inducer", "pattern": "order"},
+        "reservoir": {"params": {"units": 4}}}
+
+
 # ---------------------------------------------------------------------------
 # Running
 # ---------------------------------------------------------------------------

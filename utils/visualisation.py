@@ -241,7 +241,8 @@ FOLD_SCORES = {"f1": "F1", "accuracy": "Accuracy", "precision": "Precision",
                "recall": "Recall", "mcc": "MCC", "kappa": "Cohen's \u03ba"}
 
 
-def plot_fold_metrics(folds: Sequence[Mapping], average: str = "macro"):
+def plot_fold_metrics(folds: Sequence[Mapping], average: str = "macro",
+                      names: Sequence[str] | None = None):
     """Draw the scores of each fold of a run as dots, with their mean and one sample SD, as
     in S10: the scores over all classes (:data:`FOLD_SCORES`; F1, precision and recall are
     averaged over the classes as ``average``) and the F1 of each class, from each fold's
@@ -249,8 +250,8 @@ def plot_fold_metrics(folds: Sequence[Mapping], average: str = "macro"):
 
     ``folds`` are mappings with the keys of :data:`FOLD_SCORES` and ``confusion_matrix``,
     such as :class:`utils.analysis.Metrics` or the folds of a run's ``metrics.json``. The F1
-    of each class is drawn when every fold has the same classes. Returns the figure, drawn in
-    the house style.
+    of each class is drawn when every fold has the same classes, labelled with ``names``
+    (default :func:`class_names`). Returns the figure, drawn in the house style.
     """
     scores = {f"{label} ({average})" if key in ("f1", "precision", "recall") else label:
               [float(fold[key]) for fold in folds] for key, label in FOLD_SCORES.items()}
@@ -271,7 +272,7 @@ def plot_fold_metrics(folds: Sequence[Mapping], average: str = "macro"):
             with np.errstate(invalid="ignore", divide="ignore"):
                 f1 = np.array([2 * np.diag(m) / (m.sum(axis=0) + m.sum(axis=1))
                                for m in matrices])
-            names = class_names(f1.shape[1])
+            names = class_names(f1.shape[1]) if names is None else list(names)
             per_class = {name: f1[np.isfinite(f1[:, c]), c] for c, name in enumerate(names)}
             plot_sweep(per_class, axes[0, 1], levels=names, connect=False, label=None,
                        seed_label=None)
