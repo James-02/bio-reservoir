@@ -105,6 +105,45 @@ class TestDDEFigure:
         assert capsys.readouterr().out.startswith("Beat 0: ")
 
 
+class TestStatesFigure:
+    """scripts/figures/visualise_reservoir_states.py: the array's states and drive terms."""
+
+    def test_a_row_per_colony_and_a_column_per_step(self, load_script, pyplot):
+        script = load_script("figures/visualise_reservoir_states")
+        states = np.arange(5 * 3 * 4, dtype=float).reshape(5, 3, 4)  # steps, colonies, vars
+        fig = script.draw_states(states, "I")
+        ax, colorbar = fig.axes
+        np.testing.assert_array_equal(ax.images[0].get_array(), states[:, :, 1].T)
+        assert (ax.get_xlabel(), ax.get_ylabel()) == ("Timestep", "Colony index")
+        assert colorbar.get_ylabel() == "LuxI concentration"
+        norm = script.draw_states(states, "I", log=True).axes[0].images[0].norm
+        assert type(norm).__name__ == "LogNorm" and norm.vmin == np.percentile(states[:, :, 1], 1)
+
+    def test_the_drive_terms_above_the_beat(self, load_script, pyplot):
+        script = load_script("figures/visualise_reservoir_states")
+        terms = np.array([[0.1, 0.2, 0.3], [0.2, 0.4, 0.6]])
+        ax, ax_ecg = script.draw_drive(terms, np.array([1.0, 2.0]), "Fusion", 0.209,
+                                       0.00186).axes
+        assert [line.get_label().split(":")[0] for line in ax.lines] == ["Input term",
+                                                                         "Recurrent term",
+                                                                         "Drive"]
+        assert ax.texts[0].get_text() == "$\\alpha_u = 0.21$,\u2002$\\alpha_r = 0.0019$"
+        assert ax_ecg.get_legend().get_texts()[0].get_text() == "ECG: Fusion"
+        assert ax.get_yscale() == "log"
+
+    def test_without_a_recurrent_term_only_the_input_term_is_drawn(self, load_script, pyplot):
+        script = load_script("figures/visualise_reservoir_states")
+        terms = np.array([[0.1, 0.0, 0.1], [0.2, 0.0, 0.2]])
+        ax = script.draw_drive(terms, np.array([1.0, 2.0]), "Normal", 0.155, 0.007).axes[0]
+        assert len(ax.lines) == 1 and ax.texts[0].get_text() == r"$\alpha_u = 0.15$"
+
+    def test_the_script_draws_a_design(self, small_design, figure_dir, ecg_data, run_script):
+        run_script("figures/visualise_reservoir_states", small_design("abstract"), "--drive",
+                   "--var", "He", "--beat", "2")
+        assert _saved(figure_dir) == ["states/toy-abstract-drive-beat2.png",
+                                      "states/toy-abstract-states-beat2-He.png"]
+
+
 class TestModelFigures:
     """scripts/figures/visualise_model.py draws a run config's model, built as a run builds it."""
 
