@@ -39,7 +39,7 @@ def figure_dir(tmp_path, monkeypatch, pyplot):
 
 @pytest.fixture
 def load_script(monkeypatch):
-    """Import ``scripts/<name>.py`` as a module, e.g. ``load_script("figures/visualise_dde")``."""
+    """Import ``scripts/<name>.py`` as a module, e.g. ``load_script("figures/visualise_model")``."""
 
     def load(name):
         spec = importlib.util.spec_from_file_location(f"script_{name.replace('/', '_')}",

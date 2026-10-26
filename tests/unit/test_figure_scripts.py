@@ -1,10 +1,10 @@
-"""The figure scripts in scripts/ run end to end on small inputs (Agg backend, no dataset).
-
-Each test runs a script as ``python scripts/<name>.py ARGS`` would and checks the figures
-it writes, so the scripts that draw the ``v0.1`` figures keep working.
+"""The figure scripts in scripts/ run end to end on small inputs (Agg backend, a small
+dataset in place of the prepared one): each test runs a script as
+``python scripts/<name>.py ARGS`` would, or calls its functions, and checks what it draws.
 """
 
 import logging
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -80,25 +80,83 @@ class TestFoldAnalysisFigures:
 
 
 class TestModelFigures:
-    """The scripts behind the ``v0.1`` model, drive and topology figures."""
+    """scripts/figures/visualise_model.py draws a run config's model, built as a run builds it."""
 
-    def test_dde_figure(self, figure_dir, ecg_data, run_script, monkeypatch):
-        monkeypatch.setattr(logging, "basicConfig", lambda **kwargs: None)
-        run_script("figures/visualise_dde", "--timesteps", 40, "--warmup", 10, "--rows", 100)
-        assert _saved(figure_dir) == ["states/dde_ecg_multiscale.png"]
+    DESIGNS = Path(__file__).resolve().parents[2] / "experiments" / "v0.2" / "designs"
 
-    def test_reservoir_state_drive_and_topology_figures(self, figure_dir, ecg_data, run_script):
-        run_script("figures/visualise_reservoir_states", "--nodes", 20, "--timesteps", 30,
-                   "--plot-topology", "--plot-drive")
-        assert _saved(figure_dir) == ["states/reservoir_drive_diag_nodes20_inst0.png",
-                                      "states/reservoir_heatmap_LuxI_nodes20_inst0.png",
-                                      "topology/reservoir_topology_nodes20.png"]
+    @classmethod
+    def _config(cls, tmp_path, design):
+        """A small copy of a v0.2 design: 16 colonies and a short warm-up."""
+        path = tmp_path / f"{design}.yaml"
+        path.write_text(f"base: {cls.DESIGNS / design}.yaml\nname: toy-{design}\n"
+                        "task: {rows: 100}\n"
+                        "reservoir: {params: {units: 16, warmup: 5}}\n")
+        return path
 
-    def test_topology_figures(self, figure_dir, run_script):
-        run_script("figures/visualise_topology", "--units", 30)
-        assert _saved(figure_dir) == ["topology/distance_histograms.png",
-                                      "topology/spatial_topology.png",
-                                      "topology/weight_vs_distance_matrix.png"]
+    def test_one_colony_with_and_without_the_beat(self, tmp_path, ecg_data, load_script):
+        script = load_script("figures/visualise_model")
+        cfg = script.run_config(self._config(tmp_path, "centre"))
+        beat, beat_class = script.task_beat(cfg, 0)
+        no_beat, driven = script.colony_states(cfg, beat, 0, [0.5, 2.0])
+        assert beat.shape == (187, 1) and beat_class in script.class_names(5)
+        assert no_beat.shape == (187, 4) and list(driven) == [0.5, 2.0]
+        assert not np.allclose(driven[2.0], no_beat)
+
+    def test_the_array_is_stepped_through_the_beat_as_a_run_runs_it(self, tmp_path, ecg_data,
+                                                                     load_script):
+        from training.simulate import beat_seed, reseed_noise
+
+        script = load_script("figures/visualise_model")
+        cfg = script.run_config(self._config(tmp_path, "abstract"))
+        beat, _ = script.task_beat(cfg, 3)
+        states, terms = script.array_states(cfg, beat, 3)
+        node = script.build(cfg)
+        reseed_noise(node, beat_seed(int(cfg["reservoir"]["seed"]), 3))
+        np.testing.assert_array_equal(states.reshape(len(beat), -1),
+                                      node.run(beat, reset=True))
+        assert terms.shape == (187, 3) and np.all(terms[1:, 1] > 0)
+
+    def test_a_lattice_is_a_grid_of_neighbours_and_a_kernel_has_positions(self, tmp_path,
+                                                                          load_script):
+        script = load_script("figures/visualise_model")
+        positions, weights = script.coupling(script.run_config(self._config(tmp_path, "centre")))
+        np.testing.assert_allclose(positions[[0, 3, 4, 15]], [[0, 0], [1, 0], [0, 1 / 3],
+                                                              [1, 1]])
+        assert weights.nnz == 48  # the 24 edges of a 4 x 4 grid, both ways
+        positions, weights = script.coupling(script.run_config(self._config(tmp_path,
+                                                                            "abstract")))
+        assert positions.shape == (16, 2) and weights.shape == (16, 16)
+        positions, weights = script.coupling(script.run_config(self._config(tmp_path,
+                                                                            "uncoupled")))
+        assert weights is None
+
+    def test_the_strongest_links_of_each_colony(self, load_script):
+        from scipy import sparse
+
+        weights = sparse.coo_matrix(np.array([[5.0, 1.0, -3.0, 2.0], [1.0, 0.0, 0.0, 0.0],
+                                              [0.0, 4.0, 0.0, -6.0], [0.0, 0.0, 0.0, 0.0]]))
+        keep = load_script("figures/visualise_model").strongest(weights, 2)
+        links = zip(weights.row[keep], weights.col[keep], strict=True)
+        assert sorted(links) == [(0, 2), (0, 3), (1, 0), (2, 1), (2, 3)]
+
+    def test_the_script_draws_each_figure_within_the_journal_rules(self, tmp_path, figure_dir,
+                                                                   ecg_data, run_script,
+                                                                   caplog):
+        with caplog.at_level(logging.WARNING, logger="utils.visualisation"):
+            run_script("figures/visualise_model", self._config(tmp_path, "centre"),
+                       "--gains", "1,2")
+            run_script("figures/visualise_model", self._config(tmp_path, "uncoupled"),
+                       "--plots", "coupling")
+        assert _saved(figure_dir) == ["model/toy-centre-array-beat0-I.png",
+                                      "model/toy-centre-colony-beat0.png",
+                                      "model/toy-centre-coupling.png",
+                                      "model/toy-uncoupled-coupling.png"]
+        assert caplog.messages == []
+
+    def test_an_unknown_plot_is_an_error(self, tmp_path, run_script):
+        with pytest.raises(SystemExit, match="Unknown plots"):
+            run_script("figures/visualise_model", self._config(tmp_path, "centre"),
+                       "--plots", "topology")
 
 
 class TestDatasetFigure:
