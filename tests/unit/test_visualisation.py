@@ -112,6 +112,13 @@ class TestSaveFigure:
         (png,) = vis.save_figure(fig, "fig", folder=tmp_path / "run" / "figures", dpi=20)
         assert png == tmp_path / "run" / "figures" / "fig.png" and png.is_file()
 
+    def test_matplotlib_is_given_python_floats(self, tmp_path, pyplot, monkeypatch):
+        fig, _ = pyplot.subplots()
+        given = []
+        monkeypatch.setattr(fig, "savefig", lambda path, dpi, **kwargs: given.append(dpi))
+        vis.save_figure(fig, "fig", folder=tmp_path)
+        assert type(given[0]) is float and type(vis.printed_width(fig)) is float
+
 
 class TestFormatsOption:
     def test_formats_are_read_from_a_comma_separated_list(self):

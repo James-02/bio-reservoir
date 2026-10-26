@@ -66,7 +66,7 @@ def printed_width(fig) -> float:
     """The width, in inches, at which ``fig`` is printed: its own as :func:`save_figure`
     crops it, reduced to two columns (7 in) if it is wider."""
     fig.draw_without_rendering()
-    return min(fig.get_tightbbox().width, DOUBLE_COLUMN)
+    return float(min(fig.get_tightbbox().width, DOUBLE_COLUMN))
 
 
 def figure_problems(fig, width: float | None = None) -> list[str]:
@@ -136,7 +136,8 @@ def save_figure(fig, name: str, *, topic: str = "", folder: str | Path | None = 
     width = printed_width(fig) if width is None else width
     for problem in figure_problems(fig, width):
         logger.warning("Figure %s, printed %.2g in wide: %s.", name, width, problem)
-    dpi = dpi or DPI * width / fig.get_tightbbox().width
+    # A plain float: matplotlib compares the dpi with the string "figure".
+    dpi = float(dpi or DPI * width / fig.get_tightbbox().width)
     folder = Path(folder) if folder is not None else config.figures_dir(topic)
     paths = [folder / f"{name}.{fmt}" for fmt in formats]
     with plt.rc_context({"pdf.fonttype": 42, "ps.fonttype": 42, "svg.fonttype": "none"}):
