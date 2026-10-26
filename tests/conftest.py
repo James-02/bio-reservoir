@@ -38,6 +38,39 @@ def figure_dir(tmp_path, monkeypatch, pyplot):
 
 
 @pytest.fixture
+def ecg_data(tmp_path, monkeypatch):
+    """A small five-class dataset (40 beats per class) in place of the prepared ECG cache."""
+    import numpy as np
+
+    rng = np.random.default_rng(1)
+    labels = np.repeat(np.arange(5), 40)
+    t = np.linspace(0.0, 1.0, 187)
+    peak = np.exp(-(((t[None, :] - 0.1 - 0.1 * labels[:, None]) / 0.03) ** 2))
+    beats = np.clip(0.2 + 0.7 * peak + 0.05 * rng.normal(size=peak.shape), 0.0, 1.0)
+    cache = tmp_path / "data" / "ecg" / "ecg_data.npz"
+    cache.parent.mkdir(parents=True)
+    np.savez(cache, X=beats, Y=labels.astype(float))
+    monkeypatch.setenv("BIORESERVOIR_DATA_DIR", str(tmp_path / "data"))
+
+
+@pytest.fixture
+def small_design(tmp_path):
+    """A small copy of a ``v0.2`` design (16 colonies, a warm-up of 5 steps, 100 beats):
+    ``small_design("centre")`` is the path of its config."""
+    designs = Path(__file__).resolve().parents[1] / "experiments" / "v0.2" / "designs"
+
+    def write(design, **params):
+        path = tmp_path / f"{design}.yaml"
+        params = {"units": 16, "warmup": 5, **params}
+        values = ", ".join(f"{key}: {value}" for key, value in params.items())
+        path.write_text(f"base: {designs / design}.yaml\nname: toy-{design}\n"
+                        f"task: {{rows: 100}}\nreservoir: {{params: {{{values}}}}}\n")
+        return path
+
+    return write
+
+
+@pytest.fixture
 def load_script(monkeypatch):
     """Import ``scripts/<name>.py`` as a module, e.g. ``load_script("figures/visualise_model")``."""
 

@@ -34,51 +34,26 @@ from matplotlib.collections import LineCollection
 from matplotlib.colors import LogNorm
 from scipy import sparse
 
-from optimization.reservoirs import _build_bioreservoir_topology, build_reservoir
-from training.run import load_config, load_task, resolve
-from training.simulate import beat_seed, reseed_noise
-from utils.preprocessing import class_indices, standardize_data
+from training.figures import (
+    VARIABLES,
+    array_states,
+    coupling,
+    run_config,
+    strongest,
+    task_beat,
+)
+from training.figures import colony_states as _colony_states
 from utils.visualisation import (
     DOUBLE_COLUMN,
     OKABE_ITO,
     SINGLE_COLUMN,
     STATE_NAMES,
     STYLE,
-    class_names,
     save_figure,
 )
 
-VARIABLES = ("A", "I", "Hi", "He")  # the order of the oscillator's state
 PLOTS = ("colony", "array", "coupling")
-TERMS = (("inp_term", "Input term", "-"), ("rec_term", "Recurrent term", "--"),
-         ("drive", "Drive", ":"))
-
-
-def run_config(path: str | Path) -> dict:
-    """The resolved run config at ``path``; its model must be a bio-reservoir."""
-    cfg = load_config(path)
-    cfg.pop("study", None)
-    cfg = resolve(cfg)
-    if cfg["reservoir"].get("type") != "bioreservoir":
-        raise SystemExit(f"{path} is not a bio-reservoir config.")
-    return cfg
-
-
-def task_beat(cfg: dict, index: int) -> tuple[np.ndarray, str]:
-    """Beat ``index`` of the config's task as a run simulates it (steps, 1), and its class."""
-    X, Y, _ = load_task(cfg["task"])
-    X, _ = standardize_data(X, X[:1], scaler_type=str(cfg["task"]["scaler"]))
-    names = class_names(2 if cfg["task"]["labels"] == "binary" else 5)
-    return np.asarray(X[index], dtype=float).reshape(-1, 1), names[class_indices(Y)[index]]
-
-
-def build(cfg: dict, **overrides):
-    """The config's reservoir with ``overrides``, observing all four variables."""
-    params = dict(cfg["reservoir"]["params"], reservoir_type="bioreservoir",
-                  output_variables="all")
-    params.update(overrides)
-    node, _ = build_reservoir(params, seed=int(cfg["reservoir"]["seed"]))
-    return node
+TERMS = (("Input term", "-"), ("Recurrent term", "--"), ("Drive", ":"))
 
 
 # --- colony -----------------------------------------------------------------------------
@@ -86,18 +61,10 @@ def build(cfg: dict, **overrides):
 def colony_states(cfg: dict, beat: np.ndarray, index: int,
                   gains: list[float]) -> tuple[np.ndarray, dict[float, np.ndarray]]:
     """One colony's state (steps, 4) without the beat, and with it at each multiple of the
-    config's input gain. The colony is alone, with nominal kinetics, and receives the input."""
-    alone = {"units": 1, "coupling": "none", "topology_type": "lattice",
-             "param_heterogeneity_cv": 0.0, "input_connectivity": 1.0}
-    rest = build(cfg, **alone)
-    no_beat = np.array([rest._step(np.zeros(1))[0] for _ in range(len(beat))])
+    config's input gain (:func:`training.figures.colony_states`)."""
     gain = float(cfg["reservoir"]["params"]["input_scaling"])
-    driven = {}
-    for factor in gains:
-        node = build(cfg, **alone, input_scaling=factor * gain)
-        reseed_noise(node, beat_seed(int(cfg["reservoir"]["seed"]), index))
-        driven[factor] = np.asarray(node.run(beat, reset=True)).reshape(len(beat), 4)
-    return no_beat, driven
+    _, no_beat, driven = _colony_states(cfg, beat, index, [factor * gain for factor in gains])
+    return no_beat, dict(zip(gains, driven.values(), strict=True))
 
 
 def draw_colony(no_beat: np.ndarray, driven: dict[float, np.ndarray], beat: np.ndarray,
@@ -126,21 +93,6 @@ def draw_colony(no_beat: np.ndarray, driven: dict[float, np.ndarray], beat: np.n
 
 # --- array ------------------------------------------------------------------------------
 
-def array_states(cfg: dict, beat: np.ndarray, index: int) -> tuple[np.ndarray, np.ndarray]:
-    """The array's state (steps, colonies, 4) during the beat, and the mean size over the
-    colonies of each of :data:`TERMS` at each step (steps, 3)."""
-    node = build(cfg)
-    node.initialize(beat[:1])
-    reseed_noise(node, beat_seed(int(cfg["reservoir"]["seed"]), index))
-    node.reset(to_state=node.zero_state())  # as run(beat, reset=True) does
-    node.diagnostics = True  # the node keeps the terms of its last step
-    states, terms = [], []
-    for x in beat:
-        states.append(np.asarray(node(x.reshape(1, 1))).reshape(-1, 4))
-        terms.append([np.mean(np.abs(getattr(node, f"_last_{name}"))) for name, *_ in TERMS])
-    return np.array(states), np.array(terms)
-
-
 def draw_array(states: np.ndarray, terms: np.ndarray, beat: np.ndarray, beat_label: str,
                var: str) -> plt.Figure:
     """The beat, the drive terms and a heatmap of ``var``, one row per colony, both on log
@@ -153,7 +105,7 @@ def draw_array(states: np.ndarray, terms: np.ndarray, beat: np.ndarray, beat_lab
     ax_beat.plot(t, beat[:, 0], color="0.3")
     ax_beat.set_ylabel(beat_label)
     recurrent = np.any(terms[:, 1] > 0)
-    for column, (_, name, style) in enumerate(TERMS if recurrent else TERMS[:1]):
+    for column, (name, style) in enumerate(TERMS if recurrent else TERMS[:1]):
         ax_drive.plot(t, terms[:, column], color=OKABE_ITO[column], ls=style, label=name)
     ax_drive.set(yscale="log", ylabel="Mean size over\nthe colonies")
     ax_drive.legend(loc="upper left", bbox_to_anchor=(1.01, 1.0))
@@ -170,42 +122,6 @@ def draw_array(states: np.ndarray, terms: np.ndarray, beat: np.ndarray, beat_lab
 
 
 # --- coupling ---------------------------------------------------------------------------
-
-def coupling(cfg: dict) -> tuple[np.ndarray, sparse.coo_matrix | None]:
-    """The positions (colonies, 2) of the config's colonies, in units of the array's width,
-    and their coupling weights: the conductances of the diffusive coupling, the kernel of
-    the abstract one (which couples each pair of colonies through all four variables), or
-    None without coupling."""
-    params = cfg["reservoir"]["params"]
-    seed, units = int(cfg["reservoir"]["seed"]), int(params["units"])
-    topology = params.get("topology_type", "distance")
-    if topology == "lattice":  # the grid of bioreservoir.topology.lattice_matrix
-        columns = max(int(round(np.sqrt(units))), 1)
-        while units % columns:
-            columns -= 1
-        positions = np.column_stack([np.arange(units) % columns,
-                                     np.arange(units) // columns]) / max(columns - 1, 1)
-        kernel = None
-    elif topology == "distance":  # the node builds its kernel with this call and seed
-        kernel, positions = _build_bioreservoir_topology(params, seed)(units, units,
-                                                                     return_coords=True)
-    else:
-        raise SystemExit(f"A {topology} topology places no colonies in space.")
-    weights = {"diffusion": lambda: build(cfg, warmup=0).conductance,
-               "abstract": lambda: kernel}.get(params.get("coupling", "abstract"), lambda: None)()
-    return (np.asarray(positions, dtype=float),
-            None if weights is None else sparse.coo_matrix(weights))
-
-
-def strongest(weights: sparse.coo_matrix, links: int) -> np.ndarray:
-    """The positions in ``weights.data`` of the ``links`` largest weights (by size) of each
-    colony, other than its own."""
-    order = np.lexsort((-np.abs(weights.data), weights.row))
-    order = order[weights.row[order] != weights.col[order]]
-    rows = weights.row[order]
-    rank = np.arange(len(order)) - np.searchsorted(rows, rows)
-    return order[rank < links]
-
 
 def draw_coupling(positions: np.ndarray, weights: sparse.coo_matrix | None,
                   links: int) -> plt.Figure:
