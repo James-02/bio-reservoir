@@ -213,46 +213,46 @@ def plot_comparison(out: Path, result: dict[str, Any], folds_a: list, folds_b: l
     import matplotlib.pyplot as plt
     from sklearn.metrics import confusion_matrix
 
-    rows = result["folds"]
-    fig, ax = plt.subplots(figsize=(5, 3))
-    for side, marker in (("a", "o"), ("b", "s")):
-        ax.plot([r["fold"] for r in rows], [r[side]["f1_macro"] for r in rows], marker=marker,
-                label=result[side])
-    ax.set(xlabel="Fold", ylabel="Macro-F1", title="Per-fold macro-F1")
-    ax.legend(fontsize=7)
-    fig.savefig(out / "fold_f1.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    from utils.visualisation import DOUBLE_COLUMN, STYLE, plot_confusion_matrix, save_figure
 
-    fig, axes = plt.subplots(1, 2, figsize=(9, 4))
-    for ax, folds, name in ((axes[0], folds_a, result["a"]), (axes[1], folds_b, result["b"])):
-        y_true = np.concatenate([_classes(f.Y_test) for f in folds])
-        y_pred = np.concatenate([_classes(f.Y_pred) for f in folds])
-        cm = confusion_matrix(y_true, y_pred).astype(float)
-        cm /= np.maximum(cm.sum(axis=1, keepdims=True), 1.0)
-        ax.imshow(cm, vmin=0, vmax=1, cmap="Blues")
-        for (i, j), value in np.ndenumerate(cm):
-            ax.text(j, i, f"{value:.2f}", ha="center", va="center", fontsize=8,
-                    color="white" if value > 0.5 else "black")
-        ax.set(title=name, xlabel="Predicted class", ylabel="True class")
-    fig.savefig(out / "confusion_matrices.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    def save(fig, name):
+        save_figure(fig, name, folder=out, formats=("png",), dpi=300)
 
-    states = []
-    for path in paths:
-        with np.load(sorted(path.glob("fold-*.npz"))[0], allow_pickle=True) as data:
-            states.append(data["test_states"][:3].reshape(3, -1)
-                          if "test_states" in data.files else None)
-    if all(s is not None for s in states) and states[0].shape == states[1].shape:
-        fig, axes = plt.subplots(3, 1, figsize=(7, 6), sharex=True)
-        for k, ax in enumerate(axes):
-            ax.plot(states[0][k], lw=0.6, label=result["a"])
-            ax.plot(states[1][k], lw=0.6, alpha=0.7, label=result["b"])
-            ax.set_ylabel(f"beat {k}")
-        axes[0].legend(fontsize=7)
-        axes[-1].set_xlabel("Feature (unit x observed variable)")
-        fig.suptitle("State features of the first test beats of the first fold")
-        fig.savefig(out / "state_features.png", dpi=150, bbox_inches="tight")
-        plt.close(fig)
+    with plt.style.context(STYLE):
+        rows = result["folds"]
+        fig, ax = plt.subplots()
+        for side, marker in (("a", "o"), ("b", "s")):
+            ax.plot([r["fold"] for r in rows], [r[side]["f1_macro"] for r in rows],
+                    marker=marker, label=result[side])
+        ax.set(xlabel="Fold", ylabel="Macro-F1", xticks=[r["fold"] for r in rows])
+        ax.legend()
+        save(fig, "fold_f1")
+
+        fig, axes = plt.subplots(1, 2, figsize=(DOUBLE_COLUMN, 2.9))
+        for ax, folds, name in ((axes[0], folds_a, result["a"]), (axes[1], folds_b, result["b"])):
+            labels = np.arange(np.asarray(folds[0].Y_test).shape[-1])
+            y_true = np.concatenate([_classes(f.Y_test) for f in folds])
+            y_pred = np.concatenate([_classes(f.Y_pred) for f in folds])
+            plot_confusion_matrix(confusion_matrix(y_true, y_pred, labels=labels), ax,
+                                  colorbar=ax is axes[1])
+            ax.set_title(name)
+        save(fig, "confusion_matrices")
+
+        states = []
+        for path in paths:
+            with np.load(sorted(path.glob("fold-*.npz"))[0], allow_pickle=True) as data:
+                states.append(data["test_states"][:3].reshape(3, -1)
+                              if "test_states" in data.files else None)
+        if all(s is not None for s in states) and states[0].shape == states[1].shape:
+            fig, axes = plt.subplots(3, 1, figsize=(DOUBLE_COLUMN, 4.5), sharex=True)
+            for k, ax in enumerate(axes):
+                ax.plot(states[0][k], lw=1.0, label=result["a"])
+                ax.plot(states[1][k], lw=1.0, alpha=0.7, label=result["b"])
+                ax.set_ylabel(f"Beat {k}")
+            axes[0].legend()
+            axes[-1].set_xlabel("Feature (unit x observed variable)")
+            fig.suptitle("State features of the first test beats of the first fold")
+            save(fig, "state_features")
 
 
 def format_comparison(result: dict[str, Any]) -> str:
