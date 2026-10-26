@@ -1,5 +1,6 @@
-"""The shared figure helpers of utils.visualisation draw the data they are given."""
+"""utils.visualisation: the house style, its check of the journal's rules, and the shared plots."""
 
+import logging
 import subprocess
 import sys
 
@@ -8,9 +9,7 @@ import numpy as np
 from utils import visualisation as vis
 
 
-class TestV0_1Style:
-    """The ``v0.1`` style applies where the ``v0.1`` figures are drawn, not on import."""
-
+class TestStyle:
     def test_importing_the_module_changes_no_matplotlib_setting(self):
         code = ("import matplotlib\nmatplotlib.use('Agg')\nimport matplotlib.pyplot as plt\n"
                 "before = dict(plt.rcParams)\nimport utils.visualisation\n"
@@ -19,40 +18,113 @@ class TestV0_1Style:
                              check=True)
         assert out.stdout.strip() == "[]"
 
-    def test_helpers_draw_in_the_style_and_leave_the_settings(self, figure_dir, pyplot):
-        pyplot.rcParams["font.size"] = 9
-        vis.plot_confusion_matrix(np.array([[3, 1], [1, 3]]), show=False, filename="s.png")
-        annotation = pyplot.gcf().axes[0].texts[0]
-        assert annotation.get_fontsize() == vis.V0_1_STYLE["font.size"]
-        assert pyplot.rcParams["font.size"] == 9
+    def test_text_and_lines_are_large_enough_and_the_pdf_text_is_truetype(self, pyplot):
+        with pyplot.style.context(vis.STYLE):
+            rc = pyplot.rcParams
+            sizes = [rc[k] for k in ("font.size", "axes.labelsize", "axes.titlesize",
+                                     "xtick.labelsize", "ytick.labelsize", "legend.fontsize")]
+            widths = [rc[k] for k in ("lines.linewidth", "axes.linewidth", "patch.linewidth",
+                                      "grid.linewidth", "xtick.major.width", "ytick.major.width")]
+            assert min(sizes) >= vis.MIN_FONT_SIZE and min(widths) >= vis.MIN_LINE_WIDTH
+            assert rc["figure.figsize"][0] == vis.SINGLE_COLUMN and rc["pdf.fonttype"] == 42
 
-    def test_scripts_switch_their_process_to_the_style(self, pyplot):
-        with pyplot.rc_context(vis.V0_1_STYLE):
-            expected = dict(pyplot.rcParams)
-        vis.use_v0_1_style()
-        assert dict(pyplot.rcParams) == expected
+    def test_each_class_has_its_own_okabe_ito_colour(self):
+        assert set(vis.CLASS_COLOURS) == {*vis.CLASS_NAMES, *vis.BINARY_CLASS_NAMES}
+        assert set(vis.CLASS_COLOURS.values()) <= set(vis.OKABE_ITO)
+        assert len({vis.CLASS_COLOURS[name] for name in vis.CLASS_NAMES}) == 5
+        assert vis.CLASS_COLOURS["Normal"] != vis.CLASS_COLOURS["Arrhythmia"]
+
+    def test_class_names_follow_the_number_of_classes(self):
+        assert vis.class_names(2) == ("Normal", "Arrhythmia")
+        assert vis.class_names(5) == vis.CLASS_NAMES
+        assert vis.class_names(3) == ("Normal", "Supraventricular", "Ventricular")
+
+
+class TestFigureProblems:
+    def test_a_figure_in_the_house_style_has_none(self, pyplot):
+        with pyplot.style.context(vis.STYLE):
+            fig, ax = pyplot.subplots()
+            ax.plot([0, 1], [1, 0], label="A line")
+            ax.set(xlabel="Time (min)", ylabel="LuxI")
+            ax.legend()
+        assert vis.figure_problems(fig) == []
+
+    def test_size_small_text_and_thin_lines_are_reported(self, pyplot):
+        fig, ax = pyplot.subplots(figsize=(10, 14))
+        ax.plot([0, 1], [1, 0], lw=0.5)
+        ax.set_xlabel("tiny", fontsize=4)
+        wide, high, text, lines = vis.figure_problems(fig)
+        assert "wide" in wide and "high" in high
+        assert "1 texts are smaller than 5 pt, such as 'tiny' at 4 pt" == text
+        assert "1 lines are thinner than 1 pt, the thinnest 0.5 pt" == lines
+
+
+class TestSaveFigure:
+    def test_each_format_is_written_and_the_figure_closed(self, figure_dir, pyplot):
+        fig, ax = pyplot.subplots()
+        ax.plot([0, 1], [1, 0])
+        paths = vis.save_figure(fig, "line", topic="checks")
+        assert [p.relative_to(figure_dir).as_posix() for p in paths] == ["checks/line.png",
+                                                                         "checks/line.pdf"]
+        assert all(p.stat().st_size > 0 for p in paths)
+        assert not pyplot.fignum_exists(fig.number)
+
+    def test_the_pdf_keeps_its_text_as_truetype_text(self, figure_dir, pyplot):
+        fig, ax = pyplot.subplots()
+        ax.set_xlabel("Time (min)")
+        (pdf,) = vis.save_figure(fig, "text", formats=("pdf",))
+        content = pdf.read_bytes()
+        assert b"/FontFile2" in content and b"/Type3" not in content
+
+    def test_a_figure_that_breaks_the_rules_is_saved_with_a_warning(self, figure_dir, pyplot,
+                                                                     caplog):
+        fig, ax = pyplot.subplots()
+        ax.set_title("small", fontsize=3)
+        with caplog.at_level(logging.WARNING, logger="utils.visualisation"):
+            (png,) = vis.save_figure(fig, "small", formats=("png",))
+        assert png.is_file()
+        assert caplog.messages == ["Figure small: 1 texts are smaller than 5 pt, such as "
+                                   "'small' at 3 pt."]
+
+    def test_a_folder_can_be_given(self, tmp_path, pyplot):
+        fig, _ = pyplot.subplots()
+        (png,) = vis.save_figure(fig, "fig", folder=tmp_path / "run" / "figures",
+                                 formats=("png",), dpi=20)
+        assert png == tmp_path / "run" / "figures" / "fig.png" and png.is_file()
 
 
 class TestConfusionMatrix:
-    def test_rows_are_normalised_and_the_classes_named(self, figure_dir, pyplot):
-        counts = np.array([[8, 2, 0, 0, 0], [1, 9, 0, 0, 0], [0, 0, 5, 5, 0],
-                           [0, 0, 0, 10, 0], [0, 0, 0, 0, 4]])
-        vis.plot_confusion_matrix(counts, show=False, filename="cm.png")
-        assert (figure_dir / "metrics" / "cm.png").is_file()
-        ax = pyplot.gcf().axes[0]
-        shown = np.asarray(ax.collections[0].get_array()).reshape(5, 5)
-        np.testing.assert_allclose(shown, counts / counts.sum(axis=1, keepdims=True))
-        assert [t.get_text() for t in ax.get_xticklabels()] == vis.classes
+    COUNTS = np.array([[8, 2, 0, 0, 0], [1, 9, 0, 0, 0], [0, 0, 5, 5, 0], [0, 0, 0, 10, 0],
+                       [0, 0, 0, 0, 4]])
 
-    def test_two_classes_are_normal_and_arrhythmia(self, figure_dir, pyplot):
-        vis.plot_confusion_matrix(np.array([[3, 1], [1, 3]]), show=False, filename="b.png")
-        ax = pyplot.gcf().axes[0]
-        assert [t.get_text() for t in ax.get_yticklabels()] == vis.binary_classes
+    def test_rows_are_divided_by_their_sums_and_the_classes_named(self, pyplot):
+        ax = vis.plot_confusion_matrix(self.COUNTS)
+        shares = self.COUNTS / self.COUNTS.sum(axis=1, keepdims=True)
+        np.testing.assert_allclose(ax.images[0].get_array(), shares)
+        assert [t.get_text() for t in ax.texts[:3]] == ["0.80", "0.20", "0.00"]
+        assert [t.get_text() for t in ax.get_xticklabels()] == list(vis.CLASS_NAMES)
+        assert (ax.get_xlabel(), ax.get_ylabel()) == ("Predicted label", "True label")
 
+    def test_two_classes_are_normal_and_arrhythmia(self, pyplot):
+        ax = vis.plot_confusion_matrix(np.array([[3, 1], [1, 3]]))
+        assert [t.get_text() for t in ax.get_yticklabels()] == ["Normal", "Arrhythmia"]
 
-def test_genes_are_named_after_the_model_variables():
-    assert (vis.gene_full_name("I"), vis.gene_full_name("A")) == ("luxI", "aiiA")
-    assert vis.gene_full_name("He") == "He"
+    def test_a_class_without_beats_is_a_row_of_zeros(self, pyplot):
+        ax = vis.plot_confusion_matrix(np.array([[2, 0], [0, 0]]))
+        np.testing.assert_array_equal(ax.images[0].get_array(), [[1, 0], [0, 0]])
+
+    def test_alone_it_is_a_one_column_figure_in_the_house_style(self, pyplot):
+        pyplot.rcParams["font.size"] = 12
+        ax = vis.plot_confusion_matrix(self.COUNTS)
+        assert ax.figure.get_size_inches()[0] == vis.SINGLE_COLUMN
+        assert ax.texts[0].get_fontsize() == vis.STYLE["font.size"]
+        assert pyplot.rcParams["font.size"] == 12
+        assert vis.figure_problems(ax.figure) == []
+
+    def test_it_draws_on_the_axes_it_is_given(self, pyplot):
+        fig, axes = pyplot.subplots(1, 2)
+        assert vis.plot_confusion_matrix(np.eye(2), axes[1], colorbar=False) is axes[1]
+        assert len(fig.axes) == 2 and len(axes[1].images) == 1
 
 
 class TestSweep:
@@ -63,7 +135,7 @@ class TestSweep:
 
     def _draw(self, pyplot, scores=SCORES, **kwargs):
         _, ax = pyplot.subplots()
-        return vis.plot_sweep(ax, scores, **kwargs)
+        return vis.plot_sweep(scores, ax, **kwargs)
 
     def test_levels_are_evenly_spaced_and_labelled_with_their_values(self, pyplot):
         ax = self._draw(pyplot)
@@ -76,15 +148,14 @@ class TestSweep:
         np.testing.assert_allclose(dots[:, 1], [0.80, 0.82, 0.84, 0.90, 0.91, 0.92, 0.70, 0.74])
         assert np.all(np.abs(dots[:, 0] - [0, 0, 0, 1, 1, 1, 2, 2]) <= 0.15)
 
-    def test_the_line_joins_the_means_and_the_band_spans_one_sd(self, pyplot):
-        for ddof in (1, 0):
-            ax = self._draw(pyplot, ddof=ddof)
-            np.testing.assert_allclose(ax.lines[0].get_ydata(), self.MEANS)
-            corners = ax.collections[1].get_paths()[0].vertices
-            for x, level in enumerate((0.0, 0.1, 0.5)):
-                sd = np.std(self.SCORES[level], ddof=ddof)
-                for y in (self.MEANS[x] - sd, self.MEANS[x] + sd):
-                    assert np.isclose(corners, [x, y]).all(axis=1).any()
+    def test_the_line_joins_the_means_and_the_band_spans_one_sample_sd(self, pyplot):
+        ax = self._draw(pyplot)
+        np.testing.assert_allclose(ax.lines[0].get_ydata(), self.MEANS)
+        corners = ax.collections[1].get_paths()[0].vertices
+        for x, level in enumerate((0.0, 0.1, 0.5)):
+            sd = np.std(self.SCORES[level], ddof=1)
+            for y in (self.MEANS[x] - sd, self.MEANS[x] + sd):
+                assert np.isclose(corners, [x, y]).all(axis=1).any()
 
     def test_a_figure_is_the_same_every_time(self, pyplot):
         first, second = (self._draw(pyplot).collections[0].get_offsets() for _ in range(2))
@@ -94,19 +165,23 @@ class TestSweep:
         ax = self._draw(pyplot, reference=0.82, reference_label="Without the setting")
         assert list(ax.lines[0].get_ydata()) == [0.82, 0.82]
         assert ax.get_legend_handles_labels()[1] == ["Without the setting", "Seeds",
-                                                     "Mean (\u00b11 SD)"]
+                                                     "Mean \u00b1 SD"]
 
     def test_a_level_with_one_seed_has_a_mean_but_no_band(self, pyplot, recwarn):
         ax = self._draw(pyplot, scores={0.0: [0.8, 0.9], 1.0: [0.7]})
         np.testing.assert_allclose(ax.lines[0].get_ydata(), [0.85, 0.7])
         assert not [w for w in recwarn.list if issubclass(w.category, RuntimeWarning)]
 
+    def test_sweeps_on_one_axes_share_their_levels(self, pyplot):
+        _, ax = pyplot.subplots()
+        levels = [0.0, 0.1, 0.5]
+        vis.plot_sweep(self.SCORES, ax, levels=levels)
+        vis.plot_sweep({0.0: [0.6], 0.5: [0.5]}, ax, levels=levels, color=vis.OKABE_ITO[1],
+                       marker="s", label="Other", seed_label=None)
+        assert list(ax.lines[1].get_xdata()) == [0, 2]
+        assert ax.get_legend_handles_labels()[1] == ["Seeds", "Mean \u00b1 SD", "Other"]
 
-def test_save_figure_writes_each_format_and_closes_the_figure(figure_dir, pyplot):
-    fig, ax = pyplot.subplots()
-    ax.plot([0, 1], [1, 0])
-    paths = vis.save_figure(fig, "line", topic="checks")
-    assert [p.relative_to(figure_dir).as_posix() for p in paths] == ["checks/line.png",
-                                                                     "checks/line.pdf"]
-    assert all(p.stat().st_size > 0 for p in paths)
-    assert not pyplot.fignum_exists(fig.number)
+    def test_alone_it_is_a_one_column_figure(self, pyplot):
+        ax = vis.plot_sweep(self.SCORES)
+        assert ax.figure.get_size_inches()[0] == vis.SINGLE_COLUMN
+        assert vis.figure_problems(ax.figure) == []

@@ -27,7 +27,7 @@ import numpy as np
 
 from bioreservoir import BioReservoir
 from utils.preprocessing import load_ecg_data
-from utils.visualisation import _save_figure, gene_full_name, use_v0_1_style
+from utils.visualisation import STATE_NAMES, STYLE, save_figure
 
 
 def _simulate_step_only(*, reservoir: BioReservoir, input_series: np.ndarray) -> np.ndarray:
@@ -292,8 +292,8 @@ def plot_dde_ecg_multiscale(
 
     # Legend: variable styles + warmup explanation.
     warmup_handle = Line2D([0], [0], color="black", linestyle="--", linewidth=1.4, label="Warmup (0 input)")
-    luxi_handle = Line2D([0], [0], **styles["I"], label=gene_full_name("I"))
-    aiiA_handle = Line2D([0], [0], **styles["A"], label=gene_full_name("A"))
+    luxi_handle = Line2D([0], [0], **styles["I"], label=STATE_NAMES["I"])
+    aiiA_handle = Line2D([0], [0], **styles["A"], label=STATE_NAMES["A"])
     axes[0].legend(
         handles=[luxi_handle, aiiA_handle, warmup_handle],
         loc="upper right",
@@ -301,13 +301,13 @@ def plot_dde_ecg_multiscale(
         frameon=True,
     )
 
-    _save_figure(filename=filename)
+    save_figure(fig, os.path.splitext(filename)[0])
     if show:
         plt.show()
 
 
 def main() -> None:
-	use_v0_1_style()
+	plt.style.use(STYLE)
 	parser = argparse.ArgumentParser(description="ECG-driven DDE multiscale figure")
 	parser.add_argument("--timesteps", type=int, default=1000, help="Driven segment length")
 	parser.add_argument("--warmup", type=int, default=100, help="0-input warmup steps (drawn dashed)")

@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from utils.preprocessing import load_ecg_data, standardize_data
-from utils.visualisation import _save_figure, binary_classes, classes, use_v0_1_style
+from utils.visualisation import BINARY_CLASS_NAMES, CLASS_NAMES, STYLE, save_figure
 
 _ECG_SAMPLING_FREQ_HZ = 125
 
@@ -132,7 +132,7 @@ def _save_ecg_sample_plot(
         bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 2},
     )
 
-    _save_figure(filename=filename)
+    save_figure(fig, os.path.splitext(filename)[0], formats=("png",))
     if bool(show):
         plt.show()
     plt.close(fig)
@@ -184,7 +184,7 @@ def plot_average_instances_with_band_and_exemplars(
     # Decide label set
     if binary is None:
         binary = unique_classes.size <= 2
-    class_names = binary_classes if binary else classes
+    class_names = BINARY_CLASS_NAMES if binary else CLASS_NAMES
 
     # Time axis in ms
     sampling_freq_hz = float(sampling_freq_hz)
@@ -281,7 +281,7 @@ def plot_average_instances_with_band_and_exemplars(
 
     axes[-1].set_xlabel("Time (ms)")
     fig.supylabel("Value")
-    _save_figure(filename=os.path.join("preprocessing/", filename))
+    save_figure(fig, os.path.splitext(filename)[0], topic="preprocessing")
 
     if show:
         plt.show()
@@ -327,7 +327,7 @@ def plot_noise(
 
     ax.legend()
 
-    _save_figure(filename=os.path.join("preprocessing/", filename))
+    save_figure(fig, os.path.splitext(filename)[0], topic="preprocessing")
 
     if show:
         plt.show()
@@ -475,7 +475,6 @@ def visualise_dataset(args: argparse.Namespace) -> None:
     # Plot comparison
     import matplotlib.pyplot as plt
 
-    from utils.visualisation import _save_figure
 
     # Accessibility + readability: small multiples (4 subplots) instead of 4 overlapping lines.
     t_ms = _time_axis_ms(len(x_orig))
@@ -524,11 +523,11 @@ def visualise_dataset(args: argparse.Namespace) -> None:
     ax.legend(handles=[l_mm, l_std, l_z], loc="upper right", fontsize=9, frameon=True)
 
     # No figure title (paper-friendly and avoids overlap)
-    _save_figure(filename="preprocessing/ecg_scalers_comparison.png")
+    save_figure(fig, "ecg_scalers_comparison", topic="preprocessing")
 
 
 def main() -> None:
-    use_v0_1_style()
+    plt.style.use(STYLE)
     parser = argparse.ArgumentParser(description="Visualise ECG classification dataset")
     parser.add_argument("--rows", type=int, default=5000, help="Number of training rows to load")
     parser.add_argument("--test-ratio", type=float, default=0.2, help="Test split ratio")

@@ -28,8 +28,7 @@ from matplotlib.lines import Line2D
 
 from bioreservoir import BioReservoir, distance_matrix
 from utils.preprocessing import load_ecg_data
-from utils.visualisation import _save_figure, gene_full_name, use_v0_1_style
-from utils.visualisation import classes as ECG_CLASSES
+from utils.visualisation import CLASS_NAMES, STATE_NAMES, STYLE, save_figure
 
 _VAR_TO_INDEX = {"A": 0, "I": 1, "Hi": 2, "He": 3}
 
@@ -67,11 +66,10 @@ def _plot_state_heatmap(
 		vmin=vmin,
 		vmax=vmax,
 	)
-	plt.colorbar(label=f"{gene_full_name(var)} concentration")
+	plt.colorbar(label=f"{STATE_NAMES.get(var, var)} concentration")
 	plt.xlabel("Timestep")
 	plt.ylabel("Node index")
-	plt.tight_layout()
-	_save_figure(filename=os.path.join("states/", filename))
+	save_figure(plt.gcf(), os.path.splitext(filename)[0], topic="states")
 	if show:
 		plt.show()
 
@@ -130,8 +128,7 @@ def _plot_topology(
 	plt.xlabel("x")
 	plt.ylabel("y")
 	plt.axis("equal")
-	plt.tight_layout()
-	_save_figure(filename=os.path.join("topology/", filename))
+	save_figure(plt.gcf(), os.path.splitext(filename)[0], topic="topology")
 	if show:
 		plt.show()
 
@@ -313,13 +310,13 @@ def _plot_input_vs_recurrent(
 	else:
 		ax_mean.set_xlabel("Timestep")
 
-	_save_figure(filename=os.path.join("states/", filename))
+	save_figure(plt.gcf(), os.path.splitext(filename)[0], topic="states")
 	if show:
 		plt.show()
 	plt.close(fig)
 
 def main() -> None:
-	use_v0_1_style()
+	plt.style.use(STYLE)
 	parser = argparse.ArgumentParser(description="Visualise BioReservoir node states on ECG data")
 	parser.add_argument("--nodes", type=int, default=250, help="Number of reservoir nodes")
 	parser.add_argument("--instance", type=int, default=0, help="Which ECG training instance to visualise")
@@ -419,7 +416,7 @@ def main() -> None:
 	_plot_state_heatmap(
 		state_matrix=var_states,
 		var=var,
-		filename=f"reservoir_heatmap_{gene_full_name(var)}_nodes{nodes}_inst{instance}.png",
+		filename=f"reservoir_heatmap_{STATE_NAMES.get(var, var)}_nodes{nodes}_inst{instance}.png",
 		show=bool(args.show),
 	)
 
@@ -429,7 +426,7 @@ def main() -> None:
 		# Decode class label: Y_train is one-hot when encode_labels=True.
 		y_inst = np.asarray(Y_train[instance]).ravel()
 		class_idx = int(np.argmax(y_inst)) if len(y_inst) > 1 else int(y_inst[0])
-		ecg_label = ECG_CLASSES[class_idx] if class_idx < len(ECG_CLASSES) else f"class {class_idx}"
+		ecg_label = CLASS_NAMES[class_idx] if class_idx < len(CLASS_NAMES) else f"class {class_idx}"
 
 		reservoir.reset()
 		diag = _compute_input_diagnostics(reservoir=reservoir, x=x)

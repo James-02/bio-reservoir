@@ -727,13 +727,14 @@ def _plot_confusion_matrix(
 
     Cross-validation is re-executed with the best trial's parameters;
     ``metrics["confusion_matrix"]`` (the count matrix summed across all folds,
-    produced by :func:`utils.analysis.compute_mean_metrics`) is passed
-    directly to :func:`utils.visualisation.plot_confusion_matrix`, which
-    normalises by row sums and renders a seaborn heat-map.
+    produced by :func:`utils.analysis.compute_mean_metrics`) is drawn by
+    :func:`utils.visualisation.plot_confusion_matrix`, each row divided by its sum.
 
-    The figure is saved to ``results/figures/metrics/{filename}``.
+    The figure is saved as ``results/figures/metrics/{filename}``, with a PDF beside it.
     """
-    from utils.visualisation import plot_confusion_matrix as _plot_cm
+    from pathlib import Path
+
+    from utils.visualisation import plot_confusion_matrix, save_figure
 
     try:
         best = study.best_trial
@@ -812,7 +813,8 @@ def _plot_confusion_matrix(
         return
 
     fname = filename or f"{study_name}-confusion.png"
-    _plot_cm(cm, filename=fname, show=False)
+    save_figure(plot_confusion_matrix(cm).figure, str(Path(fname).with_suffix("")),
+                topic="metrics")
     logger.info("[%s] Confusion matrix saved → results/figures/metrics/%s", study_name, fname)
 
 

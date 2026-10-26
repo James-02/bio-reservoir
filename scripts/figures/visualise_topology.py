@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from bioreservoir import distance_matrix
-from utils.visualisation import _save_figure, use_v0_1_style
+from utils.visualisation import STYLE, save_figure
 
 
 def plot_distance_histograms(units: int = 250,
@@ -74,8 +74,7 @@ def plot_distance_histograms(units: int = 250,
     plt.axvline(stats["mean"], color="k", linestyle="--", label="mean")
     plt.legend()
 
-    plt.tight_layout()
-    _save_figure(filename=os.path.join("topology/", filename))
+    save_figure(plt.gcf(), os.path.splitext(filename)[0], topic="topology")
     if show:
         plt.show()
 
@@ -143,9 +142,8 @@ def plot_weight_vs_distance_from_matrix(
     plt.xlabel("Distance")
     plt.ylabel("Weight (raw)")
     plt.legend()
-    plt.tight_layout()
 
-    _save_figure(filename=os.path.join("topology/", filename))
+    save_figure(plt.gcf(), os.path.splitext(filename)[0], topic="topology")
     if show:
         plt.show()
 
@@ -212,15 +210,14 @@ def plot_spatial_topology(
     plt.xlabel("x")
     plt.ylabel("y")
     plt.title("Spatial topology (strong edges)")
-    plt.tight_layout()
 
-    _save_figure(filename=os.path.join("topology/", filename))
+    save_figure(plt.gcf(), os.path.splitext(filename)[0], topic="topology")
     if show:
         plt.show()
 
 
 def main() -> None:
-    use_v0_1_style()
+    plt.style.use(STYLE)
     parser = argparse.ArgumentParser(description="Visualise distance-based reservoir topology")
     parser.add_argument("--units", type=int, default=250, help="Number of reservoir nodes")
     parser.add_argument("--spatial-dim", type=int, default=2, help="Spatial dimensionality")

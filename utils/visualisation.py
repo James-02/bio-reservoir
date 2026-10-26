@@ -1,209 +1,228 @@
-"""Figure helpers shared by the library and the figure scripts.
+"""Figure helpers: the house style, the names and colours of the classes, and shared plots.
 
-The ``v0.1`` figures that these helpers draw use seaborn's "ticks" style with 15 pt text
-(:data:`V0_1_STYLE`): the helpers apply it themselves, and the scripts that draw those
-figures call :func:`use_v0_1_style` first. Importing this module changes no matplotlib
-setting. Figures are saved under ``results/figures/`` (``BIORESERVOIR_RESULTS_DIR``).
+The house style :data:`STYLE` follows the figure rules of ACS Synthetic Biology. A figure is
+one column (:data:`SINGLE_COLUMN`, 3.25 in) or two columns (:data:`DOUBLE_COLUMN`, 7 in) wide
+and at most :data:`MAX_HEIGHT` (9.5 in) high; its lettering is sans-serif (Arial or Helvetica
+where installed, else matplotlib's DejaVu Sans) and at least 5 pt at that size; its lines are
+at least 1 pt wide. For readers with a colour-vision deficiency, categories take the
+Okabe-Ito colours (:data:`OKABE_ITO`), each ECG class always the same one
+(:data:`CLASS_COLOURS`), and continuous values a single-hue or perceptually uniform colour
+map ("Blues", "viridis"). Figure scripts call ``plt.style.use(STYLE)`` and draw at the printed
+size. :func:`save_figure` writes a PNG and a PDF whose text stays text (TrueType), and warns
+about anything that :func:`figure_problems` finds. Importing this module changes no
+matplotlib setting.
 """
 
-import functools
-import os
+from __future__ import annotations
+
+import logging
+from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
+from cycler import cycler
+from matplotlib.text import Text
 
 from utils import config
 
-#: The look of the ``v0.1`` figures: seaborn's "ticks" style with 15 pt text.
-V0_1_STYLE = {**sns.axes_style("ticks"), "font.size": 15}
+logger = logging.getLogger(__name__)
 
-DPI = 800
+#: Widths of one and two columns of an ACS page and the page height, in inches.
+SINGLE_COLUMN, DOUBLE_COLUMN, MAX_HEIGHT = 3.25, 7.0, 9.5
+#: The smallest text size and line width at the printed size, in points.
+MIN_FONT_SIZE, MIN_LINE_WIDTH = 5.0, 1.0
+#: Resolution of the PNG files, in dots per inch.
+DPI = 600
 
-# Class labels
-binary_classes = ['Normal', 'Arrhythmia']
+#: The Okabe-Ito colours: blue, vermillion, bluish green, reddish purple, orange, sky blue,
+#: black and yellow (last: it is faint on white).
+OKABE_ITO = ("#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9", "#000000",
+             "#F0E442")
 
-classes = ['Normal', 'Supraventricular', 'Ventricular', 'Fusion', 'Unknown']
+CLASS_NAMES = ("Normal", "Supraventricular", "Ventricular", "Fusion", "Unknown")
+BINARY_CLASS_NAMES = ("Normal", "Arrhythmia")
+#: The colour of each class in every figure.
+CLASS_COLOURS = {name: OKABE_ITO[i] for i, name in enumerate(CLASS_NAMES)} | {
+    "Arrhythmia": OKABE_ITO[1]}
 
+#: Names of the oscillator's variables: the proteins LuxI and AiiA, and the signal AHL inside
+#: the cells and in the medium around them.
+STATE_NAMES = {"I": "LuxI", "A": "AiiA", "Hi": "AHL (cells)", "He": "AHL (medium)"}
 
-# ----------------------------------------------------------------------------
-# Display names for oscillator variables / genes
-# ----------------------------------------------------------------------------
-
-# We prefer using full gene names in filenames, legends, and axis labels.
-# Note: this repo historically uses both single-letter variables and (Hi/He).
-GENE_DISPLAY_NAME = {
-    "I": "luxI",
-    "A": "aiiA",
-    "Hi": "Hi",
-    "He": "He",
-    # Allow passing full names through unchanged.
-    "luxI": "luxI",
-    "aiiA": "aiiA",
+STYLE = {
+    "figure.figsize": (SINGLE_COLUMN, 2.4),
+    "figure.dpi": 150,
+    "figure.constrained_layout.use": True,
+    "font.family": "sans-serif",
+    "font.sans-serif": ["Arial", "Helvetica", "Liberation Sans", "DejaVu Sans"],
+    "mathtext.default": "regular",
+    "font.size": 7,
+    "axes.titlesize": 7,
+    "axes.labelsize": 7,
+    "figure.titlesize": 8,
+    "xtick.labelsize": 6,
+    "ytick.labelsize": 6,
+    "legend.fontsize": 6,
+    "legend.title_fontsize": 7,
+    "legend.frameon": False,
+    "axes.linewidth": 1.0,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.prop_cycle": cycler(color=OKABE_ITO),
+    "lines.linewidth": 1.5,
+    "lines.markersize": 4,
+    "patch.linewidth": 1.0,
+    "grid.linewidth": 1.0,
+    "xtick.major.width": 1.0,
+    "ytick.major.width": 1.0,
+    "xtick.minor.width": 1.0,
+    "ytick.minor.width": 1.0,
+    "xtick.major.size": 3,
+    "ytick.major.size": 3,
+    "image.cmap": "viridis",
+    "savefig.dpi": DPI,
+    "pdf.fonttype": 42,
+    "ps.fonttype": 42,
+    "svg.fonttype": "none",
 }
 
 
-def gene_full_name(name: str) -> str:
-    """Return the preferred display name for a gene/state variable."""
-    return GENE_DISPLAY_NAME.get(str(name), str(name))
+def class_names(n_classes: int) -> tuple[str, ...]:
+    """The names of the classes of a task with ``n_classes`` classes (two: the binary task)."""
+    return BINARY_CLASS_NAMES if n_classes == 2 else CLASS_NAMES[:n_classes]
 
 
-def use_v0_1_style() -> None:
-    """Draw every later figure of this process in the ``v0.1`` style (:data:`V0_1_STYLE`).
+def figure_problems(fig) -> list[str]:
+    """What in ``fig`` breaks the journal's rules at its printed size, one sentence each.
 
-    The scripts that draw the figures of the ``v0.1`` paper call it first.
+    The figure is measured as :func:`save_figure` crops it: its width and height, the size
+    of every visible text, and the width of every line drawn on an Axes or in a legend
+    (tick marks and grid lines follow the style).
     """
-    plt.rcParams.update(V0_1_STYLE)
+    fig.draw_without_rendering()
+    box = fig.get_tightbbox()
+    problems = []
+    if box.width > DOUBLE_COLUMN + 0.01:
+        problems.append(f"it is {box.width:.2f} in wide; a page is {DOUBLE_COLUMN:g} in wide "
+                        f"and a column {SINGLE_COLUMN:g} in")
+    if box.height > MAX_HEIGHT + 0.01:
+        problems.append(f"it is {box.height:.2f} in high; a page is {MAX_HEIGHT:g} in high")
+    small = sorted({(t.get_fontsize(), t.get_text()) for t in fig.findobj(Text)
+                    if t.get_visible() and t.get_text().strip()
+                    and t.get_fontsize() < MIN_FONT_SIZE})
+    if small:
+        problems.append(f"{len(small)} texts are smaller than {MIN_FONT_SIZE:g} pt, such as "
+                        f"{small[0][1]!r} at {small[0][0]:g} pt")
+    legends = [*fig.legends, *(ax.get_legend() for ax in fig.axes if ax.get_legend())]
+    lines = [*(line for ax in fig.axes for line in ax.get_lines()),
+             *(line for legend in legends for line in legend.get_lines())]
+    thin = [line.get_linewidth() for line in lines
+            if line.get_visible() and line.get_linestyle() not in ("None", "", " ")
+            and 0 < line.get_linewidth() < MIN_LINE_WIDTH]
+    if thin:
+        problems.append(f"{len(thin)} lines are thinner than {MIN_LINE_WIDTH:g} pt, the "
+                        f"thinnest {min(thin):g} pt")
+    return problems
 
 
-def _in_v0_1_style(plot):
-    """Decorator: ``plot`` draws in the ``v0.1`` style and leaves the settings as it found them."""
+def save_figure(fig, name: str, *, topic: str = "", folder: str | Path | None = None,
+                formats: Sequence[str] = ("png", "pdf"), dpi: float | None = None) -> list[Path]:
+    """Save ``fig`` as ``<folder>/<name>.<format>`` in each format and close it.
 
-    @functools.wraps(plot)
-    def wrapper(*args, **kwargs):
-        with plt.rc_context(V0_1_STYLE):
-            return plot(*args, **kwargs)
-
-    return wrapper
-
-
-def _save_figure(filename: str) -> None:
+    ``folder`` defaults to ``results/figures/<topic>`` (see :mod:`utils.config`). The PDF is
+    vector, with its text kept as TrueType text; the PNG has ``dpi`` dots per inch (default
+    :data:`DPI`). A warning is logged for each of :func:`figure_problems`. Returns the files
+    written, in the order of ``formats``.
     """
-    Save the current figure under ``results/figures/``.
+    for problem in figure_problems(fig):
+        logger.warning("Figure %s: %s.", name, problem)
+    folder = Path(folder) if folder is not None else config.figures_dir(topic)
+    paths = [folder / f"{name}.{fmt}" for fmt in formats]
+    with plt.rc_context({"pdf.fonttype": 42, "ps.fonttype": 42, "svg.fonttype": "none"}):
+        for path in paths:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(path, dpi=dpi or DPI, bbox_inches="tight", pad_inches=0.02)
+    plt.close(fig)
+    return paths
 
-    Args:
-        filename (str): Path relative to the figures directory, e.g. ``states/x.png``.
+
+def plot_confusion_matrix(confusion_matrix, ax=None, *, labels: Sequence[str] | None = None,
+                          colorbar: bool = True):
+    """Draw a confusion matrix with each row divided by its sum, so that row ``i`` shows how
+    the beats of true class ``i`` were labelled and the diagonal is the recall of each class.
+
+    ``labels`` defaults to the names of the classes (:func:`class_names`). Without ``ax`` the
+    matrix is drawn in a new one-column figure in the house style. Returns the Axes.
     """
-    file_path = os.path.join(config.figures_dir(), filename)
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    plt.savefig(file_path, bbox_inches="tight", dpi=DPI)
+    if ax is None:
+        with plt.style.context(STYLE):
+            _, ax = plt.subplots(figsize=(SINGLE_COLUMN, 2.8))
+            return plot_confusion_matrix(confusion_matrix, ax, labels=labels, colorbar=colorbar)
+    counts = np.asarray(confusion_matrix, dtype=float)
+    shares = counts / np.maximum(counts.sum(axis=1, keepdims=True), 1.0)
+    labels = class_names(len(shares)) if labels is None else labels
+    image = ax.imshow(shares, cmap="Blues", vmin=0.0, vmax=1.0, aspect="auto")
+    for (row, column), share in np.ndenumerate(shares):
+        ax.text(column, row, f"{share:.2f}", ha="center", va="center",
+                color="white" if share > 0.5 else "black")
+    ticks = np.arange(len(labels))
+    ax.set_xticks(ticks, labels, rotation=30, ha="right")
+    ax.set_yticks(ticks, labels)
+    ax.tick_params(length=0)
+    ax.spines[:].set_visible(False)
+    ax.set(xlabel="Predicted label", ylabel="True label")
+    if colorbar:
+        bar = ax.figure.colorbar(image, ax=ax, label="Fraction of the true class")
+        bar.outline.set_visible(False)
+    return ax
 
-@_in_v0_1_style
-def plot_confusion_matrix(confusion_matrix: np.ndarray, cmap=plt.cm.Blues, 
-                          show: bool = True, filename: str = "confusion_matrix.png") -> None:
-    """
-    Plot the confusion matrix.
 
-    Args:
-        confusion_matrix (np.ndarray): Confusion matrix.
-        cmap: Colormap.
-        show (bool, optional): Whether to display the plot. Default is True.
-        filename (str, optional): Filename to save the plot. Default is "confusion_matrix.png".
-    """
-    confusion_matrix = confusion_matrix.astype('float') / confusion_matrix.sum(axis=1)[:, np.newaxis]
-    labels = confusion_matrix.shape[0]
-    if labels > 2:
-        class_labels = [classes[i] for i in range(labels)]
-    else:
-        class_labels = [binary_classes[i] for i in range(labels)]
+def plot_sweep(scores: Mapping[float, Sequence[float]], ax=None, *,
+               levels: Sequence[float] | None = None, color: str = OKABE_ITO[0],
+               marker: str = "o", label: str | None = "Mean \u00b1 SD",
+               seed_label: str | None = "Seeds", reference: float | None = None,
+               reference_label: str | None = None, jitter: float = 0.15,
+               jitter_seed: int = 42):
+    """Draw a score against the levels of a swept setting, one dot per seed, and a line
+    through the means at each level with a band of plus and minus one sample SD (no band
+    where a level has one seed).
 
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(confusion_matrix, annot=True, cmap=cmap, xticklabels=class_labels, yticklabels=class_labels)
-
-    # Adjust font size and rotation for better readability
-    plt.xticks(rotation=30, ha='right', fontsize=14)
-    plt.yticks(rotation=0, fontsize=14)
-
-    plt.xlabel('Predicted Label', fontsize=16)
-    plt.ylabel('True Label', fontsize=16)
-    plt.tight_layout()
-
-    _save_figure(filename=os.path.join("metrics/", filename))
-    if show:
-        plt.show()
-
-# ---------------------------------------------------------------------------
-# Building blocks for figure scripts: each draws on the Axes it is given
-# ---------------------------------------------------------------------------
-
-def plot_sweep(ax, scores, *, reference=None, reference_label=None, seed_label="Seeds",
-               mean_label="Mean (\u00b11 SD)", ddof=1, color="#d62728", seed_color="#1f77b4",
-               jitter=0.15, jitter_seed=42):
-    """Draw a score against the levels of a swept setting, one dot per seed.
-
-    Level ``i`` in sorted order is drawn at ``x = i`` and labelled with its value, so an
-    uneven grid such as 0, 0.025, 0.05, 0.1, 0.5 stays readable. Each level gets one dot per
-    seed, shifted sideways by up to ``jitter``, and a line through the seed means with a band
-    of plus and minus one SD (no band at a level with one seed).
-
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Where to draw.
-    scores : mapping of float to sequence of float
-        The scores at each level, one per seed: for example the rows of
-        :func:`training.study.trials_table` grouped by the swept value, or a grid of run
-        folders read with :class:`utils.results.FoldArtifact`.
-    reference : float, optional
-        Value of a dashed horizontal line, for example the score without the swept effect.
-    reference_label, seed_label, mean_label : str
-        Legend labels of the reference line, the dots and the mean line.
-    ddof : int
-        Delta degrees of freedom of the SD: 1 for the sample SD over the seeds, 0 for the
-        population SD.
-    color, seed_color : str
-        Colours of the mean (line and band) and of the dots.
-    jitter : float
-        Largest sideways shift of a dot, in level spacings.
-    jitter_seed : int
-        Seed of the shifts, so that a figure is the same every time it is drawn.
-
-    Returns
-    -------
-    matplotlib.axes.Axes
-        ``ax``.
+    ``scores`` maps each level to its scores, one per seed. Level ``i`` of ``levels``
+    (default: the sorted levels of ``scores``) is drawn at ``x = i`` and labelled with its
+    value, so that an uneven grid such as 0, 0.025, 0.05, 0.1, 0.5 stays readable; pass the
+    same ``levels`` to draw several sweeps on one Axes. Dots are shifted sideways by up to
+    ``jitter`` level spacings, the same way every time (``jitter_seed``). ``reference`` adds
+    a dashed line, for example the score without the swept effect. Without ``ax`` the sweep
+    is drawn in a new one-column figure in the house style. Returns the Axes.
 
     Examples
     --------
     >>> trials = trials_table(cfg)  # one row per trial: the swept value, the seed, f1
     >>> scores = trials.groupby("reservoir.params.param_heterogeneity_cv")["f1"].apply(list)
-    >>> plot_sweep(ax, scores.to_dict(), reference=np.mean(scores[0.0]))
+    >>> plot_sweep(scores.to_dict(), ax, reference=np.mean(scores[0.0]))
     """
-    levels = sorted(scores)
-    x = np.arange(len(levels))
-    values = [np.asarray(scores[level], dtype=float) for level in levels]
+    if ax is None:
+        with plt.style.context(STYLE):
+            _, ax = plt.subplots()
+            return plot_sweep(scores, ax, levels=levels, color=color, marker=marker,
+                              label=label, seed_label=seed_label, reference=reference,
+                              reference_label=reference_label, jitter=jitter,
+                              jitter_seed=jitter_seed)
+    levels = sorted(scores) if levels is None else list(levels)
+    drawn = [level for level in levels if level in scores]
+    x = np.array([levels.index(level) for level in drawn], dtype=float)
+    values = [np.asarray(scores[level], dtype=float) for level in drawn]
     means = np.array([v.mean() for v in values])
-    sds = np.array([v.std(ddof=ddof) if v.size > 1 else np.nan for v in values])
+    sds = np.array([v.std(ddof=1) if v.size > 1 else np.nan for v in values])
     if reference is not None:
-        ax.axhline(reference, color="#888888", ls="--", lw=0.8, alpha=0.6, zorder=1,
-                   label=reference_label)
-    dots_x = np.concatenate([np.full(v.size, i) for i, v in enumerate(values)])
+        ax.axhline(reference, color="0.4", ls="--", lw=1.0, zorder=1, label=reference_label)
+    dots_x = np.concatenate([np.full(v.size, xi) for xi, v in zip(x, values, strict=True)])
     shift = np.random.default_rng(jitter_seed).uniform(-jitter, jitter, dots_x.size)
-    ax.scatter(dots_x + shift, np.concatenate(values), s=18, alpha=0.45, color=seed_color,
-               edgecolors="none", zorder=3, label=seed_label)
-    ax.plot(x, means, "o-", color=color, ms=5, lw=1.5, zorder=4, label=mean_label)
-    ax.fill_between(x, means - sds, means + sds, alpha=0.15, color=color, zorder=2)
-    ax.set_xticks(x)
-    ax.set_xticklabels([f"{level:g}" for level in levels])
-    ax.set_xlim(x[0] - 0.5, x[-1] + 0.5)
+    ax.scatter(dots_x + shift, np.concatenate(values), s=10, alpha=0.5, color=color,
+               marker=marker, edgecolors="none", zorder=3, label=seed_label)
+    ax.plot(x, means, color=color, marker=marker, zorder=4, label=label)
+    ax.fill_between(x, means - sds, means + sds, alpha=0.2, color=color, lw=0, zorder=2)
+    ax.set_xticks(np.arange(len(levels)), [f"{level:g}" for level in levels])
+    ax.set_xlim(-0.5, len(levels) - 0.5)
     return ax
-
-
-def save_figure(fig, name, *, topic="", formats=("png", "pdf"), dpi=300):
-    """Save ``fig`` as ``results/figures/<topic>/<name>.<format>`` in each format; close it.
-
-    Parameters
-    ----------
-    fig : matplotlib.figure.Figure
-        The figure to save.
-    name : str
-        File name without its extension.
-    topic : str
-        Sub-folder of ``results/figures/`` (see :mod:`utils.config`).
-    formats : sequence of str
-        File formats: PNG to look at, PDF (vector) for a paper.
-    dpi : float
-        Resolution of the raster formats, in dots per inch.
-
-    Returns
-    -------
-    list of pathlib.Path
-        The files written, in the order of ``formats``.
-    """
-    folder = config.figures_dir(topic)
-    folder.mkdir(parents=True, exist_ok=True)
-    paths = [folder / f"{name}.{fmt}" for fmt in formats]
-    for path in paths:
-        fig.savefig(path, bbox_inches="tight", dpi=dpi)
-    plt.close(fig)
-    return paths

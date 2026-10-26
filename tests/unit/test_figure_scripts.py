@@ -60,6 +60,24 @@ class TestFoldAnalysisFigures:
         with pytest.raises(SystemExit, match="Unknown plot types"):
             run_script("analysis/analyse_fold_results", "--glob", folds, "--plots", "tsne")
 
+    def test_the_states_of_each_class_have_its_name_and_colour(self, load_script, pyplot,
+                                                               monkeypatch):
+        from matplotlib.colors import to_hex
+
+        from utils.visualisation import CLASS_COLOURS, CLASS_NAMES
+
+        script = load_script("analysis/analyse_fold_results")
+        drawn = []
+        monkeypatch.setattr(script, "save_figure", lambda fig, name, **kw: drawn.append(fig))
+        classes = np.repeat(np.arange(5), 4)
+        states = np.random.default_rng(0).normal(size=(20, 6)) + classes[:, None]
+        script.plot_state_pca(states, np.eye(5)[classes][:, None, :], "run/states-pca")
+        ax = drawn[0].axes[0]
+        assert [t.get_text() for t in ax.get_legend().get_texts()] == list(CLASS_NAMES)
+        colours = [to_hex(c.get_facecolor()[0]) for c in ax.collections]
+        assert colours == [CLASS_COLOURS[name].lower() for name in CLASS_NAMES]
+        assert ax.get_xlabel().startswith("PC 1 (")
+
 
 class TestModelFigures:
     """The scripts behind the ``v0.1`` model, drive and topology figures."""
@@ -73,7 +91,7 @@ class TestModelFigures:
         run_script("figures/visualise_reservoir_states", "--nodes", 20, "--timesteps", 30,
                    "--plot-topology", "--plot-drive")
         assert _saved(figure_dir) == ["states/reservoir_drive_diag_nodes20_inst0.png",
-                                      "states/reservoir_heatmap_luxI_nodes20_inst0.png",
+                                      "states/reservoir_heatmap_LuxI_nodes20_inst0.png",
                                       "topology/reservoir_topology_nodes20.png"]
 
     def test_topology_figures(self, figure_dir, run_script):

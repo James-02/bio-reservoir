@@ -55,8 +55,8 @@ def draw(scores: dict[float, list[float]]) -> plt.Figure:
             fontsize=7.5, color="#2ca02c", alpha=0.7, style="italic")
 
     baseline = float(np.mean(scores[levels[0]]))
-    plot_sweep(ax, scores, reference=baseline, reference_label=f"Baseline F$_1$ = {baseline:.3f}",
-               seed_label="Individual seeds", mean_label="Mean F$_1$ (\u00b11\u03c3)", ddof=0)
+    plot_sweep(scores, ax, reference=baseline, reference_label=f"Baseline F$_1$ = {baseline:.3f}",
+               seed_label="Individual seeds", label="Mean F$_1$ (\u00b11\u03c3)")
     ax.tick_params(axis="x", labelsize=8.5)
     ax.set_xlabel("Coefficient of Variation (CV)", fontsize=10)
     ax.set_ylabel("Macro F$_1$ Score", fontsize=10)

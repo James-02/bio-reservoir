@@ -60,11 +60,12 @@ from utils.analysis import evaluate_performance
 from utils.preprocessing import class_indices
 from utils.results import FoldArtifact
 from utils.visualisation import (
-    _save_figure,
-    binary_classes,
-    classes,
+    CLASS_COLOURS,
+    SINGLE_COLUMN,
+    STYLE,
+    class_names,
     plot_confusion_matrix,
-    use_v0_1_style,
+    save_figure,
 )
 
 PLOT_TYPES = ("confusion", "states")
@@ -179,8 +180,9 @@ def _print_model_info(artifacts: list[FoldArtifact]) -> None:
 # Plot helpers
 # ---------------------------------------------------------------------------
 
-def plot_state_pca(states: np.ndarray, labels: np.ndarray, filename: str) -> None:
-    """Draw the states on their first two principal components, one colour per true class.
+def plot_state_pca(states: np.ndarray, labels: np.ndarray, name: str) -> None:
+    """Draw the states on their first two principal components, one colour and marker per
+    true class, and save the figure as ``results/figures/metrics/<name>``.
 
     Each feature is scaled to unit variance first, so that no state variable dominates by
     its units. ``labels`` are the true labels of the states, in any shape that
@@ -190,32 +192,30 @@ def plot_state_pca(states: np.ndarray, labels: np.ndarray, filename: str) -> Non
     points = pca.fit_transform(states.reshape(len(states), -1))
     explained = pca[-1].explained_variance_ratio_
     y = class_indices(labels)
-    names = binary_classes if np.asarray(labels).shape[-1] == 2 else classes
-    fig, ax = plt.subplots(figsize=(8, 6))
+    names = class_names(np.asarray(labels).shape[-1])
+    fig, ax = plt.subplots(figsize=(SINGLE_COLUMN, 2.6))
     for c in np.unique(y):
-        ax.scatter(*points[y == c].T, s=6, alpha=0.6, label=names[c])
+        ax.scatter(*points[y == c].T, s=6, alpha=0.6, color=CLASS_COLOURS[names[c]],
+                   marker="os^Dv"[c % 5], edgecolors="none", label=names[c])
     ax.set_xlabel(f"PC 1 ({explained[0]:.0%} of the variance)")
     ax.set_ylabel(f"PC 2 ({explained[1]:.0%} of the variance)")
     ax.legend(markerscale=2)
-    _save_figure(filename=os.path.join("metrics", filename))
-    plt.close(fig)
+    save_figure(fig, name, topic="metrics")
 
 
 def _run_plots(artifacts: list[FoldArtifact], trial_name: str, wanted: set) -> None:
     if "confusion" in wanted:
         Y_test = np.concatenate([a.Y_test for a in artifacts])
         Y_pred = np.concatenate([a.Y_pred for a in artifacts])
-        plot_confusion_matrix(evaluate_performance(Y_test, Y_pred).confusion_matrix,
-                              show=False,
-                              filename=os.path.join(trial_name, "confusion-matrix.png"))
-        plt.close("all")
+        ax = plot_confusion_matrix(evaluate_performance(Y_test, Y_pred).confusion_matrix)
+        save_figure(ax.figure, f"{trial_name}/confusion-matrix", topic="metrics")
 
     if "states" in wanted:
         with_states = [a for a in artifacts if a.test_states is not None]
         if with_states:
             plot_state_pca(np.concatenate([a.test_states for a in with_states]),
                            np.concatenate([a.Y_test for a in with_states]),
-                           os.path.join(trial_name, "states-pca.png"))
+                           f"{trial_name}/states-pca")
         else:
             print("  No test_states in fold files: no PCA of the states.")
 
@@ -225,7 +225,7 @@ def _run_plots(artifacts: list[FoldArtifact], trial_name: str, wanted: set) -> N
 # ---------------------------------------------------------------------------
 
 def main() -> int:
-    use_v0_1_style()
+    plt.style.use(STYLE)
     parser = argparse.ArgumentParser(
         description="Analyse saved fold NPZ artefacts and report headline metrics.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
