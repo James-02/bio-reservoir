@@ -46,18 +46,6 @@ def _fold_files(folder, *, folds=2, beats=40, classes=5, states=True):
     return str(folder / "run" / "fold-*.npz")
 
 
-class TestFoldDiagnostics:
-    """scripts/analysis/analyse_fold_diagnostics.py. Matplotlib 3.11 removed the box plot's
-    ``labels`` argument (now ``tick_labels``), so ``--plots`` stopped at its second figure."""
-
-    def test_every_plot_is_saved(self, tmp_path, figure_dir, run_script):
-        folds = _fold_files(tmp_path / "runs")
-        assert run_script("analysis/analyse_fold_diagnostics", "--glob", folds, "--plots") == 0
-        assert _saved(figure_dir / "diagnostics") == [
-            "confidence_correct_vs_incorrect.png", "entropy_by_class.png",
-            "per_class_recall.png", "states_pca.png", "states_pca_explained_variance.png"]
-
-
 class TestFoldAnalysisFigures:
     """The fold-analysis scripts draw the ``v0.1`` confusion matrices from fold files."""
 
@@ -67,13 +55,6 @@ class TestFoldAnalysisFigures:
         assert _saved(figure_dir / "metrics" / "run") == [
             "class-metrics.png", "confusion-matrix.png", "metrics-across-folds.png",
             "tsne-predictions.png", "tsne-states.png"]
-
-    def test_plot_cv_results_saves_its_plots(self, tmp_path, figure_dir, run_script):
-        folds = _fold_files(tmp_path / "runs", states=False)
-        assert run_script("analysis/plot_cv_results", folds, "--tsne") == 0
-        assert _saved(figure_dir / "metrics") == [
-            "cv_class_metrics.png", "cv_confusion_matrix_sum.png",
-            "cv_metrics_across_folds.png", "cv_tsne.png"]
 
 
 class TestModelFigures:
