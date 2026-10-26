@@ -234,7 +234,7 @@ task: {type: inducer, pattern: order, condition: device, image_delay: 0}
 reservoir: {params: {input_range: [0.0, 20.0]}}   # from 0, so the zero baseline stays zero
 ```
 
-A study can search `task.pattern`, `task.condition`, `task.n_per_class`, `task.scale` and `task.image_delay`; [experiments/v0.2/slow-sensing/](experiments/v0.2/slow-sensing/) holds the slow-sensing studies. `python scripts/figures/visualise_inducer_tasks.py [--condition device] [--image-delay 60]` draws example traces of every class, and the colony and array figures below draw a design driven by a trace when its config has an inducer task.
+A study can search `task.pattern`, `task.condition`, `task.n_per_class`, `task.scale` and `task.image_delay`; [experiments/v0.2/slow-sensing/](experiments/v0.2/slow-sensing/) holds the slow-sensing studies. `python scripts/figures/visualise_inducer_tasks.py [--condition device] [--image-delay 60]` draws example traces of every class, `visualise_slow_sensing.py` draws the studies' scores, and the colony and array figures below draw a design driven by a trace when its config has an inducer task.
 
 ## Visualisation
 
@@ -247,6 +247,7 @@ The figures below are from the `v0.1` paper. The figure scripts draw the same de
 | [visualise_topology.py](scripts/figures/visualise_topology.py) | the kernel (4b) and the colonies' strongest links (4d) | run config |
 | [visualise_dataset.py](scripts/figures/visualise_dataset.py) | class means, a beat with noise, a beat under three scalings (5) | run config |
 | [visualise_inducer_tasks.py](scripts/figures/visualise_inducer_tasks.py) | example traces of every class of the eight slow-sensing tasks | options |
+| [visualise_slow_sensing.py](scripts/figures/visualise_slow_sensing.py) | slow-sensing scores: against a swept setting, one line per task, or several studies side by side (`--compare`) | study configs |
 | [visualise_heterogeneity.py](scripts/figures/visualise_heterogeneity.py) | macro F1 against heterogeneity (S10), also for the realism studies | `--archive v0.1` or a study config |
 | [analyse_fold_results.py](scripts/analysis/analyse_fold_results.py) | metric tables; with `--plots`, the confusion matrix, each fold's scores and a PCA of the states | fold files |
 

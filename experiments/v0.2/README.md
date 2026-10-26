@@ -100,6 +100,14 @@ The designs on the eight inducer-pattern tasks ([training/inducer.py](../../trai
 `python scripts/figures/visualise_inducer_tasks.py` draws them): 400 traces per class, one
 noisy image at the end of the trace, ridge readout, three reservoir seeds. The bioreservoirs
 read the inducer from 0 (`input_range: [0.0, 20.0]`). Pump delivery is `condition: device`.
+Draw a study's scores with `scripts/figures/visualise_slow_sensing.py`:
+
+```bash
+python scripts/figures/visualise_slow_sensing.py experiments/v0.2/slow-sensing/centre-delay.yaml
+python scripts/figures/visualise_slow_sensing.py --compare \
+    experiments/v0.2/slow-sensing/{centre,uncoupled-centre,esn,raw}.yaml \
+    --fix task.condition=device --fix reservoir.params.input_scaling=0.155113
+```
 
 | Study | What | Trials |
 |---|---|---|

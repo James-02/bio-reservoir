@@ -211,6 +211,38 @@ class TestInducerTasksFigure:
         assert _saved(figure_dir) == ["inducer/inducer-tasks-ideal.png"]
 
 
+class TestSlowSensingFigure:
+    """scripts/figures/visualise_slow_sensing.py: slow-sensing scores from study trials."""
+
+    @staticmethod
+    def _trials():
+        import pandas as pd
+
+        rows = [{"task.pattern": pattern, "task.image_delay": delay, "reservoir.seed": seed,
+                 "f1": 0.9 - delay / 1000 + seed / 1e5, "state": "COMPLETE"}
+                for pattern in ("order", "shape") for delay in (0, 60)
+                for seed in (6337, 6338)]
+        return pd.DataFrame(rows)
+
+    def test_a_sweep_has_a_line_per_task_at_the_mean_over_seeds(self, load_script, pyplot):
+        script = load_script("figures/visualise_slow_sensing")
+        ax = script.sweep(self._trials(), "task.image_delay", "toy").axes[0]
+        assert [t.get_text() for t in ax.get_legend().get_texts()] == ["order", "shape"]
+        np.testing.assert_allclose(ax.lines[0].get_ydata(), [0.9 + 0.063375, 0.84 + 0.063375])
+        assert [t.get_text() for t in ax.get_xticklabels()] == ["0", "60"]
+        assert ax.get_xlabel() == "Image delay after the pattern (min)"
+
+    def test_a_comparison_has_a_marker_per_study_and_the_chance_of_each_task(self, load_script,
+                                                                           pyplot):
+        script = load_script("figures/visualise_slow_sensing")
+        trials = self._trials()
+        ax = script.compare({"a": trials, "b": trials}, "toy").axes[0]
+        assert [t.get_text() for t in ax.get_legend().get_texts()] == ["Chance", "a", "b"]
+        assert [t.get_text() for t in ax.get_xticklabels()] == ["order", "shape"]
+        chance = ax.collections[0].get_segments()
+        assert [segment[0][1] for segment in chance] == [0.5, 0.25]
+
+
 class TestTopologyFigure:
     """scripts/figures/visualise_topology.py: the kernel and the colonies with their links."""
 
