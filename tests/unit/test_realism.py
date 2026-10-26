@@ -421,6 +421,15 @@ class TestWarmupInput:
         np.testing.assert_array_equal(fresh._warmup_states, node._warmup_states)
         assert not np.allclose(node._warmup_states[-1], self._built(warmup=5).states[-1])
 
+    def test_worker_processes_warm_up_alike(self):
+        node, _ = build_reservoir(dict(P_LIKE, warmup_input="rest"), seed=3)
+        beats = _beats(6)
+        alone = simulate_beats(node, beats, noise_seed=5)
+        np.testing.assert_array_equal(simulate_beats(node, beats, noise_seed=5, processes=2),
+                                      alone)
+        zero, _ = build_reservoir(dict(P_LIKE), seed=3)
+        assert not np.allclose(simulate_beats(zero, beats, noise_seed=5), alone)
+
     def test_a_signed_input_without_bias_rests_at_no_input(self):
         signed = dict(input_encoding="signed", input_sign="mixed")
         rest = self._built(warmup_input="rest", **signed)
