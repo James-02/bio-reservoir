@@ -45,6 +45,8 @@ Each entry is marked **[science]** if it changes a reported number, or
   can search the run `seed`; the `v0.2` studies name designs in `experiments/v0.2/designs/`.
 - [engineering] Realism options, off by default: heterogeneity of cell density and
   dilution, discrete input levels and an imperfect reset (`bioreservoir.realism`).
+- [engineering] `warmup_input: rest` warms the colonies up under the input of a sample of 0
+  (the resting inducer level), so a beat starts without a step in the inducer.
 - [engineering] `bioreservoir.diagnostics.oscillation_amplitudes`, reported by
   `scripts/analysis/drive_bounds.py --oscillation`.
 - [engineering] Controls: random features and a leaky-integrator bank as reservoir types,

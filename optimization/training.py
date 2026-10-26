@@ -99,6 +99,7 @@ RECORDED: dict[str, str] = {
     "res_heterogeneity_density_cv": "heterogeneity_density_cv",
     "res_heterogeneity_dilution_cv": "heterogeneity_dilution_cv",
     "res_input_levels": "input_levels", "res_reset_noise": "reset_noise",
+    "res_warmup_input": "warmup_input",
     "topo_type": "topology_type", "topo_sparsity": "sparsity", "topo_signed": "signed",
     "topo_p_excite": "p_excite", "topo_interaction_diameters": "interaction_diameters",
     "topo_fade_alpha": "fade_alpha", "topo_rc_connectivity": "rc_connectivity",

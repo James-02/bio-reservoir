@@ -202,6 +202,7 @@ Options of the `BioReservoir` for how a device departs from the nominal model ([
 - `heterogeneity_density_cv` and `heterogeneity_dilution_cv`: per-colony cell density `d` (clipped to `[0.05, 0.99 d0]`, with its growth factor) and washout `mu`, next to the kinetic `param_heterogeneity_cv`. At large CVs use 32 substeps at the P centre.
 - `input_levels: K` (or `continuous`): the induced traps receive `K` levels in `(0, 1] x input_scaling`. Needs `geometry: per_node`.
 - `reset_noise: cv`: each beat starts from the warm-up state times log-normal factors (mean 1), drawn from the beat's own seed. Needs `cv.simulate: once`.
+- `warmup_input: rest`: the warm-up runs under the input of a sample of 0, the level a standardised beat varies around (inducer level 3 with the non-negative encoding), so a beat starts without a step in the inducer; the default, `zero`, warms up without input. Needs `geometry: per_node`.
 
 ```yaml
 reservoir:
@@ -210,6 +211,7 @@ reservoir:
     heterogeneity_dilution_cv: 0.1
     input_levels: 3
     reset_noise: 0.01
+    warmup_input: rest
 ```
 
 ## Controls
