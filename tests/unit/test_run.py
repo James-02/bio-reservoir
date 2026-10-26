@@ -469,6 +469,24 @@ class TestCompare:
         assert not result["paired"] and "pooled_delta_f1_macro" not in result
         assert "not paired" in compare_module.format_comparison(result)
 
+    def test_a_line_joins_each_fold_s_two_scores_only_when_paired(self, tmp_path, monkeypatch,
+                                                                    pyplot):
+        import utils.visualisation as vis
+
+        a, b = _execute(_config(), tmp_path / "a"), _execute(_config(), tmp_path / "b")
+        c = _execute(_config(cv={"folds": 3, "seed": 99}), tmp_path / "c")
+        drawn = {}
+        monkeypatch.setattr(vis, "save_figure",
+                            lambda fig, name, **kwargs: drawn.update({name: fig.axes[0]}) or [])
+        for other, paired in ((b, True), (c, False)):
+            result = compare_module.compare(a, other, out=tmp_path / "cmp", n_boot=50)
+            ax = drawn["fold_f1"]
+            joined = [line for line in ax.lines if line.get_color() == "0.75"]
+            assert len(joined) == (len(result["folds"]) if paired else 0)
+            assert [t.get_text() for t in ax.get_xticklabels()] == [result["a"], result["b"]]
+            assert ax.containers[0].lines[0].get_ydata()[0] == pytest.approx(
+                result["summary_a"]["mean"]["f1_macro"])
+
     def test_runs_are_found_by_folder_registry_id_name_or_archive(self, tmp_path, isolated):
         run_dir = _execute(_config(), isolated / "results" / "runs" / "named")
         (run_id,) = provenance.load_registry(isolated / "registry.jsonl")

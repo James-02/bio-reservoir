@@ -213,18 +213,22 @@ def plot_comparison(out: Path, result: dict[str, Any], folds_a: list, folds_b: l
     import matplotlib.pyplot as plt
     from sklearn.metrics import confusion_matrix
 
-    from utils.visualisation import STYLE, plot_confusion_matrix, save_figure
+    from utils.visualisation import STYLE, plot_confusion_matrix, plot_sweep, save_figure
 
     def save(fig, name):
         save_figure(fig, name, folder=out, dpi=300)
 
     with plt.style.context(STYLE):
         rows = result["folds"]
-        fig, ax = plt.subplots()
-        for side, marker in (("a", "o"), ("b", "s")):
-            ax.plot([r["fold"] for r in rows], [r[side]["f1_macro"] for r in rows],
-                    marker=marker, label=result[side])
-        ax.set(xlabel="Fold", ylabel="Macro-F1", xticks=[r["fold"] for r in rows])
+        fig, ax = plt.subplots(figsize=(7, 5))
+        if result["paired"]:  # the same test beats: a line joins each fold's two scores
+            for k, r in enumerate(rows):
+                ax.plot([0, 1], [r["a"]["f1_macro"], r["b"]["f1_macro"]], color="0.75", lw=1.5,
+                        zorder=1, label="Same fold" if k == 0 else None)
+        plot_sweep({side: [r[side]["f1_macro"] for r in rows] for side in "ab"}, ax,
+                   levels=["a", "b"], connect=False, jitter=0.0, seed_label="Folds")
+        ax.set_xticks([0, 1], [result["a"], result["b"]])
+        ax.set_ylabel("Macro-F1")
         ax.legend()
         save(fig, "fold_f1")
 

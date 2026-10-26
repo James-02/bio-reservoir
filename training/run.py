@@ -735,26 +735,25 @@ def summarise(artifacts: list, primary_average: str = "macro",
 
 
 def plot_run(fig_dir: Path, metrics: dict[str, Any]) -> list[Path]:
-    """The run's figures in ``fig_dir``: the confusion matrix of all folds together and the
-    F1 and accuracy of each fold."""
+    """The run's figures in ``fig_dir``: the confusion matrix of all folds together, and the
+    scores of each fold with their mean and SD (:func:`utils.visualisation.plot_fold_metrics`)."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    from utils.visualisation import STYLE, plot_confusion_matrix, save_figure
+    from utils.visualisation import (
+        STYLE,
+        plot_confusion_matrix,
+        plot_fold_metrics,
+        save_figure,
+    )
 
     with plt.style.context(STYLE):
         ax = plot_confusion_matrix(metrics["pooled"]["confusion_matrix"])
         ax.set_title("All folds together")
         paths = save_figure(ax.figure, "confusion_matrix", folder=fig_dir, dpi=300)
-        folds = metrics["folds"]
-        fig, ax = plt.subplots()
-        for key, marker, label in (("f1", "o", "F1"), ("accuracy", "s", "Accuracy")):
-            ax.plot([f["fold"] for f in folds], [f[key] for f in folds], marker=marker,
-                    label=label)
-        ax.set(xlabel="Fold", ylabel="Score", xticks=[f["fold"] for f in folds])
-        ax.legend()
-        paths += save_figure(fig, "fold_metrics", folder=fig_dir, dpi=300)
+    fig = plot_fold_metrics(metrics["folds"], metrics["primary_average"])
+    paths += save_figure(fig, "fold_metrics", folder=fig_dir, dpi=300)
     return paths
 
 
