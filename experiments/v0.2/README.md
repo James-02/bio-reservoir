@@ -10,7 +10,7 @@ the commit, the host and its resolved config.
 |---|---|---|---|
 | `designs/` | The five designs: the P centre, the best P lattice, A′ and U designs of the earlier searches, and the `v0.1` ESN | — | — |
 | `tracking/` | The tracking set, rerun at every tagged code version: each design at three reservoir seeds | 5 | 15 |
-| `phase-1/` | Phase 1 grids: one or two design parameters at a time around the P centre, at three reservoir seeds | 12 | 540 |
+| `phase-1/` | Phase 1 grids: one or two design parameters at a time around the P centre, at three reservoir seeds | 13 | 549 |
 | `phase-2/` | Phase 2 seeded TPE searches over every design parameter: P lattice, A′, U and the ESN (clean mean and one noisy image) | 5 | 1,200 |
 
 Study names follow the convention of the `v0.1` studies (SI Table S5): a phase prefix and
@@ -59,6 +59,7 @@ weights, heterogeneity, start state and noise. Fold SDs are 0.01–0.02 and seed
 | `P1-coupling` | Coupling rate 0–10 | 42 |
 | `P1-connectivity` | Input connectivity 0.1–1 | 30 |
 | `P1-heterogeneity` | Kinetic heterogeneity CV 0–0.5 | 27 |
+| `P1-heterogeneity-64` | CV 0.3–0.5 at 64 substeps (32 blow up colonies from CV ≈ 0.4) | 9 |
 | `P1-warmup` | Warm-up 0–2,000 steps | 33 |
 | `P1-units` | Square lattices of 100–2,025 traps | 27 |
 | `P1-gain-coupling` | Input ×2–12 × coupling rate 0.1–4 | 108 |

@@ -24,6 +24,7 @@ Each entry is marked **[science]** if it changes a reported number, or
   `confusion`, `metrics` and `pca`.
 - [engineering] The `v0.2` bioreservoir studies run 32 RK4 substeps, the ridge readouts
   choose their penalty by macro F1, and `P2-esn-image` reads the ESN from one noisy image.
+- [engineering] `P1-heterogeneity-64` reruns kinetic heterogeneity CV 0.3–0.5 at 64 substeps.
 
 ### Added
 
