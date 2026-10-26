@@ -1,7 +1,8 @@
 """A run config's reservoir as a run builds and drives it, for the figures in scripts/figures.
 
 :func:`run_config` reads a run config and :func:`task_beat` takes one beat of its task as a
-run simulates it. :func:`build` builds the config's reservoir as a run does
+run simulates it; :func:`encoded_input` gives the beat as the colonies receive it.
+:func:`build` builds the config's reservoir as a run does
 (:func:`optimization.reservoirs.build_reservoir`). :func:`colony_states` runs one colony of
 the design on its own, :func:`array_states` steps the whole array through a beat as
 ``node.run(beat, reset=True)`` does and keeps the terms of its drive, and
@@ -58,6 +59,17 @@ def build(cfg: dict, **overrides):
     params.update(overrides)
     node, _ = build_reservoir(params, seed=int(cfg["reservoir"]["seed"]))
     return node
+
+
+def encoded_input(cfg: dict, beat: np.ndarray) -> np.ndarray:
+    """The beat (steps, 1) as the config's colonies receive it, before their input weights
+    and input noise: with ``input_encoding="nonnegative"`` an inducer level, the beat clipped
+    to ``input_range`` and shifted by its lower end; otherwise the beat itself."""
+    node = build(cfg, units=1, warmup=0, coupling="none", topology_type="lattice")
+    if node.input_encoding != "nonnegative":
+        return beat[:, 0].copy()
+    low, high = node.input_range
+    return np.clip(beat[:, 0], low, high) - low
 
 
 def colony_states(cfg: dict, beat: np.ndarray, index: int, scalings: list[float]

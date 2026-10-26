@@ -24,6 +24,23 @@ class TestConfig:
         assert np.mean(beat) == pytest.approx(0.0, abs=1e-9)  # sequence_zscore
         assert np.std(beat) == pytest.approx(1.0, abs=1e-6)
 
+    def test_the_input_is_the_inducer_level_the_colonies_receive(self, small_design,
+                                                                 ecg_data):
+        cfg = figures.run_config(small_design("centre", noise_in=0.0))
+        beat, _ = figures.task_beat(cfg, 0)
+        level = figures.encoded_input(cfg, beat)
+        node = figures.build(cfg, units=1, coupling="none", topology_type="lattice",
+                             input_connectivity=1.0, input_sign="positive")
+        node.initialize(beat[:1])
+        node.diagnostics = True
+        gain = cfg["reservoir"]["params"]["input_scaling"]
+        for x, expected in zip(beat[:20], level[:20], strict=True):
+            node(x.reshape(1, 1))
+            assert node._last_inp_term[0, 0] == pytest.approx(gain * expected)
+        assert level.min() >= 0.0
+        signed = figures.run_config(small_design("abstract"))
+        np.testing.assert_array_equal(figures.encoded_input(signed, beat), beat[:, 0])
+
 
 class TestColony:
     def test_the_warm_up_ends_where_the_runs_start(self, small_design, ecg_data):

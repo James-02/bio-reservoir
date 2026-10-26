@@ -64,6 +64,47 @@ class TestFoldAnalysisFigures:
         assert ax.get_xlabel().startswith("PC 1 (")
 
 
+class TestDDEFigure:
+    """scripts/figures/visualise_dde.py: one colony of a design at several input scalings."""
+
+    WARM, REST = np.ones((3, 4)), np.full((5, 4), 2.0)
+
+    def test_a_row_per_scaling_under_the_colony_without_input(self, load_script, pyplot):
+        script = load_script("figures/visualise_dde")
+        fig = script.draw(self.WARM, self.REST, {0.05: self.REST, 0.5: self.REST},
+                          np.arange(5.0), "Normal", 0.5)
+        *rows, beat = fig.axes
+        assert [ax.texts[0].get_text() for ax in rows] == ["Baseline (0 input)", "Scale=0.05",
+                                                           "Scale=0.5 (config)"]
+        assert [t.get_text() for t in rows[0].get_legend().get_texts()] == [
+            "LuxI", "AiiA", "Warmup (0 input)"]
+        assert [t.get_text() for t in beat.get_legend().get_texts()] == ["ECG Class: Normal",
+                                                                         "Warmup (0 input)"]
+        assert (beat.get_ylabel(), fig.get_supylabel()) == ("ECG Input",
+                                                            "Genetic Biopixel States")
+
+    def test_the_warm_up_is_dashed_and_the_beat_starts_at_0(self, load_script, pyplot):
+        script = load_script("figures/visualise_dde")
+        fig = script.draw(self.WARM, self.REST, {}, np.arange(5.0), "Normal")
+        warm_up, driven = fig.axes[0].lines[:2]
+        assert list(warm_up.get_xdata()) == [-3, -2, -1] and warm_up.get_linestyle() == "--"
+        assert list(driven.get_xdata()) == [-1, 0, 1, 2, 3, 4]
+        assert list(fig.axes[-1].lines[-1].get_ydata()) == [0.0, 0.0, 1.0, 2.0, 3.0, 4.0]
+
+    def test_without_a_warm_up_nothing_is_dashed(self, load_script, pyplot):
+        script = load_script("figures/visualise_dde")
+        fig = script.draw(np.empty((0, 4)), self.REST, {}, np.arange(5.0), "Normal")
+        assert [line.get_linestyle() for line in fig.axes[0].lines] == ["-", "--"]
+        assert list(fig.axes[0].lines[0].get_xdata()) == [0, 1, 2, 3, 4]
+
+    def test_the_script_draws_a_design(self, small_design, figure_dir, ecg_data, run_script,
+                                       capsys):
+        run_script("figures/visualise_dde", small_design("centre"), "--scales", "0.1,1",
+                   "--warmup-steps", "3")
+        assert _saved(figure_dir) == ["states/toy-centre-dde-beat0.png"]
+        assert capsys.readouterr().out.startswith("Beat 0: ")
+
+
 class TestModelFigures:
     """scripts/figures/visualise_model.py draws a run config's model, built as a run builds it."""
 
