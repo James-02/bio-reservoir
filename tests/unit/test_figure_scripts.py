@@ -144,6 +144,52 @@ class TestStatesFigure:
                                       "states/toy-abstract-states-beat2-He.png"]
 
 
+class TestTopologyFigure:
+    """scripts/figures/visualise_topology.py: the kernel and the colonies with their links."""
+
+    WEIGHTS = np.array([[0.0, 2.0, -1.0], [2.0, 0.0, 0.5], [-1.0, 0.5, 0.0]])
+    POSITIONS = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+
+    def test_the_kernel_against_distance(self, load_script, pyplot):
+        script = load_script("figures/visualise_topology")
+        fig = script.draw_kernel(np.array([0.1, 0.5]), np.array([0.9, 0.0]), 0.03, 0.25, 8.2)
+        ax = fig.axes[0]
+        np.testing.assert_array_equal(ax.collections[0].get_offsets(), [[0.1, 0.9], [0.5, 0.0]])
+        assert [line.get_xdata()[0] for line in ax.lines] == [0.03, 0.25]
+        assert ax.get_legend_handles_labels()[1] == ["~1 diameter (mean NN)", "~8.2 diameters"]
+        assert (ax.get_xlabel(), ax.get_ylabel()) == ("Distance", "Weight (raw)")
+
+    def test_positive_links_are_solid_and_negative_ones_dashed(self, load_script, pyplot):
+        from scipy import sparse
+
+        script = load_script("figures/visualise_topology")
+        ax = script.draw_topology(self.POSITIONS, sparse.coo_matrix(self.WEIGHTS), 1).axes[0]
+        assert [t.get_text() for t in ax.get_legend().get_texts()] == ["colony",
+                                                                       "excitation (+)",
+                                                                       "inhibition (-)"]
+        positive, negative = ax.collections[1:]
+        assert len(positive.get_segments()) == 2 and len(negative.get_segments()) == 1
+
+    def test_diffusive_links_exchange_ahl_and_no_coupling_has_none(self, load_script, pyplot):
+        from scipy import sparse
+
+        script = load_script("figures/visualise_topology")
+        weights = sparse.coo_matrix(np.abs(self.WEIGHTS))
+        ax = script.draw_topology(self.POSITIONS, weights, 4, diffusive=True).axes[0]
+        assert [t.get_text() for t in ax.get_legend().get_texts()] == ["colony", "AHL exchange"]
+        assert len(ax.collections[1].get_segments()) == 6
+        ax = script.draw_topology(self.POSITIONS, None, 3).axes[0]
+        assert len(ax.collections) == 1 and len(ax.get_legend().get_texts()) == 1
+
+    def test_the_script_draws_a_kernel_only_for_a_distance_topology(self, small_design,
+                                                                    figure_dir, run_script):
+        run_script("figures/visualise_topology", small_design("abstract"), "--units", "25")
+        run_script("figures/visualise_topology", small_design("centre"))
+        assert _saved(figure_dir) == ["topology/toy-abstract-25-kernel.png",
+                                      "topology/toy-abstract-25-topology.png",
+                                      "topology/toy-centre-topology.png"]
+
+
 class TestModelFigures:
     """scripts/figures/visualise_model.py draws a run config's model, built as a run builds it."""
 
