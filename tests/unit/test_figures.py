@@ -91,6 +91,17 @@ class TestCoupling:
                                                               [1, 1]])
         assert weights.nnz == 48  # the 24 edges of a 4 x 4 grid, both ways
 
+    def test_every_link_of_a_lattice_that_is_not_square_joins_neighbours(self, small_design):
+        positions, weights = figures.coupling(figures.run_config(small_design("centre",
+                                                                              units=18)))
+        lengths = np.linalg.norm(positions[weights.row] - positions[weights.col], axis=1)
+        np.testing.assert_allclose(lengths, 0.5)  # 6 rows of 3 traps, 0.5 apart
+        assert weights.nnz == 2 * (6 * 2 + 5 * 3)
+
+    def test_a_random_topology_places_no_colonies(self, small_design):
+        with pytest.raises(ValueError, match="places no colonies"):
+            figures.coupling(figures.run_config(small_design("abstract", topology_type="random")))
+
     def test_a_kernel_places_its_colonies_and_no_coupling_has_no_weights(self, small_design):
         positions, weights = figures.coupling(figures.run_config(small_design("abstract")))
         assert positions.shape == (16, 2) and weights.shape == (16, 16)
