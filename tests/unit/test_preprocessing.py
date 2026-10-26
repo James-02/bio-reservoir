@@ -11,6 +11,7 @@ from utils.preprocessing import (
     _shuffle_dataset,
     _train_test_split_balanced_test,
     augment_data,
+    class_indices,
     dataset_sha256,
     ensure_kaggle_heartbeat_files,
     load_ecg_data,
@@ -483,6 +484,22 @@ class TestSmallHelpers:
         np.testing.assert_array_equal(X_r[1][:, 0], [3.0, 4.0, 5.0])
         np.testing.assert_array_equal(_one_hot_encode(np.array([2.0, 0.0]), 3),
                                       [[0, 0, 1], [1, 0, 0]])
+
+
+class TestClassIndices:
+    def test_labels_one_hot_labels_and_scores_give_the_classes(self):
+        labels = np.array([2, 0, 1, 2])
+        one_hot = _one_hot_encode(labels, 3)
+        for Y in (labels, one_hot, one_hot[:, None, :], 0.1 + 0.5 * one_hot):
+            np.testing.assert_array_equal(class_indices(Y), labels)
+
+    def test_the_first_time_step_is_read(self):
+        Y = np.eye(3)[np.array([[2, 1], [0, 2]])]  # two beats, two time steps
+        np.testing.assert_array_equal(class_indices(Y), [2, 0])
+
+    def test_other_shapes_are_rejected(self):
+        with pytest.raises(ValueError, match="shape"):
+            class_indices(np.zeros((2, 1, 1, 3)))
 
 
 def _write_heartbeat_csv(path, labels, seed):
