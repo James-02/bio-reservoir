@@ -26,8 +26,10 @@ Via glob pattern::
 
 Notes
 -----
-- All figures are saved under ``results/figures/metrics/<trial_name>/`` as PNG
-  (``--formats pdf,svg`` adds a PDF and an SVG).
+- All figures are saved under ``figures/metrics/<trial_name>/`` in the results folder
+  (``results/`` unless ``BIORESERVOIR_RESULTS_DIR`` or ``config.env`` sets another; see
+  :mod:`utils.config`) as PNG (``--formats pdf,svg`` adds a PDF and an SVG), and the
+  script prints each file it saves.
 - ``--plots`` alone saves all plot types (equivalent to ``--plots all``).
 - The PCA of the states is skipped if the fold files were saved without
   ``save_states=True``.
@@ -55,6 +57,7 @@ from __future__ import annotations
 import argparse
 import glob
 import os
+from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -201,9 +204,10 @@ def _print_model_info(artifacts: list[FoldArtifact]) -> None:
 # ---------------------------------------------------------------------------
 
 def plot_state_pca(states: np.ndarray, labels: np.ndarray, name: str,
-                   formats: tuple[str, ...] = ("png",)) -> None:
+                   formats: tuple[str, ...] = ("png",)) -> list[Path]:
     """Draw the states on their first two principal components, one colour and marker per
-    true class, and save the figure as ``results/figures/metrics/<name>`` in ``formats``.
+    true class, save the figure as ``figures/metrics/<name>`` of the results folder in
+    ``formats``, and return the files.
 
     Each feature is scaled to unit variance first, so that no state variable dominates by
     its units. ``labels`` are the true labels of the states, in any shape that
@@ -221,31 +225,35 @@ def plot_state_pca(states: np.ndarray, labels: np.ndarray, name: str,
     ax.set_xlabel(f"PC 1 ({explained[0]:.0%} of the variance)")
     ax.set_ylabel(f"PC 2 ({explained[1]:.0%} of the variance)")
     ax.legend(markerscale=2, loc="center left", bbox_to_anchor=(1.0, 0.5), frameon=False)
-    save_figure(fig, name, topic="metrics", formats=formats)
+    return save_figure(fig, name, topic="metrics", formats=formats)
 
 
 def _run_plots(artifacts: list[FoldArtifact], trial_name: str, wanted: set,
-               formats: tuple[str, ...] = ("png",)) -> None:
+               formats: tuple[str, ...] = ("png",)) -> list[Path]:
+    """Draw the ``wanted`` plot types and return the files saved."""
+    paths = []
     if "confusion" in wanted:
         Y_test = np.concatenate([a.Y_test for a in artifacts])
         Y_pred = np.concatenate([a.Y_pred for a in artifacts])
         ax = plot_confusion_matrix(evaluate_performance(Y_test, Y_pred).confusion_matrix)
-        save_figure(ax.figure, f"{trial_name}/confusion-matrix", topic="metrics",
-                    formats=formats)
+        paths += save_figure(ax.figure, f"{trial_name}/confusion-matrix", topic="metrics",
+                             formats=formats)
 
     if "metrics" in wanted:
         fig = plot_fold_metrics([a.metrics for a in artifacts],
                                 artifacts[0].metrics.primary_average)
-        save_figure(fig, f"{trial_name}/fold-metrics", topic="metrics", formats=formats)
+        paths += save_figure(fig, f"{trial_name}/fold-metrics", topic="metrics",
+                             formats=formats)
 
     if "pca" in wanted:
         with_states = [a for a in artifacts if a.test_states is not None]
         if with_states:
-            plot_state_pca(np.concatenate([a.test_states for a in with_states]),
-                           np.concatenate([a.Y_test for a in with_states]),
-                           f"{trial_name}/states-pca", formats)
+            paths += plot_state_pca(np.concatenate([a.test_states for a in with_states]),
+                                    np.concatenate([a.Y_test for a in with_states]),
+                                    f"{trial_name}/states-pca", formats)
         else:
             print("  No test_states in fold files: no PCA of the states.")
+    return paths
 
 
 # ---------------------------------------------------------------------------
@@ -324,8 +332,8 @@ plot types:
                          "or all.")
 
     if wanted:
-        _run_plots(artifacts, trial_name, wanted, args.formats)
-        print(f"Figures saved to results/figures/metrics/{trial_name}/")
+        for path in _run_plots(artifacts, trial_name, wanted, args.formats):
+            print(f"Saved: {path}")
 
     return 0
 

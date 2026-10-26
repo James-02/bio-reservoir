@@ -39,8 +39,12 @@ class TestFoldAnalysisFigures:
         assert run_script("analysis/analyse_fold_results", "--glob", folds, "--plots") == 0
         assert _saved(figure_dir / "metrics" / "run") == ["confusion-matrix.png",
                                                           "fold-metrics.png", "states-pca.png"]
+        out = capsys.readouterr().out
         assert ("Per-fold metrics (F1, precision and recall: the weighted average over the "
-                "classes):") in capsys.readouterr().out
+                "classes):") in out
+        printed = [line.removeprefix("Saved: ") for line in out.splitlines()
+                   if line.startswith("Saved: ")]
+        assert sorted(printed) == sorted(str(p) for p in figure_dir.rglob("*.png"))
 
     def test_each_plot_type_alone(self, tmp_path, figure_dir, run_script):
         folds = _fold_files(tmp_path / "runs")
