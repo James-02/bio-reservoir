@@ -11,7 +11,7 @@ the commit, the host and its resolved config.
 | `designs/` | The five designs: the P centre, the best P lattice, A′ and U designs of the earlier searches, and the `v0.1` ESN | — | — |
 | `tracking/` | The tracking set, rerun at every tagged code version: each design at three reservoir seeds | 5 | 15 |
 | `phase-1/` | Phase 1 grids: one or two design parameters at a time around the P centre, at three reservoir seeds | 13 | 549 |
-| `phase-2/` | Phase 2 seeded TPE searches over every design parameter: P lattice, A′, U and the ESN (clean mean and one noisy image) | 5 | 1,200 |
+| `phase-2/` | Phase 2 seeded TPE searches over every design parameter: P lattice, A′, U and the ESN (clean mean and one noisy image); and the five best trials of each at reservoir seeds 6338–6340 (`P2-<design>-top`) | 5 + 5 | 1,200 + 75 |
 
 Study names follow the convention of the `v0.1` studies (SI Table S5): a phase prefix and
 a descriptor, with each phase keeping its `v0.1` meaning. Phase 1 (`P1-`, folder `phase-1/`)
@@ -88,6 +88,10 @@ lattice; the `v0.1` ESN for the ESN).
 | `P2-uncoupled` | Input scaling 0.0138–0.554 (log), input connectivity 0.1–1, CV 0–0.5, warm-up 50–2,000 (log) | 200 |
 | `P2-esn` | Leak rate 0.05–1, spectral radius 0.1–3 (log), input scaling 0.0327–3.27 (log), recurrent connectivity 0.05–0.5, bias scaling 0–2 | 200 |
 | `P2-esn-image` | As `P2-esn`, read from one noisy image of the states | 200 |
+
+For the selection table, `P2-<design>-top` reruns the five best trials of each search at
+reservoir seeds 6338–6340: written from the finished search, the trials' values are
+enqueued and run exactly (random sampler, 15 trials).
 
 ## Running and reading
 
