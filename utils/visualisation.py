@@ -16,6 +16,7 @@ matplotlib setting.
 from __future__ import annotations
 
 import logging
+import numbers
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -188,10 +189,10 @@ def plot_sweep(scores: Mapping[float, Sequence[float]], ax=None, *,
     through the means at each level with a band of plus and minus one sample SD (no band
     where a level has one seed).
 
-    ``scores`` maps each level to its scores, one per seed. Level ``i`` of ``levels``
-    (default: the sorted levels of ``scores``) is drawn at ``x = i`` and labelled with its
-    value, so that an uneven grid such as 0, 0.025, 0.05, 0.1, 0.5 stays readable; pass the
-    same ``levels`` to draw several sweeps on one Axes. Dots are shifted sideways by up to
+    ``scores`` maps each level, a number or a name, to its scores, one per seed. Level
+    ``i`` of ``levels`` (default: the sorted levels of ``scores``) is drawn at ``x = i`` and
+    labelled with its value, so that an uneven grid such as 0, 0.025, 0.05, 0.1, 0.5 stays
+    readable; pass the same ``levels`` to draw several sweeps on one Axes. Dots are shifted sideways by up to
     ``jitter`` level spacings, the same way every time (``jitter_seed``). ``reference`` adds
     a dashed line, for example the score without the swept effect. Without ``ax`` the sweep
     is drawn in a new one-column figure in the house style. Returns the Axes.
@@ -223,6 +224,7 @@ def plot_sweep(scores: Mapping[float, Sequence[float]], ax=None, *,
                marker=marker, edgecolors="none", zorder=3, label=seed_label)
     ax.plot(x, means, color=color, marker=marker, zorder=4, label=label)
     ax.fill_between(x, means - sds, means + sds, alpha=0.2, color=color, lw=0, zorder=2)
-    ax.set_xticks(np.arange(len(levels)), [f"{level:g}" for level in levels])
+    ax.set_xticks(np.arange(len(levels)), [f"{level:g}" if isinstance(level, numbers.Real)
+                                           else str(level) for level in levels])
     ax.set_xlim(-0.5, len(levels) - 0.5)
     return ax

@@ -136,57 +136,67 @@ class TestDatasetFigure:
         assert sum(counts) == 100
 
 
-class TestHeterogeneityFigure:
-    """scripts/figures/visualise_heterogeneity.py draws the ``v0.1`` heterogeneity figure from
-    the run folders of scripts/run_heterogeneity.py."""
+class TestSweepFigure:
+    """scripts/figures/visualise_sweep.py draws a study's score against what it searches."""
 
-    RUNS = {"heterogeneity-cv0.000-seed100": 0.88, "heterogeneity-cv0.000-seed200": 0.90,
-            "heterogeneity-cv0.100-seed100": 0.86, "heterogeneity-cv0.100-seed200-array7": 0.87,
-            "heterogeneity-cv0.300-seed100": 0.84, "heterogeneity-cv0.300-seed200": 0.83,
-            "another-run": 0.5}
+    CV, GAIN = "reservoir.params.param_heterogeneity_cv", "reservoir.params.input_scaling"
 
     @classmethod
-    def _runs(cls, folder):
-        """Two folds per run, with macro F1 0.01 below and above the run's value."""
-        from utils.analysis import Metrics
-        from utils.results import FoldArtifact
+    def _trials(cls):
+        import pandas as pd
 
-        labels = np.eye(5)[:, None, :]
-        for name, value in cls.RUNS.items():
-            for k, f1 in enumerate((value - 0.01, value + 0.01)):
-                metrics = Metrics(f1=f1, accuracy=f1, precision=f1, recall=f1, mcc=0.0, kappa=0.0,
-                                  runtime=1.0, confusion_matrix=np.eye(5), class_metrics={},
-                                  f1_macro=f1, f1_weighted=f1)
-                FoldArtifact(trial_name=name, fold_index=k, Y_train=labels, Y_test=labels,
-                             Y_pred=labels, metrics=metrics).save(results_dir=str(folder))
-        return folder
+        rows = [{"trial": 0, "state": "FAIL", cls.GAIN: 1.0, cls.CV: 0.0, "reservoir.seed": 3,
+                 "f1": None}]
+        for gain in (1.0, 2.0):
+            for cv in (0.0, 0.1, 0.3):
+                for seed in (1, 2):
+                    rows.append({"trial": len(rows), "state": "COMPLETE", cls.GAIN: gain,
+                                 cls.CV: cv, "reservoir.seed": seed,
+                                 "f1": 0.9 - cv / 10 - gain / 100 + seed / 1000})
+        return pd.DataFrame(rows)
 
-    def test_each_run_is_its_mean_over_folds_grouped_by_cv(self, tmp_path, load_script):
-        scores = load_script("figures/visualise_heterogeneity").run_scores(
-            self._runs(tmp_path / "runs"))
-        assert list(scores) == [0.0, 0.1, 0.3]
-        np.testing.assert_allclose(scores[0.0], [0.88, 0.90])
-        np.testing.assert_allclose(scores[0.1], [0.86, 0.87])
-        np.testing.assert_allclose(scores[0.3], [0.84, 0.83])
+    def test_finished_trials_are_grouped_by_the_settings(self, load_script):
+        scores = load_script("figures/visualise_sweep").sweep_scores(self._trials(), self.CV,
+                                                                     self.GAIN)
+        assert list(scores) == [1.0, 2.0] and list(scores[1.0]) == [0.0, 0.1, 0.3]
+        np.testing.assert_allclose(scores[2.0][0.1], [0.871, 0.872])
 
-    def test_the_figure_shows_the_runs_their_means_and_the_baseline(self, tmp_path, pyplot,
-                                                                    load_script):
-        script = load_script("figures/visualise_heterogeneity")
-        ax = script.draw(script.run_scores(self._runs(tmp_path / "runs"))).axes[0]
-        baseline, means = ax.lines
-        assert list(baseline.get_ydata()) == pytest.approx([0.89, 0.89])
-        np.testing.assert_allclose(means.get_ydata(), [0.89, 0.865, 0.835])
-        assert ax.get_legend_handles_labels()[1] == [
-            "Baseline F$_1$ = 0.890", "Individual seeds", "Mean F$_1$ (\u00b11\u03c3)"]
+    def test_one_line_for_each_value_of_the_other_setting(self, load_script, pyplot):
+        from utils.visualisation import STYLE, figure_problems
 
-    def test_the_script_saves_the_figure_and_prints_the_means(self, tmp_path, figure_dir,
-                                                              run_script, capsys):
-        run_script("figures/visualise_heterogeneity", "--runs_dir", self._runs(tmp_path / "runs"))
-        assert sorted(p.name for p in (figure_dir / "diagnostics").iterdir()) == [
-            "heterogeneity_robustness.pdf", "heterogeneity_robustness.png"]
-        assert "0.1     0.8650" in capsys.readouterr().out
+        script = load_script("figures/visualise_sweep")
+        with pyplot.style.context(STYLE):
+            fig = script.draw(script.sweep_scores(self._trials(), self.CV, self.GAIN), self.CV,
+                              self.GAIN, reference=0.0)
+        ax = fig.axes[0]
+        legend = ax.get_legend()
+        assert [t.get_text() for t in legend.get_texts()] == ["Mean at 0", "Seeds", "1.0",
+                                                              "2.0"]
+        assert legend.get_title().get_text() == "Input gain"
+        assert ax.get_xlabel() == "Kinetic heterogeneity (CV)"
+        assert list(ax.lines[0].get_ydata()) == pytest.approx([0.8915, 0.8915])
+        assert figure_problems(fig) == []
 
-    def test_a_folder_without_heterogeneity_runs_is_an_error(self, tmp_path, pyplot, run_script):
-        (tmp_path / "runs").mkdir()
-        with pytest.raises(SystemExit, match="No heterogeneity"):
-            run_script("figures/visualise_heterogeneity", "--runs_dir", tmp_path / "runs")
+    def _run(self, load_script, monkeypatch, tmp_path, search, *args):
+        import sys
+
+        config = tmp_path / "sweep.yaml"
+        config.write_text("name: toy-sweep\nstudy:\n  search:\n" + "".join(
+            f"    {path}: {{type: categorical, choices: [0, 1]}}\n" for path in search))
+        script = load_script("figures/visualise_sweep")
+        trials = self._trials()
+        monkeypatch.setattr(script, "trials_table", lambda cfg, storage: trials)
+        monkeypatch.setattr(sys, "argv", ["visualise_sweep.py", str(config), *args])
+        script.main()
+
+    def test_the_script_draws_the_study_of_a_config(self, tmp_path, figure_dir, load_script,
+                                                    monkeypatch, capsys):
+        self._run(load_script, monkeypatch, tmp_path, [self.GAIN, self.CV, "reservoir.seed"])
+        assert _saved(figure_dir) == ["sweeps/toy-sweep.png"]
+        rows = capsys.readouterr().out.splitlines()[1:7]
+        assert [row.split()[:2] for row in rows[:2]] == [["1.0", "0.0"], ["1.0", "0.1"]]
+        assert rows[0].split()[2:] == ["0.8915", "0.0007", "2"]
+
+    def test_a_third_setting_needs_by(self, tmp_path, figure_dir, load_script, monkeypatch):
+        with pytest.raises(SystemExit, match="--by"):
+            self._run(load_script, monkeypatch, tmp_path, ["a.b", self.GAIN, self.CV])

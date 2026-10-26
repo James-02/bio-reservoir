@@ -181,6 +181,10 @@ class TestSweep:
         assert list(ax.lines[1].get_xdata()) == [0, 2]
         assert ax.get_legend_handles_labels()[1] == ["Seeds", "Mean \u00b1 SD", "Other"]
 
+    def test_levels_can_be_names(self, pyplot):
+        ax = self._draw(pyplot, scores={"final": [0.8, 0.82], "images:2": [0.85, 0.86]})
+        assert [t.get_text() for t in ax.get_xticklabels()] == ["final", "images:2"]
+
     def test_alone_it_is_a_one_column_figure(self, pyplot):
         ax = vis.plot_sweep(self.SCORES)
         assert ax.figure.get_size_inches()[0] == vis.SINGLE_COLUMN
