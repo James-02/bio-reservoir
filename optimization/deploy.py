@@ -701,6 +701,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             jobs = (study_jobs(args.studies, args.processes, extra, args.study_type)
                     if args.studies else command_jobs(args.run, args.label))
             host = args.host[0]
+            if deployer.session_alive(host):
+                raise SystemExit(f"[{host}] a session is already running; wait for it or "
+                                 "use --cleanup")
             deployer.sync(host)
             deployer.push(host, args.push)
             deployer.setup_venv(host)

@@ -11,10 +11,10 @@ name: P2-abstract
 description: >-
   Phase 2 TPE search, A' (corrected abstract coupling): input gain x0.25-20, recurrent
   gain x0.01-3, input connectivity 0.1-1, heterogeneity CV 0-0.5, warm-up 50-2,000; N =
-  1,024, 16 substeps; one image of the LuxI reporter with 1% measurement noise, RidgeCV
+  1,024, 32 substeps; one image of the LuxI reporter with 1% measurement noise, RidgeCV
   readout; reservoir seed 6337. Starts from the exploration's A' optimum (trial 109).
 reservoir:
-  params: {units: 1024, rk4_substeps: 16, heterogeneity_mean_preserving: true}
+  params: {units: 1024, rk4_substeps: 32, heterogeneity_mean_preserving: true}
 study:
   trials: 300
   metric: f1

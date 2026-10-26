@@ -64,8 +64,11 @@ def reseed_noise(node, seed: int) -> None:
 
 def _run_beats(node, noise_seed: int, mode: str, columns: np.ndarray | None, beats: np.ndarray,
                indices: np.ndarray) -> np.ndarray:
+    import reservoirpy
+
     from training.pipeline import _aggregate_states
 
+    reservoirpy.verbosity(0)  # no progress bar per beat in the logs
     rows = []
     for beat, index in zip(beats, indices, strict=True):
         reseed_noise(node, beat_seed(noise_seed, index))

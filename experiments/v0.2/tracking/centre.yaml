@@ -7,7 +7,7 @@ base: ../designs/centre.yaml
 name: tracking-centre
 description: >-
   Tracking set: the P centre (input x5.6, coupling rate 0.6, input connectivity 0.66,
-  heterogeneity CV 0.065 mean-preserving, warm-up 800, N = 1,024 traps, 16 substeps);
+  heterogeneity CV 0.065 mean-preserving, warm-up 800, N = 1,024 traps, 32 substeps);
   one image of the LuxI reporter with 1% measurement noise, RidgeCV readout; three
   reservoir seeds.
 study:

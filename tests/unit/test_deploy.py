@@ -327,6 +327,17 @@ class TestMain:
         with pytest.raises(SystemExit, match="aborted"):
             deploy.main(["--cleanup", "--host", "host1"])
 
+    def test_a_launch_leaves_the_workspace_of_a_running_session_alone(self, settings, quiet,
+                                                                      monkeypatch):
+        steps = []
+        monkeypatch.setattr(deploy.Deployer, "session_alive", lambda self, host: True)
+        for step in ("sync", "push", "setup_venv", "stop_service", "launch"):
+            monkeypatch.setattr(deploy.Deployer, step,
+                                lambda self, *args, step=step: steps.append(step))
+        with pytest.raises(SystemExit, match="already running"):
+            deploy.main(["--host", "host1", "--run", "echo", "--dry-run"])
+        assert steps == []
+
 
 class TestCollect:
     def test_runs_and_logs_are_collected_with_the_databases(self, settings):

@@ -1,0 +1,39 @@
+# Phase 2 reruns: the five best trials of P2-esn-image at three more reservoir seeds, for the
+# selection table. Written from the finished search: the best trials' parameter values,
+# enqueued and run exactly (random sampler, as many trials as points).
+#    python -m training.run study experiments/v0.2/phase-2/esn-image-top.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/phase-2/esn-image-top.yaml --group
+base: ../designs/esn.yaml
+name: P2-esn-image-top
+description: >-
+  The five best trials of P2-esn-image (trials 178, 185, 189, 158, 121; seed 6337) at
+  reservoir seeds 6338-6340, run exactly.
+reservoir: {seed: 6337}
+features: {aggregation: final, measurement_noise: 0.01}
+study:
+  trials: 15
+  metric: f1
+  sampler: {type: random, seed: 6337}
+  enqueue:
+  - {reservoir.params.esn_leak_rate: 0.1445283693089213, reservoir.params.esn_spectral_radius: 1.987831058749883, reservoir.params.input_scaling: 0.15687145648853565, reservoir.params.rc_connectivity: 0.16136425880825953, reservoir.params.bias_scaling: 0.5076146625391504, reservoir.seed: 6338}
+  - {reservoir.params.esn_leak_rate: 0.1445283693089213, reservoir.params.esn_spectral_radius: 1.987831058749883, reservoir.params.input_scaling: 0.15687145648853565, reservoir.params.rc_connectivity: 0.16136425880825953, reservoir.params.bias_scaling: 0.5076146625391504, reservoir.seed: 6339}
+  - {reservoir.params.esn_leak_rate: 0.1445283693089213, reservoir.params.esn_spectral_radius: 1.987831058749883, reservoir.params.input_scaling: 0.15687145648853565, reservoir.params.rc_connectivity: 0.16136425880825953, reservoir.params.bias_scaling: 0.5076146625391504, reservoir.seed: 6340}
+  - {reservoir.params.esn_leak_rate: 0.1127949481457548, reservoir.params.esn_spectral_radius: 2.2577513409787215, reservoir.params.input_scaling: 0.22363000282994103, reservoir.params.rc_connectivity: 0.12672387427932974, reservoir.params.bias_scaling: 0.7281647719680435, reservoir.seed: 6338}
+  - {reservoir.params.esn_leak_rate: 0.1127949481457548, reservoir.params.esn_spectral_radius: 2.2577513409787215, reservoir.params.input_scaling: 0.22363000282994103, reservoir.params.rc_connectivity: 0.12672387427932974, reservoir.params.bias_scaling: 0.7281647719680435, reservoir.seed: 6339}
+  - {reservoir.params.esn_leak_rate: 0.1127949481457548, reservoir.params.esn_spectral_radius: 2.2577513409787215, reservoir.params.input_scaling: 0.22363000282994103, reservoir.params.rc_connectivity: 0.12672387427932974, reservoir.params.bias_scaling: 0.7281647719680435, reservoir.seed: 6340}
+  - {reservoir.params.esn_leak_rate: 0.0966300418455311, reservoir.params.esn_spectral_radius: 2.2185989130148234, reservoir.params.input_scaling: 0.14777119892997234, reservoir.params.rc_connectivity: 0.14626140893614287, reservoir.params.bias_scaling: 0.3509603268224383, reservoir.seed: 6338}
+  - {reservoir.params.esn_leak_rate: 0.0966300418455311, reservoir.params.esn_spectral_radius: 2.2185989130148234, reservoir.params.input_scaling: 0.14777119892997234, reservoir.params.rc_connectivity: 0.14626140893614287, reservoir.params.bias_scaling: 0.3509603268224383, reservoir.seed: 6339}
+  - {reservoir.params.esn_leak_rate: 0.0966300418455311, reservoir.params.esn_spectral_radius: 2.2185989130148234, reservoir.params.input_scaling: 0.14777119892997234, reservoir.params.rc_connectivity: 0.14626140893614287, reservoir.params.bias_scaling: 0.3509603268224383, reservoir.seed: 6340}
+  - {reservoir.params.esn_leak_rate: 0.11596416929301256, reservoir.params.esn_spectral_radius: 2.0353378324314786, reservoir.params.input_scaling: 0.21631597770314465, reservoir.params.rc_connectivity: 0.10041201042677474, reservoir.params.bias_scaling: 0.5376478428339228, reservoir.seed: 6338}
+  - {reservoir.params.esn_leak_rate: 0.11596416929301256, reservoir.params.esn_spectral_radius: 2.0353378324314786, reservoir.params.input_scaling: 0.21631597770314465, reservoir.params.rc_connectivity: 0.10041201042677474, reservoir.params.bias_scaling: 0.5376478428339228, reservoir.seed: 6339}
+  - {reservoir.params.esn_leak_rate: 0.11596416929301256, reservoir.params.esn_spectral_radius: 2.0353378324314786, reservoir.params.input_scaling: 0.21631597770314465, reservoir.params.rc_connectivity: 0.10041201042677474, reservoir.params.bias_scaling: 0.5376478428339228, reservoir.seed: 6340}
+  - {reservoir.params.esn_leak_rate: 0.10622662725050933, reservoir.params.esn_spectral_radius: 2.27664232314525, reservoir.params.input_scaling: 0.13702535787399941, reservoir.params.rc_connectivity: 0.12449233648972342, reservoir.params.bias_scaling: 0.5988130889540647, reservoir.seed: 6338}
+  - {reservoir.params.esn_leak_rate: 0.10622662725050933, reservoir.params.esn_spectral_radius: 2.27664232314525, reservoir.params.input_scaling: 0.13702535787399941, reservoir.params.rc_connectivity: 0.12449233648972342, reservoir.params.bias_scaling: 0.5988130889540647, reservoir.seed: 6339}
+  - {reservoir.params.esn_leak_rate: 0.10622662725050933, reservoir.params.esn_spectral_radius: 2.27664232314525, reservoir.params.input_scaling: 0.13702535787399941, reservoir.params.rc_connectivity: 0.12449233648972342, reservoir.params.bias_scaling: 0.5988130889540647, reservoir.seed: 6340}
+  search:
+    reservoir.params.esn_leak_rate: {type: float, low: 0.05, high: 1.0}
+    reservoir.params.esn_spectral_radius: {type: float, low: 0.1, high: 3.0, log: true}
+    reservoir.params.input_scaling: {type: float, low: 0.0327146, high: 3.27146, log: true}
+    reservoir.params.rc_connectivity: {type: float, low: 0.05, high: 0.5}
+    reservoir.params.bias_scaling: {type: float, low: 0.0, high: 2.0}
+    reservoir.seed: {type: categorical, choices: [6338, 6339, 6340]}

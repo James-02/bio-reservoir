@@ -12,6 +12,10 @@ from scipy import sparse
 logger = logging.getLogger(__name__)
 
 
+class UnstableIntegrationError(ValueError):
+    """The explicit RK4 step is too long for the model's fastest rates."""
+
+
 # -----------------------------------------------------------------------------
 # Public API: defaults + preparation
 # -----------------------------------------------------------------------------

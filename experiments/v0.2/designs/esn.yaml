@@ -21,5 +21,5 @@ reservoir:
     esn_spectral_radius: 1.6955020298458932
     esn_activation: tanh
 features: {aggregation: mean}
-readout: {classifier: RidgeCV, scale: true}
+readout: {classifier: RidgeCV, scale: true, params: {scoring: f1_macro}}
 cv: {folds: 5, seed: 6337}

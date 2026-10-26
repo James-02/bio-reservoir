@@ -63,6 +63,20 @@ def test_with_noise_a_beat_gets_the_same_features_in_any_batch():
     assert not np.array_equal(whole, simulate_beats(reservoir, X, noise_seed=6))
 
 
+def test_beats_run_without_progress_bars(capfd):
+    import reservoirpy
+
+    reservoir = _reservoir()
+    previous = reservoirpy.verbosity()
+    reservoirpy.verbosity(1)
+    try:
+        capfd.readouterr()
+        simulate_beats(reservoir, _beats(), noise_seed=5)
+        assert "Running" not in capfd.readouterr().err
+    finally:
+        reservoirpy.verbosity(previous)
+
+
 def test_beats_run_on_a_copy_of_the_warmed_up_reservoir(monkeypatch):
     from bioreservoir.node import BioReservoir
 

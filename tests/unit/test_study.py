@@ -125,6 +125,19 @@ def test_a_grid_runs_every_point_once_and_records_resolved_configs():
         assert trial.value == pytest.approx(np.mean(trial.user_attrs["fold_f1"]))
 
 
+def test_a_trial_the_solver_cannot_integrate_fails_and_the_study_goes_on():
+    # Two substeps are too few for the AHL exchange (the step check refuses them).
+    cfg = _config(search={"reservoir.params.rk4_substeps": {"type": "int",
+                                                            "choices": [2, 16]}},
+                  sampler={"type": "grid"}, trials=2)
+    study = study_module.run_study(cfg)
+    states = {t.params["reservoir.params.rk4_substeps"]: t.state for t in study.trials}
+    assert states == {2: optuna.trial.TrialState.FAIL, 16: optuna.trial.TrialState.COMPLETE}
+    for trial in study.trials:
+        assert trial.user_attrs["environment"]["cpu_count_logical"]
+        assert "timestamp_utc" not in trial.user_attrs["environment"]
+
+
 def test_a_seeded_study_runs_the_same_trials_again(tmp_path):
     first = study_module.run_study(_config(), storage=f"sqlite:///{tmp_path / 'a.db'}")
     second = study_module.run_study(_config(), storage=f"sqlite:///{tmp_path / 'b.db'}")

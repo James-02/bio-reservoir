@@ -9,11 +9,11 @@ base: ../designs/uncoupled.yaml
 name: P2-uncoupled
 description: >-
   Phase 2 TPE search, U (P without coupling): input gain x0.5-20, input connectivity
-  0.1-1, heterogeneity CV 0-0.5, warm-up 50-2,000; N = 1,024, 16 substeps; one image of
+  0.1-1, heterogeneity CV 0-0.5, warm-up 50-2,000; N = 1,024, 32 substeps; one image of
   the LuxI reporter with 1% measurement noise, RidgeCV readout; reservoir seed 6337.
   Starts from the exploration's U optimum (trial 68).
 reservoir:
-  params: {units: 1024, rk4_substeps: 16, heterogeneity_mean_preserving: true}
+  params: {units: 1024, rk4_substeps: 32, heterogeneity_mean_preserving: true}
 study:
   trials: 200
   metric: f1

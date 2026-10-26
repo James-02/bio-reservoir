@@ -181,15 +181,16 @@ class TestGroups:
 
 class TestStabilityCheck:
     # 10 x 10 lattice, coupling rate 4, 8 substeps (limit 2.7 x 8 = 21.6 per time unit):
-    # with the nominal density He's fastest mode decays at up to 5.83 + 0.6 + 2 x 1.11 x 4
-    # = 15.3, which the solver integrates; colonies at 0.99 d0 exchange through the membrane
-    # at d/(1-d) D = 16.9 instead of 5.83, so the bound reaches 26.4 and the solver blows up.
-    OPTIONS = dict(units=100, warmup=2, rk4_substeps=8, seed=5, coupling="diffusion",
+    # with the nominal density the fastest exchange mode decays at up to 8.33 + 0.6 + 2 x
+    # 1.11 x 4 = 17.8, which the solver integrates; colonies at 0.99 d0 exchange through the
+    # membrane at D/(1-d) = 19.4 instead of 8.33, so the bound reaches 28.9 and the solver
+    # blows up. (No warm-up: the nominal kinetics need more than 8 substeps.)
+    OPTIONS = dict(units=100, warmup=0, rk4_substeps=8, seed=5, coupling="diffusion",
                    diffusion_rate=4.0, W=lattice_matrix(), param_heterogeneity_seed=3)
 
     def test_uniform_density_is_accepted_and_varied_density_is_refused(self):
         BioReservoir(**self.OPTIONS)
-        with pytest.raises(ValueError, match=r"up to 26\.4 per time unit"):
+        with pytest.raises(ValueError, match=r"up to 28\.9 per time unit"):
             BioReservoir(**self.OPTIONS, heterogeneity_density_cv=0.5)
 
     def test_the_refused_setting_blows_up_and_the_accepted_one_does_not(self):

@@ -10,8 +10,8 @@ the commit, the host and its resolved config.
 |---|---|---|---|
 | `designs/` | The five designs: the P centre, the best P lattice, A′ and U designs of the earlier searches, and the `v0.1` ESN | — | — |
 | `tracking/` | The tracking set, rerun at every tagged code version: each design at three reservoir seeds | 5 | 15 |
-| `phase-1/` | Phase 1 grids: one or two design parameters at a time around the P centre, at three reservoir seeds | 12 | 540 |
-| `phase-2/` | Phase 2 seeded TPE searches over every design parameter: P lattice, A′, U and the ESN | 4 | 1,000 |
+| `phase-1/` | Phase 1 grids: one or two design parameters at a time around the P centre, at three reservoir seeds | 13 | 549 |
+| `phase-2/` | Phase 2 seeded TPE searches over every design parameter: P lattice, A′, U and the ESN (clean mean and one noisy image); and the five best trials of each at reservoir seeds 6338–6340 (`P2-<design>-top`) | 5 + 5 | 1,200 + 75 |
 
 Study names follow the convention of the `v0.1` studies (SI Table S5): a phase prefix and
 a descriptor, with each phase keeping its `v0.1` meaning. Phase 1 (`P1-`, folder `phase-1/`)
@@ -30,15 +30,20 @@ config here.
   (`coupling: diffusion`), a non-negative inducer input to some of the traps, one image of
   the LuxI reporter at the end of the beat with 1% measurement noise
   (`features: {variables: [I], aggregation: final, measurement_noise: 0.01}`), and a
-  leave-one-out ridge readout (`RidgeCV`).
+  leave-one-out ridge readout whose penalty is chosen by macro F1 (`RidgeCV` with
+  `scoring: f1_macro`; the default squared error scored 0.003–0.010 lower at the P centre).
 - **P centre**, the reference design: N = 1,024 traps, input scaling 0.155113 (5.6 times the
   `v0.1` input scaling of 0.0277), coupling rate 0.6, input connectivity 0.66,
-  mean-preserving kinetic heterogeneity of CV 0.065, warm-up 800 steps, 16 RK4 substeps.
+  mean-preserving kinetic heterogeneity of CV 0.065, warm-up 800 steps, 32 RK4 substeps
+  (at 16, colonies whose degradation rates the heterogeneity raises blow up at CV 0.3 and
+  above).
 - **A′**: the abstract coupling of `v0.1` with its corrections (a signed Gaussian kernel of
   random positions applied to the observed states); not chemically realisable.
 - **U**: the colonies of P without coupling (`coupling: none`).
 - **ESN**: the `v0.1` echo state network ([../benchmarks/v0.1/esn.yaml](../benchmarks/v0.1/esn.yaml)),
-  read from the clean mean of its states over the beat.
+  read from the clean mean of its states over the beat (as in `v0.1`), or, like the
+  bioreservoirs, from one image of its states at the end of the beat with 1% measurement
+  noise (`P2-esn-image`).
 
 Every config uses the balanced pool (4,015 beats), five folds and seed 6337 for the pool and
 the folds. `param_heterogeneity_seed` is `null`, so the heterogeneity draw follows
@@ -54,6 +59,7 @@ weights, heterogeneity, start state and noise. Fold SDs are 0.01–0.02 and seed
 | `P1-coupling` | Coupling rate 0–10 | 42 |
 | `P1-connectivity` | Input connectivity 0.1–1 | 30 |
 | `P1-heterogeneity` | Kinetic heterogeneity CV 0–0.5 | 27 |
+| `P1-heterogeneity-64` | CV 0.3–0.5 at 64 substeps (32 blow up colonies from CV ≈ 0.4) | 9 |
 | `P1-warmup` | Warm-up 0–2,000 steps | 33 |
 | `P1-units` | Square lattices of 100–2,025 traps | 27 |
 | `P1-gain-coupling` | Input ×2–12 × coupling rate 0.1–4 | 108 |
@@ -69,7 +75,7 @@ searches `seed`, and the reservoir seed follows it.
 
 ## Phase 2 searches (`phase-2/`)
 
-Seeded multivariate TPE (`seed: 6337`, 24 start-up trials), N = 1,024 traps and 16
+Seeded multivariate TPE (`seed: 6337`, 24 start-up trials), N = 1,024 traps and 32
 substeps, reservoir seed 6337. The ranges are those of the exploration searches, whose input
 and recurrent gains were multiples of the `v0.1` scalings; here they are absolute scalings.
 Each search first runs the best design of the earlier search (and the P centre for the P
@@ -81,12 +87,19 @@ lattice; the `v0.1` ESN for the ESN).
 | `P2-abstract` | Input scaling 0.00692–0.554 (log), recurrent scaling 7.04e-5–0.0211 (log), input connectivity 0.1–1, CV 0–0.5, warm-up 50–2,000 (log) | 300 |
 | `P2-uncoupled` | Input scaling 0.0138–0.554 (log), input connectivity 0.1–1, CV 0–0.5, warm-up 50–2,000 (log) | 200 |
 | `P2-esn` | Leak rate 0.05–1, spectral radius 0.1–3 (log), input scaling 0.0327–3.27 (log), recurrent connectivity 0.05–0.5, bias scaling 0–2 | 200 |
+| `P2-esn-image` | As `P2-esn`, read from one noisy image of the states | 200 |
+
+For the selection table, `P2-<design>-top` reruns the five best trials of each search at
+reservoir seeds 6338–6340: written from the finished search, the trials' values are
+enqueued and run exactly (random sampler, 15 trials).
 
 ## Running and reading
 
 Run a study on a host through deploy, from a clean checkout of a tagged commit, one study
 per host at a time. A study resumes when its command runs again; a grid runs each point
-once.
+once. A trial whose reservoir the solver cannot integrate (the RK4 step check refuses it, or
+its states blow up) is recorded as failed and the study goes on; `study-table` lists it
+without a score. Each trial records its machine in the `environment` attribute.
 
 ```bash
 python -m optimization.deploy --host host3 --label P2-lattice \

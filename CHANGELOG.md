@@ -22,6 +22,11 @@ Each entry is marked **[science]** if it changes a reported number, or
 - [engineering] Run, comparison and fold-analysis figures name the classes and draw each
   fold's scores as dots with their mean and SD; `analyse_fold_results.py --plots` draws
   `confusion`, `metrics` and `pca`.
+- [engineering] The `v0.2` bioreservoir studies run 32 RK4 substeps, the ridge readouts
+  choose their penalty by macro F1, and `P2-esn-image` reads the ESN from one noisy image.
+- [engineering] `P1-heterogeneity-64` reruns kinetic heterogeneity CV 0.3–0.5 at 64 substeps.
+- [engineering] `P2-<design>-top` reruns the five best trials of each Phase 2 search at
+  three more reservoir seeds.
 
 ### Added
 
@@ -56,6 +61,12 @@ Each entry is marked **[science]** if it changes a reported number, or
 ### Fixed
 
 - [engineering] `scripts/analysis/drive_bounds.py` works on diffusive and uncoupled arrays.
+- [science] The RK4 step check counts the whole membrane exchange, for every coupling, and a
+  run stops with `UnstableIntegrationError` when colony states blow up.
+- [engineering] A study records a trial that blows up as failed and goes on, and every
+  trial records the machine it ran on.
+- [engineering] `optimization/deploy.py` checks for a running session before it copies files.
+- [engineering] Simulation workers print no progress bar per beat, which filled the logs.
 - [engineering] Optuna's plots no longer warn that they are experimental, and
   `analyse_fold_results.py` reports MCC and kappa, also for `v0.1` fold files.
 

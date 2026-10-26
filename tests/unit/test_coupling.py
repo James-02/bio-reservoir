@@ -6,6 +6,8 @@ from scipy import sparse
 from scipy.integrate import solve_ivp
 
 from bioreservoir import BioReservoir, dde, distance_matrix, lattice_matrix
+from bioreservoir import node as node_module
+from bioreservoir.dde import UnstableIntegrationError
 from bioreservoir.diagnostics import drive_and_state_ranges, drive_shares
 from bioreservoir.topology import relative_asymmetry, scale_conductances
 from optimization.reservoirs import build_reservoir
@@ -253,12 +255,47 @@ class TestNodeCoupling:
 
     def test_an_exchange_too_fast_for_the_solver_step_is_refused(self):
         # 10 x 10 lattice, 16 substeps: an interior colony's conductances sum to 1.11 x the
-        # rate, so He's fastest mode decays at 5.83 + 0.6 + 2.22 x the rate; at a rate of 18
-        # (46.4 per time unit) the explicit solver blows up, at 10 (28.7) it is stable.
-        with pytest.raises(ValueError, match="needs at least 18 substeps"):
+        # rate, so its fastest exchange mode decays at up to 8.33 + 0.6 + 2.22 x the rate; at
+        # a rate of 18 (48.9 per time unit) the explicit solver blows up, at 10 (31.2) it is
+        # stable.
+        with pytest.raises(UnstableIntegrationError, match="needs at least 19 substeps"):
             _node(units=100, coupling="diffusion", diffusion_rate=18.0, W=lattice_matrix())
         stable = _node(units=100, coupling="diffusion", diffusion_rate=10.0, W=lattice_matrix())
         assert np.abs(stable.run(X, reset=True)).max() < 1e3
+
+    def test_the_membrane_exchange_bounds_the_step_without_coupling(self):
+        # Hi and He relax towards each other at D / (1 - d) + mu = 5 / 0.19 + 0.6 = 26.9 per
+        # time unit: 9 substeps (RK4 limit 2.78 x 9 = 25) blow up, 10 are stable.
+        dde = {"D": 5.0, "d": 0.81}
+        with pytest.raises(UnstableIntegrationError, match="needs at least 10 substeps"):
+            _node(coupling="none", dde_kwargs=dde, rk4_substeps=9)
+        assert np.isfinite(_node(coupling="none", dde_kwargs=dde, rk4_substeps=10).run(X)).all()
+
+    def test_states_that_blow_up_stop_the_run(self):
+        # I degrades at up to gammaI = 120 per time unit: 16 substeps are far too few, and I
+        # runs negative, which it cannot do under any drive.
+        with pytest.raises(UnstableIntegrationError, match="blew up"):
+            _node(coupling="none", dde_kwargs={"gammaI": 120.0}).run(X)
+
+    def test_negative_exchange_states_stop_the_run_only_under_non_negative_drive(self):
+        # The nominal kinetics need more than 8 substeps; signed drive takes Hi and He
+        # below zero by itself.
+        with pytest.raises(UnstableIntegrationError, match="blew up"):
+            _node(coupling="none", rk4_substeps=8, warmup=50, input_encoding="nonnegative",
+                  input_sign="positive")
+        signed = _node(coupling="none", input_scaling=1.0)
+        signed.run(X)
+        assert signed.states[:, :, 2:].min() < 0 <= signed.states[:, :, :2].min()
+
+    def test_a_solver_division_by_zero_is_an_unstable_step(self, monkeypatch):
+        node = _node(coupling="none")
+
+        def divide(*args, **kwargs):
+            raise ZeroDivisionError("division by zero")
+
+        monkeypatch.setattr(node_module, "solve_dde_substep", divide)
+        with pytest.raises(UnstableIntegrationError, match="blew up"):
+            node.run(X)
 
     def test_drive_shares_need_the_abstract_coupling(self):
         node = _node(coupling="diffusion", W=distance_matrix(**KERNEL))

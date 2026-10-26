@@ -27,11 +27,14 @@ reported numbers.
 combination of ``choices``, which every parameter then needs). Trials run one at a time,
 each with ``--processes`` workers, so a study with a seeded sampler runs the same trials
 again. Run one process per study: several processes sharing a study would run more trials
-than asked and could repeat points. The trial count includes failed trials; a trial that
-raises stops the study, and running the command again resumes it. Only ``study.trials``
-may change between runs of a study. With ``reservoir.states_from`` the trials refit only the
-readout on the saved states of a run (no simulation), so only ``readout`` settings can be
-searched.
+than asked and could repeat points. The trial count includes failed trials. A trial whose
+reservoir the solver cannot integrate (``UnstableIntegrationError``: the RK4 step check
+refuses it, or its states blow up) is recorded as failed and the study goes on; any other
+error stops the study, and running the command again resumes it. Each trial records the
+machine it ran on (``environment``: CPU, cores, memory, OS and package versions). Only
+``study.trials`` may change between runs of a study. With ``reservoir.states_from`` the
+trials refit only the readout on the saved states of a run (no simulation), so only
+``readout`` settings can be searched.
 
     python -m training.run study CONFIG.yaml [--processes N] [--trials N] [--storage URL]
     python -m training.run study-best CONFIG.yaml [--out BEST.yaml] [--storage URL]
@@ -67,6 +70,8 @@ _SETTINGS = {"reservoir": ("params", "seed", "trial"),
              "readout": ("classifier", "params", "scale", "search", "inner_folds", "seed",
                          "trial")}
 _EXTRA_SETTINGS = {"task": ("seed", "data_sha256"), "cv": ("seed",)}
+# Environment keys a trial leaves out: the code is in its ``code`` attribute, and these vary.
+_UNRECORDED = ("timestamp_utc", "ram_available_gb", "git_commit", "git_dirty", "git_branch")
 
 
 def split(cfg: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -192,6 +197,8 @@ def run_study(cfg: dict[str, Any], *, processes: int = 1, trials: int | None = N
     """Run the study of ``cfg`` until it has its number of finished trials; return it."""
     import optuna
 
+    from bioreservoir.dde import UnstableIntegrationError
+    from optimization.environment import get_environment
     from training.compare import load_folds
     from training.run import (
         _pool_sha256,
@@ -238,6 +245,8 @@ def run_study(cfg: dict[str, Any], *, processes: int = 1, trials: int | None = N
             study.enqueue_trial(point)
 
     def objective(trial) -> float:
+        trial.set_user_attr("environment", {k: v for k, v in get_environment().items()
+                                            if k not in _UNRECORDED})
         resolved = resolve(apply(run_cfg, suggest(trial, study_cfg["search"])))
         if saved is None:
             X, Y, pool_sha256 = pool(resolved["task"])
@@ -261,7 +270,8 @@ def run_study(cfg: dict[str, Any], *, processes: int = 1, trials: int | None = N
     if target > finished:
         logger.info("Study %s: %d trials done, running %d", name(cfg), finished,
                     target - finished)
-        study.optimize(objective, n_trials=target - finished)
+        study.optimize(objective, n_trials=target - finished,
+                       catch=(UnstableIntegrationError,))
     return study
 
 
