@@ -181,6 +181,13 @@ class TestSweep:
         assert list(ax.lines[1].get_xdata()) == [0, 2]
         assert ax.get_legend_handles_labels()[1] == ["Seeds", "Mean \u00b1 SD", "Other"]
 
+    def test_one_seed_per_level_draws_the_scores_without_dots(self, pyplot):
+        from matplotlib.collections import PathCollection
+
+        ax = self._draw(pyplot, scores={0.055397: [0.8], 0.110795: [0.85]})
+        assert not [c for c in ax.collections if isinstance(c, PathCollection)]
+        assert [t.get_text() for t in ax.get_xticklabels()] == ["0.0554", "0.111"]
+
     def test_levels_can_be_names(self, pyplot):
         ax = self._draw(pyplot, scores={"final": [0.8, 0.82], "images:2": [0.85, 0.86]})
         assert [t.get_text() for t in ax.get_xticklabels()] == ["final", "images:2"]

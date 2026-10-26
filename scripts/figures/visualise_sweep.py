@@ -63,6 +63,7 @@ def draw(scores: dict, x: str, by: str | None = None, ylabel: str = "Macro-F1",
     """One sweep per value of ``by`` on shared levels of ``x``; ``reference`` draws the mean
     of the first sweep at that value of ``x`` as a dashed line."""
     levels = sorted({level for series in scores.values() for level in series})
+    seeds = max(len(values) for series in scores.values() for values in series.values())
     fig, ax = plt.subplots()
     for i, (key, series) in enumerate(scores.items()):
         line = None
@@ -70,11 +71,15 @@ def draw(scores: dict, x: str, by: str | None = None, ylabel: str = "Macro-F1",
             line = float(np.mean(series[reference]))
         plot_sweep(series, ax, levels=levels, color=OKABE_ITO[i % len(OKABE_ITO)],
                    marker=MARKERS[i % len(MARKERS)],
-                   label="Mean \u00b1 SD" if key is None else str(key),
+                   label=str(key) if key is not None else
+                   "Mean \u00b1 SD" if seeds > 1 else "Score",
                    seed_label="Seeds" if i == 0 else None, reference=line,
                    reference_label=None if line is None else f"Mean at {reference:g}")
     ax.set(xlabel=label(x), ylabel=ylabel)
-    ax.legend(title=None if by is None else label(by))
+    if by is None:
+        ax.legend()
+    else:
+        ax.legend(title=label(by), loc="upper left", bbox_to_anchor=(1.0, 1.0))
     return fig
 
 

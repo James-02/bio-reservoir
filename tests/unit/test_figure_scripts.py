@@ -255,6 +255,13 @@ class TestSweepFigure:
         assert [row.split()[:2] for row in rows[:2]] == [["1.0", "0.0"], ["1.0", "0.1"]]
         assert rows[0].split()[2:] == ["0.8915", "0.0007", "2"]
 
+    def test_one_seed_per_point_is_a_score(self, load_script, pyplot):
+        script = load_script("figures/visualise_sweep")
+        trials = self._trials()
+        one_seed = trials[(trials["reservoir.seed"] == 1) & (trials[self.GAIN] == 1.0)]
+        fig = script.draw(script.sweep_scores(one_seed, self.CV), self.CV)
+        assert [t.get_text() for t in fig.axes[0].get_legend().get_texts()] == ["Score"]
+
     def test_a_third_setting_needs_by(self, tmp_path, figure_dir, load_script, monkeypatch):
         with pytest.raises(SystemExit, match="--by"):
             self._run(load_script, monkeypatch, tmp_path, ["a.b", self.GAIN, self.CV])

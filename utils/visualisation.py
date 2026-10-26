@@ -187,12 +187,13 @@ def plot_sweep(scores: Mapping[float, Sequence[float]], ax=None, *,
                jitter_seed: int = 42):
     """Draw a score against the levels of a swept setting, one dot per seed, and a line
     through the means at each level with a band of plus and minus one sample SD (no band
-    where a level has one seed).
+    where a level has one seed, and no dots where every level has one).
 
     ``scores`` maps each level, a number or a name, to its scores, one per seed. Level
     ``i`` of ``levels`` (default: the sorted levels of ``scores``) is drawn at ``x = i`` and
-    labelled with its value, so that an uneven grid such as 0, 0.025, 0.05, 0.1, 0.5 stays
-    readable; pass the same ``levels`` to draw several sweeps on one Axes. Dots are shifted sideways by up to
+    labelled with its value (three significant digits), so that an uneven grid such as 0,
+    0.025, 0.05, 0.1, 0.5 stays readable; pass the same ``levels`` to draw several sweeps on
+    one Axes. Dots are shifted sideways by up to
     ``jitter`` level spacings, the same way every time (``jitter_seed``). ``reference`` adds
     a dashed line, for example the score without the swept effect. Without ``ax`` the sweep
     is drawn in a new one-column figure in the house style. Returns the Axes.
@@ -218,13 +219,14 @@ def plot_sweep(scores: Mapping[float, Sequence[float]], ax=None, *,
     sds = np.array([v.std(ddof=1) if v.size > 1 else np.nan for v in values])
     if reference is not None:
         ax.axhline(reference, color="0.4", ls="--", lw=1.0, zorder=1, label=reference_label)
-    dots_x = np.concatenate([np.full(v.size, xi) for xi, v in zip(x, values, strict=True)])
-    shift = np.random.default_rng(jitter_seed).uniform(-jitter, jitter, dots_x.size)
-    ax.scatter(dots_x + shift, np.concatenate(values), s=10, alpha=0.5, color=color,
-               marker=marker, edgecolors="none", zorder=3, label=seed_label)
+    if any(v.size > 1 for v in values):
+        dots_x = np.concatenate([np.full(v.size, xi) for xi, v in zip(x, values, strict=True)])
+        shift = np.random.default_rng(jitter_seed).uniform(-jitter, jitter, dots_x.size)
+        ax.scatter(dots_x + shift, np.concatenate(values), s=10, alpha=0.5, color=color,
+                   marker=marker, edgecolors="none", zorder=3, label=seed_label)
     ax.plot(x, means, color=color, marker=marker, zorder=4, label=label)
     ax.fill_between(x, means - sds, means + sds, alpha=0.2, color=color, lw=0, zorder=2)
-    ax.set_xticks(np.arange(len(levels)), [f"{level:g}" if isinstance(level, numbers.Real)
+    ax.set_xticks(np.arange(len(levels)), [f"{level:.3g}" if isinstance(level, numbers.Real)
                                            else str(level) for level in levels])
     ax.set_xlim(-0.5, len(levels) - 0.5)
     return ax
