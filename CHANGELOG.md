@@ -13,6 +13,15 @@ Each entry is marked **[science]** if it changes a reported number, or
   so the test suite runs on a host like any other command
   (`--run "python -m pytest tests/unit tests/integration"`). Data files that `data/` links
   to, as in a worktree that uses the prepared dataset, are copied as files.
+- [engineering] The figure scripts draw the `v0.1` figure designs from a run or study
+  config: one colony (Fig. 3b), the array and its coupling (Fig. 4), the dataset (Fig. 5)
+  and heterogeneity (Fig. S10, also for the realism studies).
+- [engineering] Figures share the `v0.1` look (`utils.visualisation.STYLE`), save PNGs
+  (`--formats pdf,svg` adds PDF and SVG) and warn if they would break the ACS figure rules
+  at their printed size.
+- [engineering] Run, comparison and fold-analysis figures name the classes and draw each
+  fold's scores as dots with their mean and SD; `analyse_fold_results.py --plots` draws
+  `confusion`, `metrics` and `pca`.
 
 ### Added
 
@@ -35,10 +44,20 @@ Each entry is marked **[science]** if it changes a reported number, or
   `scripts/analysis/drive_bounds.py --oscillation`.
 - [engineering] Controls: random features and a leaky-integrator bank as reservoir types,
   and a linear surrogate of a saved run (`reservoir.surrogate: linear`).
+- [engineering] `utils.preprocessing.class_indices(Y)`: the class of each beat from labels,
+  one-hot labels or scores.
+
+### Removed
+
+- [engineering] Plotting code that nothing used or that repeated another figure:
+  `plot_cv_results.py`, `analyse_fold_diagnostics.py`, the t-SNE and bar-chart plots and
+  unused `utils.visualisation` functions.
 
 ### Fixed
 
 - [engineering] `scripts/analysis/drive_bounds.py` works on diffusive and uncoupled arrays.
+- [engineering] Optuna's plots no longer warn that they are experimental, and
+  `analyse_fold_results.py` reports MCC and kappa, also for `v0.1` fold files.
 
 ## [0.2.1] - 2026-10-25
 

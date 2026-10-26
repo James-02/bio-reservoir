@@ -102,8 +102,8 @@ class FoldArtifact:
         ``(n_train, n_features)``.  Set ``save_states=True`` in :meth:`save`
         to write these to disk.  Required for:
 
-        * PCA / t-SNE visualisations of the reservoir state space
-          (``scripts/analysis/analyse_fold_results.py``, ``analyse_fold_diagnostics.py``)
+        * PCA of the reservoir state space
+          (``scripts/analysis/analyse_fold_results.py``)
         * Re-optimising the readout layer without re-running the reservoir
           (``optimization/readout.py``)
 
@@ -159,8 +159,8 @@ class FoldArtifact:
             Whether to include ``train_states`` and ``test_states`` in the
             saved file.  Set to ``True`` when you intend to:
 
-            * Run PCA or t-SNE visualisations on reservoir state trajectories
-              (``analyse_fold_results.py``, ``analyse_fold_diagnostics.py``)
+            * Draw the PCA of the reservoir states
+              (``scripts/analysis/analyse_fold_results.py``)
             * Re-optimise the readout layer without re-running the reservoir
               (``optimization/readout.py``)
 

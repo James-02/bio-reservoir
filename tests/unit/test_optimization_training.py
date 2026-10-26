@@ -4,6 +4,7 @@ small echo state network, and the research, evaluate and rerun-best commands."""
 import argparse
 import importlib
 import logging
+from types import SimpleNamespace
 
 import numpy as np
 import optuna
@@ -245,13 +246,16 @@ class TestCommands:
             training_mod.cmd_evaluate(self._evaluate_args(study_name=None))
 
     def test_the_confusion_matrix_is_summed_over_the_folds(self, study_db, monkeypatch):
-        drawn = []
+        drawn, saved = [], []
         monkeypatch.setattr("utils.visualisation.plot_confusion_matrix",
-                            lambda cm, filename=None, show=True: drawn.append((cm, filename)))
+                            lambda cm: drawn.append(cm) or SimpleNamespace(figure="figure"))
+        monkeypatch.setattr("utils.visualisation.save_figure",
+                            lambda fig, name, **kwargs: saved.append((fig, name, kwargs)))
         config = dict(STUDY, fixed=dict(ESN, esn_leak_rate=0.5))
         training_mod._plot_confusion_matrix(study_db, "P9-test", config, filename="cm.png")
-        ((cm, filename),) = drawn
-        assert filename == "cm.png" and np.asarray(cm).sum() == 40
+        (cm,) = drawn
+        assert np.asarray(cm).sum() == 40
+        assert saved == [("figure", "cm", {"topic": "metrics"})]
 
     def test_no_confusion_matrix_without_completed_trials(self, workspace, monkeypatch, caplog):
         monkeypatch.setattr("utils.visualisation.plot_confusion_matrix",

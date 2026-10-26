@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import warnings
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -835,13 +836,16 @@ def _call_plot_func(
     kw["target_name"] = target_name
 
     try:
-        try:
-            plot_func(**kw)
-        except TypeError:
-            # Some Optuna functions don't accept params / target_name.
-            kw.pop("params", None)
-            kw.pop("target_name", None)
-            plot_func(**kw)
+        with warnings.catch_warnings():
+            # Optuna marks all of its matplotlib plots as experimental.
+            warnings.simplefilter("ignore", optuna.exceptions.ExperimentalWarning)
+            try:
+                plot_func(**kw)
+            except TypeError:
+                # Some Optuna functions don't accept params / target_name.
+                kw.pop("params", None)
+                kw.pop("target_name", None)
+                plot_func(**kw)
     except ValueError as exc:
         logger.warning(
             "Skipping plot %s: %s  (tip: need >1 completed trial for %s)",

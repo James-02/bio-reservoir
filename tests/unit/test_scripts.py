@@ -209,3 +209,28 @@ class TestReadoutTables:
     ])
     def test_numbers_are_formatted_for_the_tables(self, value, text):
         assert _load("analysis/readout_tables")._number(value) == text
+
+
+class TestFoldAnalysisScript:
+    """The per-fold table asked for RMSE and R2, which fold files no longer store, and showed
+    columns of zeros."""
+
+    @staticmethod
+    def _folds():
+        from utils.analysis import evaluate_performance
+        from utils.results import FoldArtifact
+
+        rng = np.random.default_rng(0)
+        folds = []
+        for k in range(2):
+            y_test, y_pred = (np.eye(5)[rng.integers(0, 5, 40)] for _ in range(2))
+            folds.append(FoldArtifact(trial_name="run", fold_index=k, Y_train=y_test,
+                                      Y_test=y_test, Y_pred=y_pred,
+                                      metrics=evaluate_performance(y_test, y_pred, 1.0)))
+        return folds
+
+    def test_fold_table_shows_the_stored_metrics(self, capsys):
+        _load("analysis/analyse_fold_results")._print_fold_table(self._folds())
+        header = capsys.readouterr().out.splitlines()[1].split()
+        assert header == ["fold", "F1", "Accuracy", "Precision", "Recall", "MCC", "Kappa",
+                          "Runtime(s)"]

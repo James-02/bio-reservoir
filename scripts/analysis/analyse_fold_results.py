@@ -17,7 +17,7 @@ All plots saved::
 Select specific plot types::
 
     python scripts/analysis/analyse_fold_results.py --trial_name P4-readout-balanced-best \\
-        --plots confusion,tsne,class
+        --plots confusion
 
 Via glob pattern::
 
@@ -26,24 +26,30 @@ Via glob pattern::
 
 Notes
 -----
-- All figures are saved under ``results/figures/metrics/<trial_name>/``.
+- All figures are saved under ``figures/metrics/<trial_name>/`` in the results folder
+  (``results/`` unless ``BIORESERVOIR_RESULTS_DIR`` or ``config.env`` sets another; see
+  :mod:`utils.config`) as PNG (``--formats pdf,svg`` adds a PDF and an SVG), and the
+  script prints each file it saves.
 - ``--plots`` alone saves all plot types (equivalent to ``--plots all``).
-- ``--show`` displays each figure interactively in addition to saving.
-- t-SNE on reservoir states is skipped if the fold files were saved without
+- The PCA of the states is skipped if the fold files were saved without
   ``save_states=True``.
 
 Available plot types
 --------------------
 confusion
-    Aggregate normalised confusion matrix + per-fold confusion matrix grid.
-class
-    Per-class metric bars and metrics-across-folds bar chart.
-tsne
-    t-SNE of concatenated test predictions coloured by true/predicted class.
-states
-    t-SNE of reservoir states coloured by true class (requires save_states).
+    The confusion matrix of all folds together, each row divided by its sum.
+metrics
+    The scores of each fold as dots, with their mean and one SD: F1, accuracy, precision,
+    recall, MCC and Cohen's kappa, and the F1 of each class
+    (:func:`utils.visualisation.plot_fold_metrics`).
+pca
+    The test states of all folds on their first two principal components (each feature
+    scaled to unit variance), one colour per true class.
 all
     All of the above.
+
+Fold files written before MCC and kappa were stored (the ``v0.1`` runs) get both from their
+labels and predictions.
 """
 
 from __future__ import annotations
@@ -51,36 +57,50 @@ from __future__ import annotations
 import argparse
 import glob
 import os
+from pathlib import Path
 from typing import Any
 
+import matplotlib.pyplot as plt
 import numpy as np
+from sklearn.decomposition import PCA
 from sklearn.metrics import cohen_kappa_score, matthews_corrcoef
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 from utils.analysis import evaluate_performance
+from utils.preprocessing import class_indices
 from utils.results import FoldArtifact
 from utils.visualisation import (
-    plot_class_metrics,
+    CLASS_COLOURS,
+    STYLE,
+    add_formats_option,
+    class_names,
     plot_confusion_matrix,
-    plot_metrics_across_folds,
-    plot_tsne_clustering,
-    plot_tsne_states,
+    plot_fold_metrics,
+    save_figure,
 )
+
+PLOT_TYPES = ("confusion", "metrics", "pca")
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _argmax_labels(Y: np.ndarray) -> np.ndarray:
-    """Reduce one-hot (N, T, C) / (N, 1, C) / (N, C) to class indices (N,)."""
-    Y = np.asarray(Y)
-    return np.argmax(Y, axis=-1).flatten()
-
-
 def _stack_preds(artifacts: list[FoldArtifact]) -> tuple[np.ndarray, np.ndarray]:
     """Return (y_true, y_pred) as 1-D class-index arrays across all folds."""
-    y_true = np.concatenate([_argmax_labels(a.Y_test) for a in artifacts])
-    y_pred = np.concatenate([_argmax_labels(a.Y_pred) for a in artifacts])
+    y_true = np.concatenate([class_indices(a.Y_test) for a in artifacts])
+    y_pred = np.concatenate([class_indices(a.Y_pred) for a in artifacts])
     return y_true, y_pred
+
+
+def _fill_mcc_and_kappa(artifacts: list[FoldArtifact]) -> None:
+    """Compute MCC and kappa from the labels and predictions of the folds whose files predate
+    them (they load as NaN)."""
+    for a in artifacts:
+        if np.isnan(a.metrics.mcc) or np.isnan(a.metrics.kappa):
+            y_true, y_pred = class_indices(a.Y_test), class_indices(a.Y_pred)
+            a.metrics.mcc = float(matthews_corrcoef(y_true, y_pred))
+            a.metrics.kappa = float(cohen_kappa_score(y_true, y_pred))
 
 
 def _fmt(v: Any, decimals: int = 4) -> str:
@@ -91,8 +111,8 @@ def _fmt(v: Any, decimals: int = 4) -> str:
 # Console tables
 # ---------------------------------------------------------------------------
 
-_SCALAR_KEYS = ["f1", "accuracy", "precision", "recall", "rmse", "r2_score", "runtime"]
-_SCALAR_HEADERS = ["fold", "F1", "Accuracy", "Precision", "Recall", "RMSE", "R²", "Runtime(s)"]
+_SCALAR_KEYS = ["f1", "accuracy", "precision", "recall", "mcc", "kappa", "runtime"]
+_SCALAR_HEADERS = ["fold", "F1", "Accuracy", "Precision", "Recall", "MCC", "Kappa", "Runtime(s)"]
 _SCALAR_COL_W = [5] + [10] * len(_SCALAR_KEYS)
 
 
@@ -101,7 +121,8 @@ def _print_fold_table(artifacts: list[FoldArtifact]) -> None:
     row_fmt = "  ".join(f"{{:<{w}}}" for w in _SCALAR_COL_W)
     sep = "  ".join("-" * w for w in _SCALAR_COL_W)
 
-    print("Per-fold metrics:")
+    average = artifacts[0].metrics.primary_average
+    print(f"Per-fold metrics (F1, precision and recall: the {average} average over the classes):")
     print(row_fmt.format(*_SCALAR_HEADERS))
     print(sep)
 
@@ -182,66 +203,57 @@ def _print_model_info(artifacts: list[FoldArtifact]) -> None:
 # Plot helpers
 # ---------------------------------------------------------------------------
 
-def _fig_out(trial_name: str, suffix: str) -> str:
-    """Return filename passed to visualisation helpers.
+def plot_state_pca(states: np.ndarray, labels: np.ndarray, name: str,
+                   formats: tuple[str, ...] = ("png",)) -> list[Path]:
+    """Draw the states on their first two principal components, one colour and marker per
+    true class, save the figure as ``figures/metrics/<name>`` of the results folder in
+    ``formats``, and return the files.
 
-    All plot_* functions in utils.visualisation already prepend ``metrics/``
-    themselves before calling ``_save_figure``, which in turn prepends
-    ``results/figures/``.  So we only need to provide ``<trial_name>/<suffix>``.
+    Each feature is scaled to unit variance first, so that no state variable dominates by
+    its units. ``labels`` are the true labels of the states, in any shape that
+    :func:`utils.preprocessing.class_indices` reads.
     """
-    return os.path.join(trial_name, suffix)
+    pca = make_pipeline(StandardScaler(), PCA(n_components=2))
+    points = pca.fit_transform(states.reshape(len(states), -1))
+    explained = pca[-1].explained_variance_ratio_
+    y = class_indices(labels)
+    names = class_names(np.asarray(labels).shape[-1])
+    fig, ax = plt.subplots(figsize=(8, 6))
+    for c in np.unique(y):
+        ax.scatter(*points[y == c].T, s=20, alpha=0.6, color=CLASS_COLOURS[names[c]],
+                   marker="os^Dv"[c % 5], edgecolors="none", label=names[c])
+    ax.set_xlabel(f"PC 1 ({explained[0]:.0%} of the variance)")
+    ax.set_ylabel(f"PC 2 ({explained[1]:.0%} of the variance)")
+    ax.legend(markerscale=2, loc="center left", bbox_to_anchor=(1.0, 0.5), frameon=False)
+    return save_figure(fig, name, topic="metrics", formats=formats)
 
 
-def _run_plots(
-    artifacts: list[FoldArtifact],
-    trial_name: str,
-    wanted: set,
-    show: bool,
-) -> None:
-    Y_test_all = np.concatenate([a.Y_test for a in artifacts])
-    Y_pred_all = np.concatenate([a.Y_pred for a in artifacts])
-    agg = evaluate_performance(Y_test_all, Y_pred_all)
-
+def _run_plots(artifacts: list[FoldArtifact], trial_name: str, wanted: set,
+               formats: tuple[str, ...] = ("png",)) -> list[Path]:
+    """Draw the ``wanted`` plot types and return the files saved."""
+    paths = []
     if "confusion" in wanted:
-        plot_confusion_matrix(
-            agg.confusion_matrix,
-            show=show,
-            filename=_fig_out(trial_name, "confusion-matrix.png"),
-        )
+        Y_test = np.concatenate([a.Y_test for a in artifacts])
+        Y_pred = np.concatenate([a.Y_pred for a in artifacts])
+        ax = plot_confusion_matrix(evaluate_performance(Y_test, Y_pred).confusion_matrix)
+        paths += save_figure(ax.figure, f"{trial_name}/confusion-matrix", topic="metrics",
+                             formats=formats)
 
-    if "class" in wanted:
-        plot_class_metrics(
-            agg.class_metrics,
-            show=show,
-            filename=_fig_out(trial_name, "class-metrics.png"),
-        )
-        plot_metrics_across_folds(
-            [a.metrics for a in artifacts],
-            metric_names=["f1", "accuracy", "precision", "recall", "rmse"],
-            show=show,
-            filename=_fig_out(trial_name, "metrics-across-folds.png"),
-        )
+    if "metrics" in wanted:
+        fig = plot_fold_metrics([a.metrics for a in artifacts],
+                                artifacts[0].metrics.primary_average)
+        paths += save_figure(fig, f"{trial_name}/fold-metrics", topic="metrics",
+                             formats=formats)
 
-    if "tsne" in wanted:
-        plot_tsne_clustering(
-            Y_pred_all,
-            Y_test_all,
-            show=show,
-            filename=_fig_out(trial_name, "tsne-predictions.png"),
-        )
-
-    if "states" in wanted:
-        states = [a.test_states for a in artifacts if a.test_states is not None]
-        labels = [a.Y_test for a in artifacts if a.test_states is not None]
-        if states:
-            plot_tsne_states(
-                np.concatenate(states, axis=0),
-                np.concatenate(labels, axis=0),
-                show=show,
-                filename=_fig_out(trial_name, "tsne-states.png"),
-            )
+    if "pca" in wanted:
+        with_states = [a for a in artifacts if a.test_states is not None]
+        if with_states:
+            paths += plot_state_pca(np.concatenate([a.test_states for a in with_states]),
+                                    np.concatenate([a.Y_test for a in with_states]),
+                                    f"{trial_name}/states-pca", formats)
         else:
-            print("  No test_states in fold files — skipping state t-SNE.")
+            print("  No test_states in fold files: no PCA of the states.")
+    return paths
 
 
 # ---------------------------------------------------------------------------
@@ -249,16 +261,16 @@ def _run_plots(
 # ---------------------------------------------------------------------------
 
 def main() -> int:
+    plt.style.use(STYLE)
     parser = argparse.ArgumentParser(
         description="Analyse saved fold NPZ artefacts and report headline metrics.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 plot types:
-  confusion   aggregate + per-fold normalised confusion matrices
-  class       per-class metric bars and metrics-across-folds chart
-  tsne        t-SNE of test predictions coloured by true/predicted class
-  states      t-SNE of reservoir states coloured by true class
-  all         all of the above (also the default when --plots is given alone)
+  confusion   the confusion matrix of all folds, each row divided by its sum
+  metrics     the scores of each fold, with their mean and SD, and the F1 of each class
+  pca         PCA of the test states, one colour per true class
+  all         all three (also the default when --plots is given alone)
 """,
     )
     parser.add_argument(
@@ -281,12 +293,8 @@ plot types:
         metavar="TYPE[,TYPE...]",
         help="Comma-separated plot types to generate (default: none; bare flag = all).",
     )
-    parser.add_argument(
-        "--show",
-        action="store_true",
-        help="Display plots interactively (also saves them).",
-    )
 
+    add_formats_option(parser)
     args = parser.parse_args()
 
     # --- Load artifacts ---
@@ -302,6 +310,7 @@ plot types:
     else:
         raise SystemExit("Provide --trial_name or --glob.")
 
+    _fill_mcc_and_kappa(artifacts)
     print(f"Trial  : {trial_name}")
     print(f"Folds  : {len(artifacts)}")
     print()
@@ -316,11 +325,15 @@ plot types:
     plots_arg = (args.plots or "").strip()
     wanted = {p.strip().lower() for p in plots_arg.split(",") if p.strip()}
     if "all" in wanted:
-        wanted = {"confusion", "class", "tsne", "states"}
+        wanted = set(PLOT_TYPES)
+    unknown = wanted - set(PLOT_TYPES)
+    if unknown:
+        raise SystemExit(f"Unknown plot types {sorted(unknown)}; choose from {PLOT_TYPES} "
+                         "or all.")
 
     if wanted:
-        _run_plots(artifacts, trial_name, wanted, args.show)
-        print(f"Figures saved to results/figures/metrics/{trial_name}/")
+        for path in _run_plots(artifacts, trial_name, wanted, args.formats):
+            print(f"Saved: {path}")
 
     return 0
 

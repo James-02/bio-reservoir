@@ -226,6 +226,17 @@ The controls have one state per input step, so `features.aggregation`, `measurem
 
 ## Visualisation
 
+The figures below are from the `v0.1` paper. The figure scripts draw the same designs, in the same look, from this repository's configs and runs. Each saves a PNG under `results/figures/<topic>/` (`--formats pdf,svg` adds a PDF and an SVG) and warns if the figure would break the ACS figure rules at its printed size.
+
+| Script | Draws (`v0.1` figure) | Input |
+|---|---|---|
+| [visualise_dde.py](scripts/figures/visualise_dde.py) | one colony at several input scalings (3b) | run config |
+| [visualise_reservoir_states.py](scripts/figures/visualise_reservoir_states.py) | the array's states during a beat (4c); with `--drive`, its drive (4a) | run config |
+| [visualise_topology.py](scripts/figures/visualise_topology.py) | the kernel (4b) and the colonies' strongest links (4d) | run config |
+| [visualise_dataset.py](scripts/figures/visualise_dataset.py) | class means, a beat with noise, a beat under three scalings (5) | run config |
+| [visualise_heterogeneity.py](scripts/figures/visualise_heterogeneity.py) | macro F1 against heterogeneity (S10), also for the realism studies | `--archive v0.1` or a study config |
+| [analyse_fold_results.py](scripts/analysis/analyse_fold_results.py) | metric tables; with `--plots`, the confusion matrix, each fold's scores and a PCA of the states | fold files |
+
 ### Biopixel Reservoir Model
 ![Biopixel Reservoir Model](.github/static/biopixel-reservoir-model-3-subfigures.png)
 
@@ -254,12 +265,12 @@ Convergence analysis of the RK4 DDE solver, validating numerical accuracy across
 ### Classification Results (Balanced 5-Class)
 ![Balanced Categorical Confusion Matrix](.github/static/balanced-categorical-confusion-matrix.png)
 
-Aggregated confusion matrix across five folds for the balanced five-class arrhythmia task (N=1000, KNN k=4, distance-weighted). Off-diagonal values indicate common misclassification patterns.
+Aggregated confusion matrix across five folds for the balanced five-class arrhythmia task (`v0.1` run `P2-distance-best`: 2,000 oscillators, KNN readout with k = 1). Off-diagonal values indicate common misclassification patterns.
 
 ### Classification Results (Binary)
 ![Binary Confusion Matrix](.github/static/binary-confusion-matrix.png)
 
-Aggregated confusion matrix across five folds for the binary Normal vs Arrhythmia task (N=1000, Random Forest).
+Aggregated confusion matrix across five folds for the binary Normal vs Arrhythmia task (`v0.1` run `P3-binary-best`: 2,000 oscillators, KNN readout with k = 4, distance-weighted).
 
 ### Hyperparameter Optimisation
 ![Optimisation Slice Plot](.github/static/P2-distance-slice.png)
