@@ -181,11 +181,11 @@ def plot_confusion_matrix(confusion_matrix, ax=None, *, labels: Sequence[str] | 
 
 
 def plot_sweep(scores: Mapping[float, Sequence[float]], ax=None, *,
-               levels: Sequence[float] | None = None, ddof: int = 1, color: str = "#d62728",
-               seed_color: str = "#1f77b4", label: str | None = "Mean (\u00b11 SD)",
-               seed_label: str | None = "Seeds", reference: float | None = None,
-               reference_label: str | None = None, jitter: float = 0.15,
-               jitter_seed: int = 42):
+               levels: Sequence[float] | None = None, connect: bool = True, ddof: int = 1,
+               color: str = "#d62728", seed_color: str = "#1f77b4",
+               label: str | None = "Mean (\u00b11 SD)", seed_label: str | None = "Seeds",
+               reference: float | None = None, reference_label: str | None = None,
+               jitter: float = 0.15, jitter_seed: int = 42):
     """Draw a score against the levels of a swept setting as in Supplementary Fig. S10 of
     ``v0.1``: one dot per seed, and a line through the means at each level with a band of
     plus and minus one SD (no band where a level has one seed, no dots where every level has
@@ -194,11 +194,13 @@ def plot_sweep(scores: Mapping[float, Sequence[float]], ax=None, *,
     ``scores`` maps each level, a number or a name, to its scores, one per seed. Level ``i``
     of ``levels`` (default: the sorted levels of ``scores``) is drawn at ``x = i`` and
     labelled with its value (three significant digits), so that an uneven grid such as 0,
-    0.025, 0.05, 0.1, 0.5 stays readable. ``ddof`` is 1 for the sample SD over the seeds,
-    0 for the population SD (S10's). Dots are shifted sideways by up to ``jitter`` level
-    spacings, the same way every time (``jitter_seed``). ``reference`` adds a dashed line,
-    for example the score without the swept effect. Without ``ax`` the sweep is drawn in a
-    new 5.5 x 3.8 in figure, S10's size. Returns the Axes.
+    0.025, 0.05, 0.1, 0.5 stays readable. With ``connect=False`` the levels are categories
+    without an order, such as metrics or classes: each mean gets its own error bar of one SD
+    and nothing joins them. ``ddof`` is 1 for the sample SD over the seeds, 0 for the
+    population SD (S10's). Dots are shifted sideways by up to ``jitter`` level spacings, the
+    same way every time (``jitter_seed``). ``reference`` adds a dashed line, for example the
+    score without the swept effect. Without ``ax`` the sweep is drawn in a new 5.5 x 3.8 in
+    figure, S10's size. Returns the Axes.
 
     Examples
     --------
@@ -222,9 +224,59 @@ def plot_sweep(scores: Mapping[float, Sequence[float]], ax=None, *,
         shift = np.random.default_rng(jitter_seed).uniform(-jitter, jitter, dots_x.size)
         ax.scatter(dots_x + shift, np.concatenate(values), s=18, alpha=0.45, color=seed_color,
                    edgecolors="none", zorder=3, label=seed_label)
-    ax.plot(x, means, "o-", color=color, ms=5, lw=1.5, zorder=4, label=label)
-    ax.fill_between(x, means - sds, means + sds, alpha=0.15, color=color, zorder=2)
+    if connect:
+        ax.plot(x, means, "o-", color=color, ms=5, lw=1.5, zorder=4, label=label)
+        ax.fill_between(x, means - sds, means + sds, alpha=0.15, color=color, zorder=2)
+    else:
+        ax.errorbar(x, means, yerr=np.nan_to_num(sds), fmt="o", color=color, ms=5, lw=1.5,
+                    capsize=4, zorder=4, label=label)
     ax.set_xticks(np.arange(len(levels)), [f"{level:.3g}" if isinstance(level, numbers.Real)
                                            else str(level) for level in levels])
     ax.set_xlim(-0.5, len(levels) - 0.5)
     return ax
+
+
+#: The scores of a fold that :func:`plot_fold_metrics` draws, with their labels.
+FOLD_SCORES = {"f1": "F1", "accuracy": "Accuracy", "precision": "Precision",
+               "recall": "Recall", "mcc": "MCC", "kappa": "Cohen's \u03ba"}
+
+
+def plot_fold_metrics(folds: Sequence[Mapping], average: str = "macro"):
+    """Draw the scores of each fold of a run as dots, with their mean and one sample SD, as
+    in S10: the scores over all classes (:data:`FOLD_SCORES`; F1, precision and recall are
+    averaged over the classes as ``average``) and the F1 of each class, from each fold's
+    confusion matrix. The folds have no order, so nothing joins them.
+
+    ``folds`` are mappings with the keys of :data:`FOLD_SCORES` and ``confusion_matrix``,
+    such as :class:`utils.analysis.Metrics` or the folds of a run's ``metrics.json``. The F1
+    of each class is drawn when every fold has the same classes. Returns the figure, drawn in
+    the house style.
+    """
+    scores = {f"{label} ({average})" if key in ("f1", "precision", "recall") else label:
+              [float(fold[key]) for fold in folds] for key, label in FOLD_SCORES.items()}
+    matrices = [np.asarray(fold["confusion_matrix"], dtype=float) for fold in folds]
+    same_classes = len({m.shape for m in matrices}) == 1
+    with plt.style.context(STYLE):
+        fig, axes = plt.subplots(1, 1 + same_classes, sharey=True, squeeze=False,
+                                 figsize=(13, 5) if same_classes else (7.5, 5),
+                                 layout="constrained", width_ratios=[6, 5][:1 + same_classes])
+        ax = axes[0, 0]
+        plot_sweep(scores, ax, levels=list(scores), connect=False, seed_label="Folds")
+        ax.set(title="All classes", ylabel="Score")
+        ax.legend(loc="lower left")
+        ticks = [(ax, list(scores))]
+        if same_classes:
+            # F1 = 2 TP / (2 TP + FP + FN): the diagonal over its column and row sums; NaN for
+            # a class that a fold neither has nor predicts.
+            with np.errstate(invalid="ignore", divide="ignore"):
+                f1 = np.array([2 * np.diag(m) / (m.sum(axis=0) + m.sum(axis=1))
+                               for m in matrices])
+            names = class_names(f1.shape[1])
+            per_class = {name: f1[np.isfinite(f1[:, c]), c] for c, name in enumerate(names)}
+            plot_sweep(per_class, axes[0, 1], levels=names, connect=False, label=None,
+                       seed_label=None)
+            axes[0, 1].set_title("F1 of each class")
+            ticks.append((axes[0, 1], names))
+        for axis, labels in ticks:
+            axis.set_xticks(range(len(labels)), labels, rotation=30, ha="right")
+    return fig

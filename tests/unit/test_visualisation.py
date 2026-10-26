@@ -236,3 +236,60 @@ class TestSweep:
         ax = vis.plot_sweep(self.SCORES)
         assert tuple(ax.figure.get_size_inches()) == (5.5, 3.8)
         assert vis.figure_problems(ax.figure) == []
+
+    def test_categories_have_their_own_error_bars_and_nothing_joins_them(self, pyplot):
+        from matplotlib.collections import PolyCollection
+
+        scores = {"F1": [0.80, 0.84], "MCC": [0.70, 0.74, 0.72]}
+        ax = self._draw(pyplot, scores=scores, levels=list(scores), connect=False)
+        (bars,) = ax.containers
+        means, _, (vertical,) = bars.lines
+        np.testing.assert_allclose(means.get_ydata(), [0.82, 0.72])
+        half = [np.ptp(segment[:, 1]) / 2 for segment in vertical.get_segments()]
+        np.testing.assert_allclose(half, [np.std([0.80, 0.84], ddof=1),
+                                          np.std([0.70, 0.74, 0.72], ddof=1)])
+        assert means.get_linestyle() == "None"
+        assert not [c for c in ax.collections if isinstance(c, PolyCollection)]  # no band
+        assert [t.get_text() for t in ax.get_xticklabels()] == ["F1", "MCC"]
+
+
+class TestFoldMetrics:
+    """plot_fold_metrics: each fold's scores and the F1 of each class, as dots with the mean."""
+
+    @staticmethod
+    def _fold(y_true, y_pred, **scores):
+        from sklearn.metrics import confusion_matrix
+
+        return {"f1": 0.8, "accuracy": 0.9, "precision": 0.7, "recall": 0.6, "mcc": 0.5,
+                "kappa": 0.4, **scores, "confusion_matrix": confusion_matrix(y_true, y_pred)}
+
+    def test_every_score_and_the_f1_of_each_class_from_the_confusion_matrix(self, pyplot):
+        from sklearn.metrics import f1_score
+
+        rng = np.random.default_rng(0)
+        labels = [(rng.integers(0, 5, 60), rng.integers(0, 5, 60)) for _ in range(3)]
+        folds = [self._fold(t, p, f1=0.8 + k / 100) for k, (t, p) in enumerate(labels)]
+        fig = vis.plot_fold_metrics(folds, "weighted")
+        ax, ax_class = fig.axes
+        assert [t.get_text() for t in ax.get_xticklabels()] == [
+            "F1 (weighted)", "Accuracy", "Precision (weighted)", "Recall (weighted)", "MCC",
+            "Cohen's \u03ba"]
+        np.testing.assert_allclose(ax.containers[0].lines[0].get_ydata(),
+                                   [0.81, 0.9, 0.7, 0.6, 0.5, 0.4])
+        expected = np.mean([f1_score(t, p, average=None) for t, p in labels], axis=0)
+        np.testing.assert_allclose(ax_class.containers[0].lines[0].get_ydata(), expected)
+        assert [t.get_text() for t in ax_class.get_xticklabels()] == list(vis.CLASS_NAMES)
+        assert ax.get_legend_handles_labels()[1] == ["Folds", "Mean (\u00b11 SD)"]
+        assert not [line for line in ax.lines if line.get_linestyle() not in ("None", "")]
+
+    def test_a_class_that_a_fold_neither_has_nor_predicts_is_left_out(self, pyplot):
+        folds = [self._fold([0, 1, 1], [0, 1, 1]),
+                 {**self._fold([0, 0], [0, 0]), "confusion_matrix": np.array([[2, 0], [0, 0]])}]
+        ax_class = vis.plot_fold_metrics(folds).axes[1]
+        np.testing.assert_allclose(ax_class.containers[0].lines[0].get_ydata(), [1.0, 1.0])
+        assert len(ax_class.collections[0].get_offsets()) == 3  # the second fold's class 1 is out
+
+    def test_folds_with_different_classes_get_the_scores_only(self, pyplot):
+        folds = [self._fold([0, 1, 2], [0, 1, 2]), self._fold([0, 1], [0, 1])]
+        fig = vis.plot_fold_metrics(folds)
+        assert len(fig.axes) == 1 and fig.axes[0].get_title() == "All classes"
