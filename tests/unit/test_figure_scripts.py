@@ -52,9 +52,13 @@ class TestFoldAnalysisFigures:
     def test_analyse_fold_results_saves_every_plot_type(self, tmp_path, figure_dir, run_script):
         folds = _fold_files(tmp_path / "runs")
         assert run_script("analysis/analyse_fold_results", "--glob", folds, "--plots") == 0
-        assert _saved(figure_dir / "metrics" / "run") == [
-            "class-metrics.png", "confusion-matrix.png", "metrics-across-folds.png",
-            "tsne-predictions.png", "tsne-states.png"]
+        assert _saved(figure_dir / "metrics" / "run") == ["confusion-matrix.png",
+                                                          "states-pca.png"]
+
+    def test_an_unknown_plot_type_is_an_error(self, tmp_path, figure_dir, run_script):
+        folds = _fold_files(tmp_path / "runs")
+        with pytest.raises(SystemExit, match="Unknown plot types"):
+            run_script("analysis/analyse_fold_results", "--glob", folds, "--plots", "tsne")
 
 
 class TestModelFigures:

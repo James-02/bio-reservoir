@@ -4,13 +4,8 @@ import subprocess
 import sys
 
 import numpy as np
-import pytest
 
 from utils import visualisation as vis
-
-
-def _one_hot(labels, n_classes):
-    return np.eye(n_classes)[labels]
 
 
 class TestV0_1Style:
@@ -53,51 +48,6 @@ class TestConfusionMatrix:
         vis.plot_confusion_matrix(np.array([[3, 1], [1, 3]]), show=False, filename="b.png")
         ax = pyplot.gcf().axes[0]
         assert [t.get_text() for t in ax.get_yticklabels()] == vis.binary_classes
-
-
-class TestFoldMetrics:
-    def test_one_bar_per_fold_and_metric(self, figure_dir, pyplot):
-        folds = [{"accuracy": 0.8, "f1": 0.7, "mcc": 0.6, "kappa": 0.5 - 0.1 * k}
-                 for k in range(3)]
-        vis.plot_metrics_across_folds(folds, show=False, filename="folds.png")
-        assert (figure_dir / "metrics" / "folds.png").is_file()
-        heights = [bar.get_height() for bar in pyplot.gcf().axes[0].patches]
-        assert heights == pytest.approx([0.8] * 3 + [0.7] * 3 + [0.6] * 3 + [0.5, 0.4, 0.3])
-
-    def test_precision_recall_and_f1_of_each_class(self, figure_dir, pyplot):
-        report = {str(c): {"precision": 0.1 * c, "recall": 0.2, "f1-score": 0.3, "support": 8}
-                  for c in range(5)}
-        report["accuracy"] = 0.5
-        vis.plot_class_metrics(report, show=False, filename="classes.png")
-        assert (figure_dir / "metrics" / "classes.png").is_file()
-        ax = pyplot.gcf().axes[0]
-        heights = [bar.get_height() for bar in ax.patches]
-        assert heights == pytest.approx([0.0, 0.1, 0.2, 0.3, 0.4] + [0.2] * 5 + [0.3] * 5)
-        assert [t.get_text() for t in ax.get_xticklabels()] == vis.classes
-
-
-class TestTsne:
-    @staticmethod
-    def _predictions():
-        rng = np.random.default_rng(0)
-        y_true = rng.integers(0, 5, 40)
-        y_pred = y_true.copy()
-        y_pred[:5] = (y_pred[:5] + 1) % 5
-        return _one_hot(y_pred, 5) + rng.normal(0, 0.05, (40, 5)), _one_hot(y_true, 5)
-
-    def test_predictions_are_marked_correct_or_incorrect(self, figure_dir, pyplot):
-        vis.plot_tsne_clustering(*self._predictions(), show=False, filename="tsne.png")
-        assert (figure_dir / "metrics" / "tsne.png").is_file()
-        correct, incorrect = pyplot.gcf().axes[0].collections[2:4]
-        assert (len(correct.get_offsets()), len(incorrect.get_offsets())) == (35, 5)
-
-    def test_the_same_predictions_give_the_same_picture(self, figure_dir, pyplot):
-        drawn = []
-        for _ in range(2):
-            vis.plot_tsne_clustering(*self._predictions(), show=False, filename="tsne.png")
-            drawn.append(pyplot.gcf().axes[0].collections[2].get_offsets().copy())
-            pyplot.close("all")
-        np.testing.assert_array_equal(*drawn)
 
 
 def test_genes_are_named_after_the_model_variables():

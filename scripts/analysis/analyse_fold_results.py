@@ -17,7 +17,7 @@ All plots saved::
 Select specific plot types::
 
     python scripts/analysis/analyse_fold_results.py --trial_name P4-readout-balanced-best \\
-        --plots confusion,tsne,class
+        --plots confusion
 
 Via glob pattern::
 
@@ -28,20 +28,16 @@ Notes
 -----
 - All figures are saved under ``results/figures/metrics/<trial_name>/``.
 - ``--plots`` alone saves all plot types (equivalent to ``--plots all``).
-- ``--show`` displays each figure interactively in addition to saving.
-- t-SNE on reservoir states is skipped if the fold files were saved without
+- The PCA of the states is skipped if the fold files were saved without
   ``save_states=True``.
 
 Available plot types
 --------------------
 confusion
-    Aggregate normalised confusion matrix + per-fold confusion matrix grid.
-class
-    Per-class metric bars and metrics-across-folds bar chart.
-tsne
-    t-SNE of concatenated test predictions coloured by true/predicted class.
+    The confusion matrix of all folds together, each row divided by its sum.
 states
-    t-SNE of reservoir states coloured by true class (requires save_states).
+    The test states of all folds on their first two principal components (each feature
+    scaled to unit variance), one colour per true class.
 all
     All of the above.
 """
@@ -55,34 +51,32 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
 from sklearn.metrics import cohen_kappa_score, matthews_corrcoef
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 from utils.analysis import evaluate_performance
+from utils.preprocessing import class_indices
 from utils.results import FoldArtifact
 from utils.visualisation import (
     _save_figure,
-    plot_class_metrics,
+    binary_classes,
+    classes,
     plot_confusion_matrix,
-    plot_metrics_across_folds,
-    plot_tsne_clustering,
     use_v0_1_style,
 )
+
+PLOT_TYPES = ("confusion", "states")
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _argmax_labels(Y: np.ndarray) -> np.ndarray:
-    """Reduce one-hot (N, T, C) / (N, 1, C) / (N, C) to class indices (N,)."""
-    Y = np.asarray(Y)
-    return np.argmax(Y, axis=-1).flatten()
-
-
 def _stack_preds(artifacts: list[FoldArtifact]) -> tuple[np.ndarray, np.ndarray]:
     """Return (y_true, y_pred) as 1-D class-index arrays across all folds."""
-    y_true = np.concatenate([_argmax_labels(a.Y_test) for a in artifacts])
-    y_pred = np.concatenate([_argmax_labels(a.Y_pred) for a in artifacts])
+    y_true = np.concatenate([class_indices(a.Y_test) for a in artifacts])
+    y_pred = np.concatenate([class_indices(a.Y_pred) for a in artifacts])
     return y_true, y_pred
 
 
@@ -185,138 +179,45 @@ def _print_model_info(artifacts: list[FoldArtifact]) -> None:
 # Plot helpers
 # ---------------------------------------------------------------------------
 
-def _one_hot_to_class_indices(Y: np.ndarray) -> np.ndarray:
-    """Convert one-hot labels of shape (N, 1, C) or (N, C) to class indices (N,)."""
+def plot_state_pca(states: np.ndarray, labels: np.ndarray, filename: str) -> None:
+    """Draw the states on their first two principal components, one colour per true class.
 
-    if Y.ndim == 3 and Y.shape[1] == 1:
-        Y = Y[:, 0, :]
-    if Y.ndim != 2:
-        raise ValueError(f"Expected labels of shape (N, C) or (N, 1, C), got {Y.shape}")
-    return np.argmax(Y, axis=1)
-
-
-def plot_tsne_states(
-    X_states: np.ndarray,
-    Y_true: np.ndarray,
-    show: bool = True,
-    filename: str = "tsne_states.png",
-) -> None:
-    """t-SNE projection of reservoir states coloured by true class.
-
-    Parameters
-    ----------
-    X_states : np.ndarray
-        Array of reservoir states, e.g. shape (N, D) or (N, T, D).
-    Y_true : np.ndarray
-        One-hot labels matching X_states; shape (N, 1, C) or (N, C).
-    show : bool
-        Whether to display the figure interactively.
-    filename : str
-        File name (relative to ``results/figures/metrics/``) used for saving.
+    Each feature is scaled to unit variance first, so that no state variable dominates by
+    its units. ``labels`` are the true labels of the states, in any shape that
+    :func:`utils.preprocessing.class_indices` reads.
     """
-
-    # Flatten any trailing dimensions of states so we have (N, D)
-    if X_states.ndim != 2:
-        X = X_states.reshape(X_states.shape[0], -1)
-    else:
-        X = X_states
-
-    y_classes = _one_hot_to_class_indices(Y_true)
-
-    tsne = TSNE(
-        n_components=2,
-        learning_rate="auto",
-        init="pca",
-        perplexity=30,
-        random_state=42,
-    )
-    emb = tsne.fit_transform(X)
-
-    plt.figure(figsize=(8, 6))
-    num_classes = int(np.max(y_classes)) + 1
-
-    for c in range(num_classes):
-        mask = y_classes == c
-        if not np.any(mask):
-            continue
-        plt.scatter(
-            emb[mask, 0],
-            emb[mask, 1],
-            s=10,
-            alpha=0.6,
-            label=f"class {c}",
-        )
-
-    plt.title("t-SNE of reservoir states (coloured by true class)")
-    plt.xlabel("t-SNE 1")
-    plt.ylabel("t-SNE 2")
-    plt.legend(markerscale=1.5, fontsize="small", loc="best")
-
-    _save_figure(filename=os.path.join("metrics/", filename))
-    if show:
-        plt.show()
+    pca = make_pipeline(StandardScaler(), PCA(n_components=2))
+    points = pca.fit_transform(states.reshape(len(states), -1))
+    explained = pca[-1].explained_variance_ratio_
+    y = class_indices(labels)
+    names = binary_classes if np.asarray(labels).shape[-1] == 2 else classes
+    fig, ax = plt.subplots(figsize=(8, 6))
+    for c in np.unique(y):
+        ax.scatter(*points[y == c].T, s=6, alpha=0.6, label=names[c])
+    ax.set_xlabel(f"PC 1 ({explained[0]:.0%} of the variance)")
+    ax.set_ylabel(f"PC 2 ({explained[1]:.0%} of the variance)")
+    ax.legend(markerscale=2)
+    _save_figure(filename=os.path.join("metrics", filename))
+    plt.close(fig)
 
 
-def _fig_out(trial_name: str, suffix: str) -> str:
-    """Return filename passed to the plot helpers.
-
-    The plot_* helpers (in this script and in utils.visualisation) prepend ``metrics/``
-    themselves before calling ``_save_figure``, which in turn prepends
-    ``results/figures/``.  So we only need to provide ``<trial_name>/<suffix>``.
-    """
-    return os.path.join(trial_name, suffix)
-
-
-def _run_plots(
-    artifacts: list[FoldArtifact],
-    trial_name: str,
-    wanted: set,
-    show: bool,
-) -> None:
-    Y_test_all = np.concatenate([a.Y_test for a in artifacts])
-    Y_pred_all = np.concatenate([a.Y_pred for a in artifacts])
-    agg = evaluate_performance(Y_test_all, Y_pred_all)
-
+def _run_plots(artifacts: list[FoldArtifact], trial_name: str, wanted: set) -> None:
     if "confusion" in wanted:
-        plot_confusion_matrix(
-            agg.confusion_matrix,
-            show=show,
-            filename=_fig_out(trial_name, "confusion-matrix.png"),
-        )
-
-    if "class" in wanted:
-        plot_class_metrics(
-            agg.class_metrics,
-            show=show,
-            filename=_fig_out(trial_name, "class-metrics.png"),
-        )
-        plot_metrics_across_folds(
-            [a.metrics for a in artifacts],
-            metric_names=["f1", "accuracy", "precision", "recall", "mcc"],
-            show=show,
-            filename=_fig_out(trial_name, "metrics-across-folds.png"),
-        )
-
-    if "tsne" in wanted:
-        plot_tsne_clustering(
-            Y_pred_all,
-            Y_test_all,
-            show=show,
-            filename=_fig_out(trial_name, "tsne-predictions.png"),
-        )
+        Y_test = np.concatenate([a.Y_test for a in artifacts])
+        Y_pred = np.concatenate([a.Y_pred for a in artifacts])
+        plot_confusion_matrix(evaluate_performance(Y_test, Y_pred).confusion_matrix,
+                              show=False,
+                              filename=os.path.join(trial_name, "confusion-matrix.png"))
+        plt.close("all")
 
     if "states" in wanted:
-        states = [a.test_states for a in artifacts if a.test_states is not None]
-        labels = [a.Y_test for a in artifacts if a.test_states is not None]
-        if states:
-            plot_tsne_states(
-                np.concatenate(states, axis=0),
-                np.concatenate(labels, axis=0),
-                show=show,
-                filename=_fig_out(trial_name, "tsne-states.png"),
-            )
+        with_states = [a for a in artifacts if a.test_states is not None]
+        if with_states:
+            plot_state_pca(np.concatenate([a.test_states for a in with_states]),
+                           np.concatenate([a.Y_test for a in with_states]),
+                           os.path.join(trial_name, "states-pca.png"))
         else:
-            print("  No test_states in fold files — skipping state t-SNE.")
+            print("  No test_states in fold files: no PCA of the states.")
 
 
 # ---------------------------------------------------------------------------
@@ -330,11 +231,9 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 plot types:
-  confusion   aggregate + per-fold normalised confusion matrices
-  class       per-class metric bars and metrics-across-folds chart
-  tsne        t-SNE of test predictions coloured by true/predicted class
-  states      t-SNE of reservoir states coloured by true class
-  all         all of the above (also the default when --plots is given alone)
+  confusion   the confusion matrix of all folds, each row divided by its sum
+  states      PCA of the test states, one colour per true class
+  all         both (also the default when --plots is given alone)
 """,
     )
     parser.add_argument(
@@ -356,11 +255,6 @@ plot types:
         default="",
         metavar="TYPE[,TYPE...]",
         help="Comma-separated plot types to generate (default: none; bare flag = all).",
-    )
-    parser.add_argument(
-        "--show",
-        action="store_true",
-        help="Display plots interactively (also saves them).",
     )
 
     args = parser.parse_args()
@@ -392,10 +286,14 @@ plot types:
     plots_arg = (args.plots or "").strip()
     wanted = {p.strip().lower() for p in plots_arg.split(",") if p.strip()}
     if "all" in wanted:
-        wanted = {"confusion", "class", "tsne", "states"}
+        wanted = set(PLOT_TYPES)
+    unknown = wanted - set(PLOT_TYPES)
+    if unknown:
+        raise SystemExit(f"Unknown plot types {sorted(unknown)}; choose from {PLOT_TYPES} "
+                         "or all.")
 
     if wanted:
-        _run_plots(artifacts, trial_name, wanted, args.show)
+        _run_plots(artifacts, trial_name, wanted)
         print(f"Figures saved to results/figures/metrics/{trial_name}/")
 
     return 0

@@ -212,8 +212,8 @@ class TestReadoutTables:
 
 
 class TestFoldAnalysisScript:
-    """The per-fold table and the class plots asked for RMSE and R2, which fold files no
-    longer store: the table showed columns of zeros and the class plots failed."""
+    """The per-fold table asked for RMSE and R2, which fold files no longer store, and showed
+    columns of zeros."""
 
     @staticmethod
     def _folds():
@@ -234,13 +234,3 @@ class TestFoldAnalysisScript:
         header = capsys.readouterr().out.splitlines()[1].split()
         assert header == ["fold", "F1", "Accuracy", "Precision", "Recall", "MCC", "Kappa",
                           "Runtime(s)"]
-
-    def test_class_plots_are_saved(self, tmp_path, monkeypatch):
-        from utils import visualisation
-
-        monkeypatch.setenv("BIORESERVOIR_RESULTS_DIR", str(tmp_path))
-        monkeypatch.setattr(visualisation, "DPI", 20)
-        _load("analysis/analyse_fold_results")._run_plots(self._folds(), "run", {"class"},
-                                                         show=False)
-        saved = sorted(p.name for p in (tmp_path / "figures" / "metrics" / "run").iterdir())
-        assert saved == ["class-metrics.png", "metrics-across-folds.png"]

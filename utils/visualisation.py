@@ -12,8 +12,6 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-from matplotlib.colors import ListedColormap
-from sklearn.manifold import TSNE
 
 from utils import config
 
@@ -22,12 +20,10 @@ V0_1_STYLE = {**sns.axes_style("ticks"), "font.size": 15}
 
 DPI = 800
 
-# Define class labels and palettes
+# Class labels
 binary_classes = ['Normal', 'Arrhythmia']
-binary_palette = sns.color_palette("husl", n_colors=len(binary_classes))[::-1]
 
 classes = ['Normal', 'Supraventricular', 'Ventricular', 'Fusion', 'Unknown']
-categorical_palette = sns.color_palette("husl", n_colors=len(classes))[::-1]
 
 
 # ----------------------------------------------------------------------------
@@ -115,182 +111,6 @@ def plot_confusion_matrix(confusion_matrix: np.ndarray, cmap=plt.cm.Blues,
     _save_figure(filename=os.path.join("metrics/", filename))
     if show:
         plt.show()
-
-@_in_v0_1_style
-def plot_metrics_across_folds(metrics: list[dict[str, any]], metric_names: list[str] | None = None,
-                              show: bool = True, filename: str = "metrics_folds.png") -> None:
-    """
-    Plot the metrics across different folds.
-
-    Args:
-        metrics (List[Dict[str, any]]): List of dictionaries containing metric values for each fold.
-        metric_names (List[str], optional): Metric names to plot. Default: accuracy, f1, mcc, kappa.
-        show (bool, optional): Whether to display the plot. Default is True.
-        filename (str, optional): Filename to save the plot. Default is "metrics_folds.png".
-    """
-    if metric_names is None:
-        metric_names = ["accuracy", "f1", "mcc", "kappa"]
-    num_folds = len(metrics)
-    num_metrics = len(metric_names)
-    bar_width = 0.2
-    index = np.arange(num_folds)
-
-    plt.figure(figsize=(12, 6))
-    for i in range(num_metrics):
-        metric_values = [metric[metric_names[i]] for metric in metrics]
-        plt.bar(index + i * bar_width, metric_values, bar_width, label=metric_names[i])
-
-    plt.xlabel('Fold')
-    plt.ylabel('Value')
-    plt.xticks(index + bar_width * (num_metrics - 1) / 2, range(1, num_folds + 1))
-    plt.legend()
-    plt.tight_layout()
-
-    _save_figure(filename=os.path.join("metrics/", filename))
-    if show:
-        plt.show()
-
-@_in_v0_1_style
-def plot_class_metrics(metrics: dict[str, dict[str, float]], show: bool = True, filename: str = "class_metrics.png") -> None:
-    """
-    Plot the metrics for each class.
-
-    Args:
-        metrics (Dict[str, Dict[str, float]]): Dictionary containing metrics for each class.
-        filename (str, optional): Filename to save figure to. Default is "class_metrics.png".
-        show (bool, optional): Whether to display the plot. Default is True.
-    """
-    # Extract metrics for each class
-    class_metrics = {key: value for key, value in metrics.items() if key.isdigit()}
-    precisions = [metric['precision'] for metric in class_metrics.values()]
-    recalls = [metric['recall'] for metric in class_metrics.values()]
-    f1_scores = [metric['f1-score'] for metric in class_metrics.values()]
-
-    class_labels = classes if len(class_metrics) > 2 else binary_classes
-
-    # Create x-axis ticks and labels
-    x_ticks = range(len(class_labels))
-    x_labels = [class_labels[int(label)] for label in class_metrics.keys()]
-
-    # Plot metrics
-    plt.figure(figsize=(10, 6))
-    plt.bar(x_ticks, precisions, width=0.2, label='Precision', align='center')
-    plt.bar([x + 0.2 for x in x_ticks], recalls, width=0.2, label='Recall', align='center')
-    plt.bar([x + 0.4 for x in x_ticks], f1_scores, width=0.2, label='F1-score', align='center')
-
-    # Add labels and legend
-    plt.xlabel('Class')
-    plt.ylabel('Score')
-    plt.xticks([x + 0.2 for x in x_ticks], x_labels, rotation=45, ha='right')
-    plt.legend()
-
-    # Show plot
-    plt.tight_layout()
-
-    _save_figure(filename=os.path.join("metrics/", filename))
-
-    if show:
-        plt.show()
-
-@_in_v0_1_style
-def plot_tsne_clustering(Y_pred: np.ndarray, Y_true: np.ndarray, show: bool = True, filename: str = "clustering.png") -> None:
-    # --- debug: inspect incoming shapes -----------------------------------
-    print(f"[TSNE] raw Y_pred type={type(Y_pred)}, shape={getattr(Y_pred, 'shape', None)}")
-    print(f"[TSNE] raw Y_true type={type(Y_true)}, shape={getattr(Y_true, 'shape', None)}")
-
-    Y_pred_flat = np.array(Y_pred).reshape(len(Y_pred), -1)
-    print(f"[TSNE] Y_pred_flat shape={Y_pred_flat.shape}")
-
-    # Perform t-SNE embedding
-    tsne = TSNE(
-        n_components=2,
-        perplexity=30,          # or smaller, e.g. 10
-        learning_rate=200,      # or adjust upward
-        n_iter=2000,
-        metric="euclidean",     # default, but you could try 'cosine'
-        init="random",          # maybe random instead of PCA
-        random_state=42,        # the same picture every time, as in plot_tsne_states
-    )    
-    tsne_embeddings = tsne.fit_transform(Y_pred_flat)
-    print(f"[TSNE] tsne_embeddings shape={tsne_embeddings.shape}")
-
-    Y_pred = np.array([np.argmax(y_p) for y_p in Y_pred]).reshape(-1, 1)
-    Y_true = np.array([np.argmax(y_t) for y_t in Y_true]).reshape(-1, 1)
-    print(f"[TSNE] Y_pred (classes) shape={Y_pred.shape}, unique={np.unique(Y_pred)}")
-    print(f"[TSNE] Y_true (classes) shape={Y_true.shape}, unique={np.unique(Y_true)}")
-
-    ticks = np.unique(Y_pred)
-
-    class_names = classes
-    colors = ListedColormap(categorical_palette)
-    if len(ticks) == 2:
-        class_names = binary_classes
-        colors = ListedColormap(binary_palette)
-
-    # Identify correct and incorrect predictions
-    correct_preds = (Y_pred == Y_true)
-    incorrect_preds = ~correct_preds
-
-    n_total = Y_pred.shape[0]
-    n_correct = int(correct_preds.sum())
-    n_incorrect = int(incorrect_preds.sum())
-    print(f"[TSNE] n_total={n_total}, n_correct={n_correct}, n_incorrect={n_incorrect}")
-
-    # Optional: how many unique embedded coords?
-    # This will confirm whether thousands of points have collapsed to only a few distinct locations.
-    uniq_coords = np.unique(np.round(tsne_embeddings, decimals=3), axis=0)
-    print(f"[TSNE] unique embedded coords (rounded 1e-3): {uniq_coords.shape[0]}")
-
-    plt.figure(figsize=(10, 8))
-
-    # Create empty scatter plots with black markers for legend
-    scatter_correct = plt.scatter([], [], marker='o', label='Correct Predictions', color='k')
-    scatter_incorrect = plt.scatter([], [], marker='x', label='Incorrect Predictions', color='k')
-
-    # Use smaller markers and transparency to reveal density
-    alpha_correct = 0.4
-    alpha_incorrect = 0.8
-    s_correct = 10
-    s_incorrect = 20
-
-    # Plot correct predictions
-    plt.scatter(
-        x=tsne_embeddings[correct_preds[:, 0], 0],
-        y=tsne_embeddings[correct_preds[:, 0], 1],
-        c=Y_true[correct_preds[:, 0]],
-        cmap=colors,
-        marker='o',
-        s=s_correct,
-        alpha=alpha_correct,
-        linewidths=0,
-    )
-
-    # Plot incorrect predictions
-    plt.scatter(
-        x=tsne_embeddings[incorrect_preds[:, 0], 0],
-        y=tsne_embeddings[incorrect_preds[:, 0], 1],
-        c=Y_true[incorrect_preds[:, 0]],
-        cmap=colors,
-        marker='x',
-        s=s_incorrect,
-        alpha=alpha_incorrect,
-        linewidths=0.7,
-    )
-
-    plt.legend(handles=[scatter_correct, scatter_incorrect])
-
-    # Add color bar representing class labels
-    cbar = plt.colorbar(ticks=ticks)
-    cbar.set_ticklabels([class_names[int(t)] for t in ticks])
-    cbar.set_label('Class')
-
-    plt.xlabel('t-SNE Dimension 1')
-    plt.ylabel('t-SNE Dimension 2')
-
-    _save_figure(filename=os.path.join("metrics/", filename))
-    if show:
-        plt.show()
-
 
 # ---------------------------------------------------------------------------
 # Building blocks for figure scripts: each draws on the Axes it is given
