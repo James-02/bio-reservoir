@@ -91,6 +91,9 @@ RESERVOIR_KEYS = {
         "input_connectivity", "input_bias", "bias_scaling", "noise_in", "noise_rc",
         "rc_connectivity",
     ),
+    # Digital controls (optimization.controls)
+    "random_features": ("units", "length", "activation", "input_scaling", "bias_scaling"),
+    "leaky_bank": ("units", "tau_min", "tau_max", "band_pass", "expansion", "input_range"),
 }
 
 SCALAR_METRICS = ("f1", "f1_macro", "f1_weighted", "accuracy", "precision", "recall",
@@ -254,6 +257,12 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
     reservoir = dict(cfg.get("reservoir") or {})
     if "states_from" in reservoir:
         resolved_reservoir = {"states_from": str(reservoir["states_from"])}
+        if reservoir.get("surrogate") is not None:
+            from training.surrogate import check_surrogate
+            resolved_reservoir["surrogate"] = check_surrogate(reservoir["surrogate"])
+    elif reservoir.get("surrogate") is not None:
+        raise ValueError("reservoir.surrogate imitates the saved features of another run: it "
+                         "needs reservoir.states_from.")
     elif reservoir.get("type") == "none":
         other = sorted(set(reservoir) - {"type"})
         if other:
@@ -275,6 +284,8 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
         kind = str(params.get("reservoir_type", reservoir.get("type", "bioreservoir")))
         from optimization.reservoirs import normalize_reservoir_type
         kind = normalize_reservoir_type(kind)
+        from optimization.controls import CONTROL_DEFAULTS
+        params = {**CONTROL_DEFAULTS.get(kind, {}), **params}
         ignored = sorted(set(reservoir.get("params") or {}) - set(RESERVOIR_KEYS[kind])
                          - {"reservoir_type"})
         if ignored:
@@ -411,15 +422,23 @@ def _check_observation(sections: dict[str, Any], reservoir: dict[str, Any]) -> N
                 or len(set(variables)) != len(variables)):
             raise ValueError("features.variables must list variables of A, I, Hi and He, "
                              "each once.")
-        if reservoir.get("type", "bioreservoir") != "bioreservoir":
-            raise ValueError("features.variables needs a bioreservoir.")
+        kind = reservoir.get("type", "bioreservoir")
+        if kind != "bioreservoir":
+            raise ValueError(f"features.variables needs a bioreservoir: it names variables of "
+                             f"the colony model (A, I, Hi, He), which the {kind} reservoir does "
+                             "not have. Remove features.variables to observe all of its "
+                             "features.")
     if variables is None and not features["measurement_noise"] \
             and not features["calibration_error"]:
         return
     if "states_from" in reservoir:
+        if reservoir.get("surrogate") and variables is None \
+                and not features["calibration_error"]:
+            return  # training.surrogate measures the surrogate's features
         raise ValueError("A refit reads the features of another run as they were measured; "
                          "features.variables, measurement_noise and calibration_error "
-                         "cannot change them.")
+                         "cannot change them (a surrogate, reservoir.surrogate, takes "
+                         "measurement_noise).")
     if sections["cv"]["simulate"] != "once":
         raise ValueError("features.variables, measurement_noise and calibration_error need "
                          "cv.simulate: once.")
@@ -634,6 +653,9 @@ def refit_readout(cfg: dict[str, Any], source_folds: list, processes: int = 1) -
         if source.train_states is None or source.test_states is None:
             raise SystemExit(f"Fold {source.fold_index} of {cfg['reservoir']['states_from']} "
                              "has no saved states.")
+    if cfg["reservoir"].get("surrogate"):
+        from training.surrogate import surrogate_folds
+        source_folds = surrogate_folds(cfg, source_folds)
     if processes > 1:
         from joblib import Parallel, delayed
 
@@ -810,6 +832,8 @@ def execute(cfg: dict[str, Any], *, out: str | Path | None = None, processes: in
         if "states_from" in cfg["reservoir"]:
             artifacts = refit_readout(cfg, load_folds(cfg["reservoir"]["states_from"],
                                                       states=True), processes)
+            if cfg["reservoir"].get("surrogate"):
+                timings = {"surrogate": [a.model_hypers["surrogate"] for a in artifacts]}
         else:
             X, Y, data_files = load_task(cfg["task"])
             pool_sha256 = _pool_sha256(X, Y)

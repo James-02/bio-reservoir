@@ -212,6 +212,18 @@ reservoir:
     reset_noise: 0.01
 ```
 
+## Controls
+
+Three controls ask what the colony array adds to a readout of the beat. They run through the same folds, observation, readouts and statistics as the reservoir, so `training.run compare` pairs them beat by beat.
+
+| Question | Control | Config |
+|---|---|---|
+| Does any nonlinear feature map of the beat do as well? | Random features `tanh(W z + b)` of the beat so far | `reservoir: {type: random_features, params: {units: 8000}}` |
+| Is the array more than a bank of timescales? | Leaky integrators of the encoded beat ([optimization/controls.py](optimization/controls.py)) | `reservoir: {type: leaky_bank, params: {units: 24}}` |
+| Would a linear filter of the beat do as well? | A ridge map from the beat to a saved run's features, fitted on each training fold ([training/surrogate.py](training/surrogate.py)) | `reservoir: {states_from: <run>, surrogate: linear}` |
+
+The controls have one state per input step, so `features.aggregation`, `measurement_noise` and `calibration_error` apply as to the reservoir; `features.variables` does not. `activation: linear` gives a random linear map, and `expansion: N` maps the leaky bank to `N` random features.
+
 ## Visualisation
 
 ### Biopixel Reservoir Model

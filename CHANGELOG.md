@@ -33,6 +33,8 @@ Each entry is marked **[science]** if it changes a reported number, or
   dilution, discrete input levels and an imperfect reset (`bioreservoir.realism`).
 - [engineering] `bioreservoir.diagnostics.oscillation_amplitudes`, reported by
   `scripts/analysis/drive_bounds.py --oscillation`.
+- [engineering] Controls: random features and a leaky-integrator bank as reservoir types,
+  and a linear surrogate of a saved run (`reservoir.surrogate: linear`).
 
 ### Fixed
 
