@@ -149,8 +149,9 @@ class BioReservoir(Node):
         own has mean 0, so this is the input level a beat varies around: with the
         non-negative encoding, the inducer level ``-input_range[0]`` (3 by default) in every
         induced colony. The colonies then settle under that level, and a flat input continues
-        the warm-up. The warm-up needs the input weights, so it runs when the node is
-        initialised (on its first input; needs ``geometry="per_node"``).
+        the warm-up (except with the abstract coupling: no warm-up has its recurrent term).
+        The warm-up needs the input weights, so it runs when the node is initialised (on its
+        first input, in every copy; needs ``geometry="per_node"``).
         """
         if units is None and not is_array(W):
             raise ValueError("'units' must be specified if 'W' is not a matrix.")
