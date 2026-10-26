@@ -36,11 +36,18 @@ Available plot types
 --------------------
 confusion
     The confusion matrix of all folds together, each row divided by its sum.
-states
+metrics
+    The scores of each fold as dots, with their mean and one SD: F1, accuracy, precision,
+    recall, MCC and Cohen's kappa, and the F1 of each class
+    (:func:`utils.visualisation.plot_fold_metrics`).
+pca
     The test states of all folds on their first two principal components (each feature
     scaled to unit variance), one colour per true class.
 all
     All of the above.
+
+Fold files written before MCC and kappa were stored (the ``v0.1`` runs) get both from their
+labels and predictions.
 """
 
 from __future__ import annotations
@@ -66,10 +73,11 @@ from utils.visualisation import (
     add_formats_option,
     class_names,
     plot_confusion_matrix,
+    plot_fold_metrics,
     save_figure,
 )
 
-PLOT_TYPES = ("confusion", "states")
+PLOT_TYPES = ("confusion", "metrics", "pca")
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -80,6 +88,16 @@ def _stack_preds(artifacts: list[FoldArtifact]) -> tuple[np.ndarray, np.ndarray]
     y_true = np.concatenate([class_indices(a.Y_test) for a in artifacts])
     y_pred = np.concatenate([class_indices(a.Y_pred) for a in artifacts])
     return y_true, y_pred
+
+
+def _fill_mcc_and_kappa(artifacts: list[FoldArtifact]) -> None:
+    """Compute MCC and kappa from the labels and predictions of the folds whose files predate
+    them (they load as NaN)."""
+    for a in artifacts:
+        if np.isnan(a.metrics.mcc) or np.isnan(a.metrics.kappa):
+            y_true, y_pred = class_indices(a.Y_test), class_indices(a.Y_pred)
+            a.metrics.mcc = float(matthews_corrcoef(y_true, y_pred))
+            a.metrics.kappa = float(cohen_kappa_score(y_true, y_pred))
 
 
 def _fmt(v: Any, decimals: int = 4) -> str:
@@ -100,7 +118,8 @@ def _print_fold_table(artifacts: list[FoldArtifact]) -> None:
     row_fmt = "  ".join(f"{{:<{w}}}" for w in _SCALAR_COL_W)
     sep = "  ".join("-" * w for w in _SCALAR_COL_W)
 
-    print("Per-fold metrics:")
+    average = artifacts[0].metrics.primary_average
+    print(f"Per-fold metrics (F1, precision and recall: the {average} average over the classes):")
     print(row_fmt.format(*_SCALAR_HEADERS))
     print(sep)
 
@@ -214,7 +233,12 @@ def _run_plots(artifacts: list[FoldArtifact], trial_name: str, wanted: set,
         save_figure(ax.figure, f"{trial_name}/confusion-matrix", topic="metrics",
                     formats=formats)
 
-    if "states" in wanted:
+    if "metrics" in wanted:
+        fig = plot_fold_metrics([a.metrics for a in artifacts],
+                                artifacts[0].metrics.primary_average)
+        save_figure(fig, f"{trial_name}/fold-metrics", topic="metrics", formats=formats)
+
+    if "pca" in wanted:
         with_states = [a for a in artifacts if a.test_states is not None]
         if with_states:
             plot_state_pca(np.concatenate([a.test_states for a in with_states]),
@@ -236,8 +260,9 @@ def main() -> int:
         epilog="""
 plot types:
   confusion   the confusion matrix of all folds, each row divided by its sum
-  states      PCA of the test states, one colour per true class
-  all         both (also the default when --plots is given alone)
+  metrics     the scores of each fold, with their mean and SD, and the F1 of each class
+  pca         PCA of the test states, one colour per true class
+  all         all three (also the default when --plots is given alone)
 """,
     )
     parser.add_argument(
@@ -277,6 +302,7 @@ plot types:
     else:
         raise SystemExit("Provide --trial_name or --glob.")
 
+    _fill_mcc_and_kappa(artifacts)
     print(f"Trial  : {trial_name}")
     print(f"Folds  : {len(artifacts)}")
     print()

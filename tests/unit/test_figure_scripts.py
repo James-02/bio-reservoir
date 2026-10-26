@@ -31,18 +31,45 @@ def _fold_files(folder, *, folds=2, beats=40, classes=5, states=True):
 
 
 class TestFoldAnalysisFigures:
-    """The fold-analysis scripts draw the ``v0.1`` confusion matrices from fold files."""
+    """scripts/analysis/analyse_fold_results.py: the tables and figures of a run's fold files."""
 
-    def test_analyse_fold_results_saves_every_plot_type(self, tmp_path, figure_dir, run_script):
+    def test_analyse_fold_results_saves_every_plot_type(self, tmp_path, figure_dir, run_script,
+                                                        capsys):
         folds = _fold_files(tmp_path / "runs")
         assert run_script("analysis/analyse_fold_results", "--glob", folds, "--plots") == 0
         assert _saved(figure_dir / "metrics" / "run") == ["confusion-matrix.png",
-                                                          "states-pca.png"]
+                                                          "fold-metrics.png", "states-pca.png"]
+        assert ("Per-fold metrics (F1, precision and recall: the weighted average over the "
+                "classes):") in capsys.readouterr().out
+
+    def test_each_plot_type_alone(self, tmp_path, figure_dir, run_script):
+        folds = _fold_files(tmp_path / "runs")
+        for plot, figure in (("metrics", "fold-metrics.png"), ("pca", "states-pca.png")):
+            run_script("analysis/analyse_fold_results", "--glob", folds, "--plots", plot)
+            assert figure in _saved(figure_dir / "metrics" / "run")
+        assert len(_saved(figure_dir / "metrics" / "run")) == 2
 
     def test_an_unknown_plot_type_is_an_error(self, tmp_path, figure_dir, run_script):
         folds = _fold_files(tmp_path / "runs")
         with pytest.raises(SystemExit, match="Unknown plot types"):
-            run_script("analysis/analyse_fold_results", "--glob", folds, "--plots", "tsne")
+            run_script("analysis/analyse_fold_results", "--glob", folds, "--plots", "states")
+
+    def test_older_fold_files_get_mcc_and_kappa_from_their_labels(self, tmp_path, load_script):
+        from sklearn.metrics import cohen_kappa_score, matthews_corrcoef
+
+        from utils.preprocessing import class_indices
+        from utils.results import FoldArtifact
+
+        _fold_files(tmp_path / "runs")
+        artifacts = [FoldArtifact.load(p) for p in sorted((tmp_path / "runs" / "run")
+                                                          .glob("fold-*.npz"))]
+        stored = artifacts[1].metrics.mcc
+        artifacts[0].metrics.mcc = artifacts[0].metrics.kappa = float("nan")  # as in v0.1 files
+        load_script("analysis/analyse_fold_results")._fill_mcc_and_kappa(artifacts)
+        y_true, y_pred = class_indices(artifacts[0].Y_test), class_indices(artifacts[0].Y_pred)
+        assert artifacts[0].metrics.mcc == pytest.approx(matthews_corrcoef(y_true, y_pred))
+        assert artifacts[0].metrics.kappa == pytest.approx(cohen_kappa_score(y_true, y_pred))
+        assert artifacts[1].metrics.mcc == stored  # a file that has them keeps its own
 
     def test_the_states_of_each_class_have_its_name_and_colour(self, load_script, pyplot,
                                                                monkeypatch):
