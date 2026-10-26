@@ -9,7 +9,7 @@ base: ../designs/centre.yaml
 name: P2-lattice
 description: >-
   Phase 2 TPE search, P lattice: input gain x0.5-20, coupling rate 0.01-10, input
-  connectivity 0.1-1, heterogeneity CV 0-0.5, warm-up 50-2,000; N = 1,024, 16 substeps;
+  connectivity 0.1-1, heterogeneity CV 0-0.5, warm-up 50-2,000; N = 1,024, 32 substeps;
   one image of the LuxI reporter with 1% measurement noise, RidgeCV readout; reservoir
   seed 6337. Starts from the exploration's P-lattice optimum (trial 208) and the P
   centre.

@@ -3,7 +3,7 @@
 name: design-centre
 description: >-
   The P centre (input x5.6, coupling rate 0.6, input connectivity 0.66, heterogeneity CV
-  0.065 mean-preserving, warm-up 800, N = 1,024 traps, 16 substeps); one image of the
+  0.065 mean-preserving, warm-up 800, N = 1,024 traps, 32 substeps); one image of the
   LuxI reporter with 1% measurement noise, RidgeCV readout.
 seed: 6337
 task: {labels: five-class, rows: 4015, balance_classes: true, scaler: sequence_zscore, seed: 6337}
@@ -12,7 +12,7 @@ reservoir:
   params:
     units: 1024
     warmup: 800
-    rk4_substeps: 16
+    rk4_substeps: 32
     input_scaling: 0.155113
     input_connectivity: 0.66
     input_bias: false
@@ -43,5 +43,5 @@ features:
   variables: [I]
   aggregation: final
   measurement_noise: 0.01
-readout: {classifier: RidgeCV, scale: true}
+readout: {classifier: RidgeCV, scale: true, params: {scoring: f1_macro}}
 cv: {folds: 5, seed: 6337}

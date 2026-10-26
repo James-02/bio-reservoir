@@ -7,7 +7,7 @@ name: P1-images-noise
 description: >-
   Phase 1 grid: images 1-4 x measurement noise 0.5-3% around the P centre (input x5.6,
   coupling rate 0.6, input connectivity 0.66, heterogeneity CV 0.065 mean-preserving,
-  warm-up 800, N = 1,024 traps, 16 substeps); one image of the LuxI reporter with 1%
+  warm-up 800, N = 1,024 traps, 32 substeps); one image of the LuxI reporter with 1%
   measurement noise, RidgeCV readout; three reservoir seeds.
 study:
   trials: 48

@@ -43,5 +43,5 @@ features:
   variables: [I]
   aggregation: final
   measurement_noise: 0.01
-readout: {classifier: RidgeCV, scale: true}
+readout: {classifier: RidgeCV, scale: true, params: {scoring: f1_macro}}
 cv: {folds: 5, seed: 6337}

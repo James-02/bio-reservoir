@@ -3,8 +3,7 @@
 Every config resolves; every search path names a setting that its run reads; names are
 unique and start with their folder's prefix (``P<k>-`` in ``phase-<k>/``, ``design-`` in
 ``designs/``, ``tracking-`` in ``tracking/``); every study is seeded, grids run each point
-once, and no trial of a coupled array is refused by the RK4 stability check, which would
-stop its study.
+once, and the RK4 step check refuses no trial of a bioreservoir, which would waste it.
 """
 
 import itertools
@@ -126,7 +125,10 @@ def test_each_study_is_seeded_and_runs_its_intended_trials(path):
         assert set(point) == set(study["search"])
         for key, value in point.items():
             spec = study["search"][key]
-            assert spec["low"] <= value <= spec["high"], key
+            if "choices" in spec:
+                assert value in spec["choices"], key
+            else:
+                assert spec["low"] <= value <= spec["high"], key
 
 
 def _stiffest_points(study):
@@ -147,12 +149,11 @@ def _stiffest_points(study):
             for values in itertools.product(*each.values())]
 
 
-COUPLED = [p for p in STUDIES
-           if resolve(study_module.split(load_config(p))[0])["reservoir"].get("params", {})
-           .get("coupling") == "diffusion"]
+SUBSTEP = [p for p in STUDIES
+           if resolve(study_module.split(load_config(p))[0])["reservoir"]["type"] == "bioreservoir"]
 
 
-@pytest.mark.parametrize("path", COUPLED, ids=_ids(COUPLED))
+@pytest.mark.parametrize("path", SUBSTEP, ids=_ids(SUBSTEP))
 def test_no_trial_is_refused_by_the_rk4_stability_check(path):
     run_cfg, study = study_module.split(load_config(path))
     for point in _stiffest_points(study):

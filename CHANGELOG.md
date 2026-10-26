@@ -22,6 +22,8 @@ Each entry is marked **[science]** if it changes a reported number, or
 - [engineering] Run, comparison and fold-analysis figures name the classes and draw each
   fold's scores as dots with their mean and SD; `analyse_fold_results.py --plots` draws
   `confusion`, `metrics` and `pca`.
+- [engineering] The `v0.2` bioreservoir studies run 32 RK4 substeps, the ridge readouts
+  choose their penalty by macro F1, and `P2-esn-image` reads the ESN from one noisy image.
 
 ### Added
 
