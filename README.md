@@ -226,6 +226,20 @@ Three controls ask what the colony array adds to a readout of the beat. They run
 
 The controls have one state per input step, so `features.aggregation`, `measurement_noise` and `calibration_error` apply as to the reservoir; `features.variables` does not. `activation: linear` gives a random linear map, and `expansion: N` maps the leaky bank to `N` random features.
 
+## Ablations
+
+An ablation removes one part of the model and keeps the pool, folds, observation and readout, so a config and its ablated copy compare beat by beat.
+
+| Ablation | Config |
+|---|---|
+| No coupling | `reservoir.params.coupling: none` (or `diffusion_rate: 0`, `rc_scaling: 0`) |
+| No feedback delay | `reservoir.params.delay: 0` (default: 10 input steps) |
+| Scrambled beats | `task.scramble: true` |
+
+`delay` is the colonies' gene-expression feedback delay in input steps (bioreservoir only); with `delay: 0` the model is an ordinary differential equation (with `delay_scheme: frozen`, as in the `v0.1` preset, the feedback still reads Hi at the start of each input step). Trials record it (`res_delay`).
+
+`task.scramble` permutes the steps of each beat with its own seed (the task seed and the beat's index), after the per-beat scaling; scalings fitted across beats (`standard`, `minmax`) and `test.split` are refused.
+
 ## Visualisation
 
 The figures below are from the `v0.1` paper. The figure scripts draw the same designs, in the same look, from this repository's configs and runs. Each saves a PNG under `results/figures/<topic>/` (`--formats pdf,svg` adds a PDF and an SVG) and warns if the figure would break the ACS figure rules at its printed size.
