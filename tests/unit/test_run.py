@@ -755,6 +755,25 @@ class TestHeldOutEvaluation:
         (entry,) = provenance.load_registry(isolated / "registry.jsonl").values()
         assert entry["evaluation"] == "validation-1"
 
+    def test_a_reference_reads_the_pool_and_the_split_over_the_start_image(self, tmp_path,
+                                                                           split):
+        def run(name, **features):
+            cfg = _reporter_config(variables=["I"], **features)
+            cfg["test"] = {"split": "validation-1"}
+            return _execute(cfg, tmp_path / name)
+
+        plain = run("plain")
+        clean = run("clean", reference="start")
+        biased = run("biased", reference="start", calibration_error=0.3)
+        reference = _start(_reporter_config(variables=["I"]))[0::2]
+        for kind in ("train", "test"):
+            (p,), (c,), (b,) = (_states(r, kind) for r in (plain, clean, biased))
+            np.testing.assert_array_equal(c, p / reference)
+            np.testing.assert_allclose(b, c, rtol=1e-14)
+        (p,), (c,), (b,) = (_predictions(r) for r in (plain, clean, biased))
+        np.testing.assert_array_equal(c, p)
+        np.testing.assert_array_equal(b, c)
+
     def test_two_runs_on_a_split_are_paired_by_beat(self, tmp_path, split):
         a = _execute(_config(test={"split": "validation-1"}), tmp_path / "a")
         b = _execute(_config(test={"split": "validation-1"}), tmp_path / "b")
