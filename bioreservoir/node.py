@@ -89,6 +89,7 @@ class BioReservoir(Node):
         heterogeneity_dilution_cv: float = 0.0,
         input_levels: int | str = 1,
         reset_noise: float = 0.0,
+        warmup_input: str = "zero",
         **kwargs,
     ):
         """Genetic-oscillator reservoir node (one DDE oscillator per unit).
@@ -142,6 +143,15 @@ class BioReservoir(Node):
         ``geometry="per_node"``); ``reset_noise`` multiplies the warm-up state that every
         input sequence starts from by log-normal factors of that coefficient of variation,
         drawn from a stream reseeded by :meth:`reseed_reset`.
+
+        ``warmup_input`` sets the drive during the warm-up. ``"zero"`` (v0.1): none.
+        ``"rest"``: the input term of a sample of 0, without noise. A beat standardised on its
+        own has mean 0, so this is the input level a beat varies around: with the
+        non-negative encoding, the inducer level ``-input_range[0]`` (3 by default) in every
+        induced colony. The colonies then settle under that level, and a flat input continues
+        the warm-up (except with the abstract coupling: no warm-up has its recurrent term).
+        The warm-up needs the input weights, so it runs when the node is initialised (on its
+        first input, in every copy; needs ``geometry="per_node"``).
         """
         if units is None and not is_array(W):
             raise ValueError("'units' must be specified if 'W' is not a matrix.")
@@ -172,6 +182,10 @@ class BioReservoir(Node):
             raise ValueError("input_levels other than 1 need geometry='per_node'.")
         if float(reset_noise) < 0:
             raise ValueError(f"reset_noise must be 0 or more, got {reset_noise}.")
+        if warmup_input not in ("zero", "rest"):
+            raise ValueError(f"warmup_input must be 'zero' or 'rest', got {warmup_input!r}.")
+        if warmup_input == "rest" and geometry != "per_node":
+            raise ValueError("warmup_input='rest' needs geometry='per_node'.")
 
         rng = rand_generator(seed)
         noise_kwargs = noise_kwargs or {}
@@ -216,6 +230,7 @@ class BioReservoir(Node):
         self.input_range = (low, high)
         self.input_sign = input_sign
         self.input_levels = input_levels
+        self.warmup_input = warmup_input
         if couple_vars is None:
             couple_vars = np.ones(len(self.output_indices))
         self.couple_vars = np.asarray(couple_vars, dtype=float).reshape(-1)
@@ -365,10 +380,9 @@ class BioReservoir(Node):
             for k, v in self.hypers.items():
                 logger.debug("%s: %s", k, v)
             logger.debug("------------------------------------")
-        self._warmup_nodes()
-        self._warmup_states = self.states.copy()
-        self._warmup_ring = ((self._ring.copy(), self._ring_pos)
-                             if self.delay_scheme == "substep" else None)
+        if self.warmup_input == "zero":
+            self._warmup_nodes()
+        self._save_warmup()
         self.t = 0
 
         # Diagnostics are optional and can be expensive (extra allocations/copies).
@@ -479,11 +493,28 @@ class BioReservoir(Node):
         self.states[:-1] = self.states[1:]
         self.states[-1] = new_state
 
-    def _warmup_nodes(self) -> None:
-        zero_input = np.zeros(self.units)
-        logger.info("Warmup: running %s steps of zero input", self.warmup)
+    def _warmup_nodes(self, drive: np.ndarray | None = None) -> None:
+        drive = np.zeros(self.units) if drive is None else drive
+        logger.info("Warmup: running %s steps of %s input", self.warmup, self.warmup_input)
         for _ in range(self.warmup):
-            self._step(zero_input)
+            self._step(drive)
+
+    def _save_warmup(self) -> None:
+        self._warmup_states = self.states.copy()
+        self._warmup_ring = ((self._ring.copy(), self._ring_pos)
+                             if self.delay_scheme == "substep" else None)
+
+    def _warm_up_at_rest(self) -> None:
+        """The warm-up of ``warmup_input="rest"``, from the start state (no warm-up ran yet)."""
+        self.states = self._warmup_states.copy()
+        if self._warmup_ring is not None:
+            self._ring, self._ring_pos = self._warmup_ring[0].copy(), self._warmup_ring[1]
+        u = np.zeros((self.input_dim, 1))
+        if self.input_encoding == "nonnegative":
+            low, high = self.input_range
+            u = np.clip(u, low, high) - low
+        self._warmup_nodes(self.dde_scaling * (self.Win @ u + self.bias))
+        self._save_warmup()
 
     def _step(self, x: np.ndarray) -> np.ndarray:
         """Advance the DDE state by one input timestep.
@@ -687,6 +718,8 @@ def _initialize_per_node(
     reservoir.set_param("Win", Win.astype(dtype))
     reservoir.set_param("bias", bias.astype(dtype))
     reservoir.set_param("internal_state", reservoir.zero_state())
+    if getattr(reservoir, "warmup_input", "zero") == "rest":
+        reservoir._warm_up_at_rest()
 
 
 def _forward(reservoir: BioReservoir, x: np.ndarray) -> np.ndarray:

@@ -85,6 +85,7 @@ RESERVOIR_KEYS = {
         "rc_connectivity", "geometry", "couple_vars", "delay_scheme", "normalize_after_masks",
         "coupling", "diffusion_rate", "input_encoding", "input_range", "input_sign",
         "heterogeneity_density_cv", "heterogeneity_dilution_cv", "input_levels", "reset_noise",
+        "warmup_input",
     ),
     "esn": (
         "units", "esn_leak_rate", "esn_spectral_radius", "esn_activation", "input_scaling",

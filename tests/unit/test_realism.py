@@ -49,7 +49,7 @@ P_LIKE = dict(units=16, warmup=5, rk4_substeps=16, input_scaling=0.155113,
               input_encoding="nonnegative", input_sign="positive", param_heterogeneity_cv=0.065,
               param_heterogeneity_seed=7)
 ZERO = dict(heterogeneity_density_cv=0.0, heterogeneity_dilution_cv=0.0, input_levels=1,
-            reset_noise=0.0)
+            reset_noise=0.0, warmup_input="zero")
 X = np.random.default_rng(1).normal(size=(15, 1))
 
 
@@ -394,6 +394,57 @@ class TestImperfectReset:
 
 
 # ---------------------------------------------------------------------------
+# Warm-up input
+# ---------------------------------------------------------------------------
+
+class TestWarmupInput:
+    def _built(self, **kwargs):
+        node, _ = build_reservoir(dict(P_LIKE, noise_in=0.0, **kwargs), seed=3)
+        return node
+
+    def test_a_flat_input_continues_the_rest_warm_up(self):
+        long = self._built(warmup=12, warmup_input="rest")
+        long.initialize(np.zeros((1, 1)))
+        short = self._built(warmup=5, warmup_input="rest")
+        short.run(np.zeros((7, 1)), reset=True)  # a beat at its mean, z = 0 throughout
+        np.testing.assert_array_equal(short.states[-1], long._warmup_states[-1])
+        zero = self._built(warmup=5)
+        zero.run(np.zeros((7, 1)), reset=True)
+        assert not np.allclose(zero.states[-1], long._warmup_states[-1])
+
+    def test_every_beat_starts_from_the_rest_warm_up(self):
+        node = self._built(warmup=5, warmup_input="rest")
+        first = node.run(X, reset=True)
+        np.testing.assert_array_equal(node.run(X, reset=True), first)
+        fresh = self._built(warmup=5, warmup_input="rest")
+        fresh.initialize(np.zeros((1, 1)))
+        np.testing.assert_array_equal(fresh._warmup_states, node._warmup_states)
+        assert not np.allclose(node._warmup_states[-1], self._built(warmup=5).states[-1])
+
+    def test_worker_processes_warm_up_alike(self):
+        node, _ = build_reservoir(dict(P_LIKE, warmup_input="rest"), seed=3)
+        beats = _beats(6)
+        alone = simulate_beats(node, beats, noise_seed=5)
+        np.testing.assert_array_equal(simulate_beats(node, beats, noise_seed=5, processes=2),
+                                      alone)
+        zero, _ = build_reservoir(dict(P_LIKE), seed=3)
+        assert not np.allclose(simulate_beats(zero, beats, noise_seed=5), alone)
+
+    def test_a_signed_input_without_bias_rests_at_no_input(self):
+        signed = dict(input_encoding="signed", input_sign="mixed")
+        rest = self._built(warmup_input="rest", **signed)
+        rest.initialize(np.zeros((1, 1)))
+        np.testing.assert_array_equal(rest._warmup_states,
+                                      self._built(**signed)._warmup_states)
+
+    def test_the_option_is_checked(self):
+        with pytest.raises(ValueError, match="warmup_input must be 'zero' or 'rest'"):
+            self._built(warmup_input="baseline")
+        with pytest.raises(ValueError, match="warmup_input='rest' needs geometry='per_node'"):
+            build_reservoir(dict(V0_1_LIKE, warmup_input="rest"), seed=3)
+
+
+# ---------------------------------------------------------------------------
 # Options at zero
 # ---------------------------------------------------------------------------
 
@@ -426,7 +477,7 @@ class TestOptionsAtZero:
 
 class TestConfigs:
     OPTIONS = dict(heterogeneity_density_cv=0.1, heterogeneity_dilution_cv=0.2,
-                   input_levels=3, reset_noise=0.01)
+                   input_levels=3, reset_noise=0.01, warmup_input="rest")
 
     def test_the_builder_passes_and_records_the_options(self):
         node, attrs = build_reservoir(dict(P_LIKE, **self.OPTIONS), seed=1)
