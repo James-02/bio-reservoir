@@ -103,8 +103,8 @@ SCALAR_METRICS = ("f1", "f1_macro", "f1_weighted", "accuracy", "precision", "rec
 # Ridge strengths a RidgeCV readout chooses from: 10^-4 to 10^6, two per decade.
 RIDGE_ALPHAS = tuple(float(a) for a in np.logspace(-4, 6, 21))
 
-# Third seed word of the stream that scrambles a beat (training.observation uses 1 and 2,
-# training.readouts 3), so its draws are independent of theirs.
+# Third seed word of the stream that scrambles a beat; training.observation's streams use 1
+# and 2, so the draws are independent.
 _SCRAMBLE = 4
 
 # Named settings; explicit config values win. ``v0.1`` reproduces the v0.1 code
