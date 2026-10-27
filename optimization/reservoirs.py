@@ -79,7 +79,8 @@ def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, 
 
     For the bioreservoir, ``params["delay"]`` sets the delay of the colonies' gene-expression
     feedback (the delayed Hi in the promoter term), in input steps: 0 removes it (an ordinary
-    differential equation). Without it the model default applies
+    differential equation; the ``frozen`` delay scheme of ``v0.1`` reads Hi once per input
+    step, so there the feedback lags by up to one step). Without it the model default applies
     (``bioreservoir.dde.DEFAULT_DDE_PARAMS["delay"]``, 10 steps).
     """
     reservoir_type = normalize_reservoir_type(params.get("reservoir_type", "bioreservoir"))
