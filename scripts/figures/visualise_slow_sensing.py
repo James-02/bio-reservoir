@@ -16,7 +16,8 @@ a study that does not search PATH ignores it.
         experiments/v0.2/slow-sensing/{centre,uncoupled-centre,esn,raw}.yaml \\
         --fix task.condition=device --fix reservoir.params.input_scaling=0.155113
 
-It writes ``results/figures/slow-sensing/<study name>.png``, or ``compare-<condition>.png``
+It writes ``results/figures/slow-sensing/<study name>.png``, with ``-<setting><value>`` for each
+``--fix`` (for example ``-measurement_noise0.03``), or ``compare-<condition>.png``
 (``--formats pdf,svg`` adds a PDF and an SVG).
 """
 
@@ -131,7 +132,8 @@ def main() -> None:
         x = args.x or next(p for p in cfg["study"]["search"]
                            if p not in (PATTERN, SEED, "task.condition"))
         fig = sweep(trials, x, f"{_short(cfg)}{f', {condition} delivery' if condition else ''}")
-        name = study_name(cfg)
+        name = study_name(cfg) + "".join(f"-{path.rsplit('.', 1)[-1]}{value}"
+                                          for path, value in fixed.items())
     paths = save_figure(fig, name, topic="slow-sensing", formats=args.formats)
     print("Saved:", ", ".join(str(p) for p in paths))
 
