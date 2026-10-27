@@ -9,8 +9,8 @@ tasks. Patterns (balanced classes, ``n_per_class`` traces each):
   cycle, a random phase and amplitudes of 0.8-1.2.
 - ``ramp`` (2): an asymmetric triangle, slow rise and fast fall or the reverse, then at
   least 40 min of baseline.
-- ``order`` (2): pulse A (30 min at 0.5) then pulse B (10 min at 1.0), or B then A; the two
-  have equal areas.
+- ``order`` (2): pulse A (30 min at 0.5) then pulse B (10 min at 1.0), or B then A; both
+  classes get the same two pulses, so the same dose.
 - ``shape`` (4): a square, triangle, sawtooth or Gaussian pulse of amplitude 0.3-1.5.
 - ``xor`` and ``parity3`` (2): two or three slots, each with an A or a B pulse; the class is
   the parity of the number of B pulses.
