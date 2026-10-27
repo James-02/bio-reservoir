@@ -12,7 +12,7 @@ the commit, the host and its resolved config.
 | `tracking/` | The tracking set, rerun at every tagged code version: each design at three reservoir seeds | 5 | 15 |
 | `phase-1/` | Phase 1 grids: one or two design parameters at a time around the P centre, at three reservoir seeds | 13 | 549 |
 | `phase-2/` | Phase 2 seeded TPE searches over every design parameter: P lattice, A′, U and the ESN (clean mean and one noisy image); and the five best trials of each at reservoir seeds 6338–6340 (`P2-<design>-top`) | 5 + 5 | 1,200 + 75 |
-| `slow-sensing/` | The designs on the eight inducer-pattern tasks, and the colony budget, coupling and memory of P (below) | 13 | 924 |
+| `slow-sensing/` | The designs on the eight inducer-pattern tasks, and the colony budget, coupling and memory of P (below) | 17 | 988 |
 
 Study names follow the convention of the `v0.1` studies (SI Table S5): a phase prefix and
 a descriptor, with each phase keeping its `v0.1` meaning. Phase 1 (`P1-`, folder `phase-1/`)
@@ -118,6 +118,7 @@ python scripts/figures/visualise_slow_sensing.py --compare \
 | `slow-sensing-esn-image-best` | The ESN of P2-esn-image trial 178 (slow leak): 8 tasks × ideal or pump | 48 |
 | `slow-sensing-leaky-bank` | Leaky-integrator bank, clean or noisy image: 8 tasks × ideal or pump | 32 |
 | `slow-sensing-raw` | Ridge on the whole trace: 8 tasks × ideal or pump | 16 |
+| `slow-sensing-raw-rf`, `-raw-histgb`, `-raw-svm`, `-raw-knn` | A nonlinear classifier on the whole trace, settings by inner CV; the best of the four per task is the ceiling for one image | 16 each |
 | `slow-sensing-centre-units-noise` | P centre on 100–1,024 traps × 1% or 3% noise, 4 tasks | 96 |
 | `slow-sensing-centre-units-traces` | P centre on 256–1,024 traps × 400 or 800 traces per class, 2 tasks | 60 |
 | `slow-sensing-centre-coupling` | P centre at coupling rate 0–3, 4 tasks | 72 |
