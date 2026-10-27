@@ -13,9 +13,13 @@ without it, the drive is the input term and only that is drawn.
 
     python scripts/figures/visualise_reservoir_states.py \\
         experiments/v0.2/designs/abstract.yaml --drive
+    python scripts/figures/visualise_reservoir_states.py \\
+        experiments/v0.2/slow-sensing/centre.yaml --task pattern=order --drive
 
-It writes ``results/figures/states/<name>-states-beat<N>-<var>.png`` and
-``<name>-drive-beat<N>.png`` (``--formats pdf,svg`` adds a PDF and an SVG).
+With an inducer task the "beat" is trace ``--beat`` of the task's pool; the script prints
+its class. It writes ``results/figures/states/<name>-states-beat<N>-<var>.png`` and
+``<name>-drive-beat<N>.png``, where ``<name>`` ends with the ``--task`` values
+(``--formats pdf,svg`` adds a PDF and an SVG).
 """
 
 from __future__ import annotations
@@ -29,11 +33,13 @@ from matplotlib.colors import LogNorm
 
 from training.figures import (
     VARIABLES,
+    add_task_option,
     array_states,
     encoded_input,
     input_name,
     run_config,
     task_beat,
+    task_settings,
 )
 from utils.visualisation import STATE_NAMES, STYLE, add_formats_option, save_figure
 
@@ -99,10 +105,11 @@ def main() -> None:
     parser.add_argument("--log", action="store_true", help="A logarithmic colour scale.")
     parser.add_argument("--drive", action="store_true",
                         help="Also draw the terms of the drive (Fig. 4a of v0.1).")
+    add_task_option(parser)
     add_formats_option(parser)
     args = parser.parse_args()
 
-    cfg = run_config(args.config)
+    cfg = run_config(args.config, task_settings(args.task))
     beat, beat_class = task_beat(cfg, args.beat)
     states, terms = array_states(cfg, beat, args.beat)
     plt.style.use(STYLE)

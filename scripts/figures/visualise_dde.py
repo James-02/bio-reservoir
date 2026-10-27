@@ -9,9 +9,12 @@ receives it (:func:`training.figures.encoded_input`). The end of the warm-up, wi
 input, is drawn dashed (its last ``--warmup-steps``), and the beat starts at timestep 0.
 
     python scripts/figures/visualise_dde.py experiments/v0.2/designs/centre.yaml --beat 0
+    python scripts/figures/visualise_dde.py experiments/v0.2/slow-sensing/centre.yaml \\
+        --task pattern=order --task condition=device --beat 0
 
-It writes ``results/figures/states/<name>-dde-beat<N>.png`` (``--formats pdf,svg`` adds a PDF
-and an SVG).
+With an inducer task the "beat" is trace ``--beat`` of the task's pool; the script prints
+its class. It writes ``results/figures/states/<name>-dde-beat<N>.png``, where ``<name>`` ends
+with the ``--task`` values (``--formats pdf,svg`` adds a PDF and an SVG).
 """
 
 from __future__ import annotations
@@ -25,11 +28,13 @@ from matplotlib.lines import Line2D
 
 from training.figures import (
     VARIABLES,
+    add_task_option,
     colony_states,
     encoded_input,
     input_name,
     run_config,
     task_beat,
+    task_settings,
 )
 from utils.visualisation import OKABE_ITO, STATE_NAMES, STYLE, add_formats_option, save_figure
 
@@ -98,10 +103,11 @@ def main() -> None:
                                          "10 times the config's input_scaling).")
     parser.add_argument("--warmup-steps", type=int, default=100,
                         help="Steps at the end of the warm-up to draw (default: 100).")
+    add_task_option(parser)
     add_formats_option(parser)
     args = parser.parse_args()
 
-    cfg = run_config(args.config)
+    cfg = run_config(args.config, task_settings(args.task))
     gain = float(cfg["reservoir"]["params"]["input_scaling"])
     scales = ([float(s) for s in args.scales.split(",") if s.strip()] if args.scales
               else [0.1 * gain, gain, 10 * gain])

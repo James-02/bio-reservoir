@@ -34,6 +34,17 @@ class TestConfig:
         beat, name = figures.task_beat(cfg, 0)
         assert beat.shape == (240, 1) and name == "A then B"
 
+    def test_task_settings_change_the_task_and_name_the_figures(self, small_design):
+        design = small_design("centre")
+        config = design.with_name("inducer.yaml")
+        config.write_text(f"base: {design.name}\n"
+                          "task: {type: inducer, pattern: order, n_per_class: 5}\n")
+        settings = figures.task_settings([["pattern", "shape"], ["image_delay", "30"]])
+        cfg = figures.run_config(config, settings)
+        assert cfg["task"]["pattern"] == "shape" and cfg["task"]["image_delay"] == 30
+        assert cfg["name"].endswith("-shape-30")
+        assert figures.task_beat(cfg, 0)[0].shape == (270, 1)
+
     def test_the_input_is_the_inducer_level_the_colonies_receive(self, small_design,
                                                                  ecg_data):
         cfg = figures.run_config(small_design("centre", noise_in=0.0))
