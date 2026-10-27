@@ -1,0 +1,25 @@
+# Slow sensing: an RBF support vector machine on the whole input trace (240 values), its
+# settings chosen by inner three-fold CV on macro F1; one of the four nonlinear readers (see
+# raw-rf). Gamma: 0.3, 1 and 3 times 1/240, the "scale" value for 240 standardised features.
+#    python -m training.run study experiments/v0.2/slow-sensing/raw-svm.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/slow-sensing/raw-svm.yaml
+name: slow-sensing-raw-svm
+description: >-
+  No reservoir: an RBF SVM (C 1-1,000 and gamma 0.00125-0.0125 by inner CV) on the whole
+  input trace, the eight tasks x ideal or pump delivery.
+seed: 6337
+task: {type: inducer, pattern: freq, condition: ideal, n_per_class: 400, scale: sd}
+reservoir: {type: none}
+readout:
+  classifier: SVM
+  scale: true
+  params: {kernel: rbf, class_weight: balanced}
+  search: {C: [1.0, 10.0, 100.0, 1000.0], gamma: [0.00125, 0.0042, 0.0125]}
+cv: {folds: 5, seed: 6337}
+study:
+  trials: 16
+  metric: f1
+  sampler: {type: grid, seed: 6337}
+  search:
+    task.pattern: {type: categorical, choices: [freq, ramp, order, shape, xor, parity3, xor_tr, parity3_tr]}
+    task.condition: {type: categorical, choices: [ideal, device]}

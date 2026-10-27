@@ -1,0 +1,20 @@
+# Slow sensing: the colony budget: the P centre on square lattices of 100-1,024
+# traps, read with 1% or 3% measurement noise.
+#    python -m training.run study experiments/v0.2/slow-sensing/centre-units-noise.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/slow-sensing/centre-units-noise.yaml --group
+base: ../designs/centre.yaml
+name: slow-sensing-centre-units-noise
+description: >-
+  The P centre on 100, 256, 576 or 1,024 traps x 1% or 3% measurement noise x the freq,
+  order, ramp and shape tasks (pump delivery) x three reservoir seeds.
+task: {type: inducer, pattern: freq, condition: device, n_per_class: 400, scale: sd}
+reservoir: {seed: 6337, params: {input_range: [0.0, 20.0]}}
+study:
+  trials: 96
+  metric: f1
+  sampler: {type: grid, seed: 6337}
+  search:
+    reservoir.params.units: {type: int, choices: [100, 256, 576, 1024]}
+    features.measurement_noise: {type: float, choices: [0.01, 0.03]}
+    task.pattern: {type: categorical, choices: [freq, order, ramp, shape]}
+    reservoir.seed: {type: categorical, choices: [6337, 6338, 6339]}

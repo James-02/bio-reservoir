@@ -13,9 +13,13 @@ without it, the drive is the input term and only that is drawn.
 
     python scripts/figures/visualise_reservoir_states.py \\
         experiments/v0.2/designs/abstract.yaml --drive
+    python scripts/figures/visualise_reservoir_states.py \\
+        experiments/v0.2/slow-sensing/centre.yaml --task pattern=order --drive
 
-It writes ``results/figures/states/<name>-states-beat<N>-<var>.png`` and
-``<name>-drive-beat<N>.png`` (``--formats pdf,svg`` adds a PDF and an SVG).
+With an inducer task the "beat" is trace ``--beat`` of the task's pool; the script prints
+its class. It writes ``results/figures/states/<name>-states-beat<N>-<var>.png`` and
+``<name>-drive-beat<N>.png``, where ``<name>`` ends with the ``--task`` values
+(``--formats pdf,svg`` adds a PDF and an SVG).
 """
 
 from __future__ import annotations
@@ -27,7 +31,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LogNorm
 
-from training.figures import VARIABLES, array_states, encoded_input, run_config, task_beat
+from training.figures import (
+    VARIABLES,
+    add_task_option,
+    array_states,
+    encoded_input,
+    input_name,
+    run_config,
+    task_beat,
+    task_settings,
+)
 from utils.visualisation import STATE_NAMES, STYLE, add_formats_option, save_figure
 
 #: The drive terms: label, Okabe-Ito colour, line width and style (readable in greyscale).
@@ -53,9 +66,9 @@ def draw_states(states: np.ndarray, var: str = "I", log: bool = False) -> plt.Fi
 
 
 def draw_drive(terms: np.ndarray, beat_input: np.ndarray, beat_class: str,
-               input_scaling: float, rc_scaling: float) -> plt.Figure:
+               input_scaling: float, rc_scaling: float, source: str = "ECG") -> plt.Figure:
     """The mean size over the colonies of each drive term (``terms``, steps x 3) above the
-    beat's input."""
+    beat's input (``source``: ECG or inducer)."""
     fig, (ax, ax_ecg) = plt.subplots(2, 1, figsize=(14, 6), sharex=True, layout="constrained",
                                      gridspec_kw={"height_ratios": [2.2, 1.2]})
     t = np.arange(len(terms))
@@ -71,8 +84,8 @@ def draw_drive(terms: np.ndarray, beat_input: np.ndarray, beat_class: str,
         scalings.append(rf"$\alpha_r = {rc_scaling:.2g}$")
     ax.annotate(",\u2002".join(scalings), xy=(0.02, 0.05), xycoords="axes fraction",
                 fontsize=9, bbox=BOX)
-    ax_ecg.plot(t, beat_input, color="#CC0000", lw=1.6, label=f"ECG: {beat_class}")
-    ax_ecg.set(ylabel="ECG input", xlabel="Timestep")
+    ax_ecg.plot(t, beat_input, color="#CC0000", lw=1.6, label=f"{source}: {beat_class}")
+    ax_ecg.set(ylabel=f"{source} input", xlabel="Timestep")
     ax_ecg.legend(loc="upper right", fontsize=8)
     for a, grid in ((ax, 0.25), (ax_ecg, 0.18)):
         a.grid(True, alpha=grid)
@@ -92,10 +105,11 @@ def main() -> None:
     parser.add_argument("--log", action="store_true", help="A logarithmic colour scale.")
     parser.add_argument("--drive", action="store_true",
                         help="Also draw the terms of the drive (Fig. 4a of v0.1).")
+    add_task_option(parser)
     add_formats_option(parser)
     args = parser.parse_args()
 
-    cfg = run_config(args.config)
+    cfg = run_config(args.config, task_settings(args.task))
     beat, beat_class = task_beat(cfg, args.beat)
     states, terms = array_states(cfg, beat, args.beat)
     plt.style.use(STYLE)
@@ -105,7 +119,7 @@ def main() -> None:
     if args.drive:
         figures.append((draw_drive(terms, encoded_input(cfg, beat), beat_class,
                                    float(params["input_scaling"]),
-                                   float(params.get("rc_scaling", 0.0))),
+                                   float(params.get("rc_scaling", 0.0)), input_name(cfg)),
                         f"{name}-drive-beat{args.beat}"))
     print(f"Beat {args.beat}: {beat_class}")
     for fig, figure_name in figures:

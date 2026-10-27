@@ -18,10 +18,9 @@ from scipy import sparse
 
 from bioreservoir import distance_matrix
 from optimization.reservoirs import _build_bioreservoir_topology, build_reservoir
-from training.run import load_config, load_task, resolve
+from training.run import class_names, load_config, load_task, resolve
 from training.simulate import beat_seed, reseed_noise
 from utils.preprocessing import class_indices, standardize_data
-from utils.visualisation import class_names
 
 #: The oscillator's variables, in the order of its state: AiiA, LuxI, and AHL in the cells
 #: and in the medium.
@@ -31,23 +30,47 @@ VARIABLES = ("A", "I", "Hi", "He")
 TERMS = ("inp_term", "rec_term", "drive")
 
 
-def run_config(path: str | Path) -> dict:
+def run_config(path: str | Path, task: dict | None = None) -> dict:
     """The resolved run config at ``path`` (the ``study`` section of a study config is
-    ignored); its reservoir must be a bio-reservoir."""
+    ignored), with ``task`` settings changed (their values join the name, so that each
+    setting's figures get their own files); its reservoir must be a bio-reservoir."""
     cfg = load_config(path)
     cfg.pop("study", None)
+    if task:
+        cfg["task"] = {**(cfg.get("task") or {}), **task}
+        cfg["name"] = "-".join([cfg["name"], *(str(v) for v in task.values())])
     cfg = resolve(cfg)
     if cfg["reservoir"].get("type") != "bioreservoir":
         raise ValueError(f"{path} is not a bio-reservoir config.")
     return cfg
 
 
+def add_task_option(parser) -> None:
+    """``--task KEY=VALUE`` (repeatable): change a setting of the config's task."""
+    parser.add_argument("--task", action="append", default=[], metavar="KEY=VALUE",
+                        type=lambda item: item.split("=", 1),
+                        help="Change a task setting, e.g. pattern=order, condition=device or "
+                             "image_delay=60 for an inducer task (repeatable).")
+
+
+def task_settings(items: list[list[str]]) -> dict:
+    """The settings of ``--task`` options, as YAML values (``60`` is a number)."""
+    import yaml
+
+    return {key: yaml.safe_load(value) for key, value in items}
+
+
+def input_name(cfg: dict) -> str:
+    """What the config's task feeds the colonies, for labels: ``ECG`` or ``Inducer``."""
+    return "Inducer" if cfg["task"].get("type") == "inducer" else "ECG"
+
+
 def task_beat(cfg: dict, index: int) -> tuple[np.ndarray, str]:
-    """Beat ``index`` of the config's beat pool, scaled as a run scales it, as a
-    (steps, 1) array, and the name of its class."""
+    """Beat ``index`` of the config's beat pool (an ECG beat or an inducer trace), scaled as
+    a run scales it, as a (steps, 1) array, and the name of its class."""
     X, Y, _ = load_task(cfg["task"])
     X, _ = standardize_data(X, X[:1], scaler_type=str(cfg["task"]["scaler"]))
-    names = class_names(2 if cfg["task"]["labels"] == "binary" else 5)
+    names = class_names(cfg["task"])
     return np.asarray(X[index], dtype=float).reshape(-1, 1), names[class_indices(Y)[index]]
 
 

@@ -20,9 +20,30 @@ class TestConfig:
     def test_a_beat_is_scaled_as_a_run_scales_it(self, small_design, ecg_data):
         cfg = figures.run_config(small_design("centre"))
         beat, name = figures.task_beat(cfg, 0)
-        assert beat.shape == (187, 1) and name in figures.class_names(5)
+        assert beat.shape == (187, 1) and name in figures.class_names(cfg["task"])
         assert np.mean(beat) == pytest.approx(0.0, abs=1e-9)  # sequence_zscore
         assert np.std(beat) == pytest.approx(1.0, abs=1e-6)
+
+    def test_an_inducer_task_gives_a_trace_and_the_name_of_its_pattern_class(self,
+                                                                            small_design):
+        design = small_design("centre")
+        config = design.with_name("inducer.yaml")
+        config.write_text(f"base: {design.name}\n"
+                          "task: {type: inducer, pattern: order, n_per_class: 5}\n")
+        cfg = figures.run_config(config)
+        beat, name = figures.task_beat(cfg, 0)
+        assert beat.shape == (240, 1) and name == "A then B"
+
+    def test_task_settings_change_the_task_and_name_the_figures(self, small_design):
+        design = small_design("centre")
+        config = design.with_name("inducer.yaml")
+        config.write_text(f"base: {design.name}\n"
+                          "task: {type: inducer, pattern: order, n_per_class: 5}\n")
+        settings = figures.task_settings([["pattern", "shape"], ["image_delay", "30"]])
+        cfg = figures.run_config(config, settings)
+        assert cfg["task"]["pattern"] == "shape" and cfg["task"]["image_delay"] == 30
+        assert cfg["name"].endswith("-shape-30")
+        assert figures.task_beat(cfg, 0)[0].shape == (270, 1)
 
     def test_the_input_is_the_inducer_level_the_colonies_receive(self, small_design,
                                                                  ecg_data):

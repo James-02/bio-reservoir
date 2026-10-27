@@ -173,6 +173,75 @@ class TestStatesFigure:
         assert _saved(figure_dir) == ["states/toy-abstract-drive-beat2.png",
                                       "states/toy-abstract-states-beat2-He.png"]
 
+    def test_an_inducer_trace_is_labelled_as_one(self, small_design, load_script, pyplot,
+                                                 monkeypatch, capsys):
+        design = small_design("centre")
+        config = design.with_name("inducer.yaml")
+        config.write_text(f"base: {design.name}\n"
+                          "task: {type: inducer, pattern: shape, n_per_class: 5}\n")
+        script = load_script("figures/visualise_reservoir_states")
+        drawn = []
+        monkeypatch.setattr(script, "save_figure",
+                            lambda fig, name, **kw: drawn.append(fig) or [])
+        monkeypatch.setattr("sys.argv", ["visualise_reservoir_states", str(config), "--drive"])
+        script.main()
+        beat_axes = drawn[1].axes[1]
+        assert beat_axes.get_ylabel() == "Inducer input"
+        assert beat_axes.get_legend().get_texts()[0].get_text() == "Inducer: Square"
+        assert capsys.readouterr().out.startswith("Beat 0: Square")
+
+
+class TestInducerTasksFigure:
+    """scripts/figures/visualise_inducer_tasks.py: example traces of every class of every task."""
+
+    def test_a_panel_per_pattern_and_a_labelled_row_per_class(self, load_script, pyplot):
+        from training import inducer
+
+        script = load_script("figures/visualise_inducer_tasks")
+        fig = script.draw("device", per_class=2, image_delay=30)
+        assert len(fig.axes) == len(inducer.PATTERNS)
+        for ax, pattern in zip(fig.axes, inducer.PATTERNS, strict=True):
+            names = inducer.CLASS_NAMES[pattern]
+            assert [t.get_text() for t in ax.texts] == list(names)
+            assert len(ax.lines) == 2 * len(names)
+            assert len(ax.lines[0].get_xdata()) == 240 + 30
+
+    def test_the_script_saves_the_figure(self, figure_dir, run_script):
+        run_script("figures/visualise_inducer_tasks", "--per-class", "1")
+        assert _saved(figure_dir) == ["inducer/inducer-tasks-ideal.png"]
+
+
+class TestSlowSensingFigure:
+    """scripts/figures/visualise_slow_sensing.py: slow-sensing scores from study trials."""
+
+    @staticmethod
+    def _trials():
+        import pandas as pd
+
+        rows = [{"task.pattern": pattern, "task.image_delay": delay, "reservoir.seed": seed,
+                 "f1": 0.9 - delay / 1000 + seed / 1e5, "state": "COMPLETE"}
+                for pattern in ("order", "shape") for delay in (0, 60)
+                for seed in (6337, 6338)]
+        return pd.DataFrame(rows)
+
+    def test_a_sweep_has_a_line_per_task_at_the_mean_over_seeds(self, load_script, pyplot):
+        script = load_script("figures/visualise_slow_sensing")
+        ax = script.sweep(self._trials(), "task.image_delay", "toy").axes[0]
+        assert [t.get_text() for t in ax.get_legend().get_texts()] == ["order", "shape"]
+        np.testing.assert_allclose(ax.lines[0].get_ydata(), [0.9 + 0.063375, 0.84 + 0.063375])
+        assert [t.get_text() for t in ax.get_xticklabels()] == ["0", "60"]
+        assert ax.get_xlabel() == "Image delay after the pattern (min)"
+
+    def test_a_comparison_has_a_marker_per_study_and_the_chance_of_each_task(self, load_script,
+                                                                           pyplot):
+        script = load_script("figures/visualise_slow_sensing")
+        trials = self._trials()
+        ax = script.compare({"a": trials, "b": trials}, "toy").axes[0]
+        assert [t.get_text() for t in ax.get_legend().get_texts()] == ["Chance", "a", "b"]
+        assert [t.get_text() for t in ax.get_xticklabels()] == ["order", "shape"]
+        chance = ax.collections[0].get_segments()
+        assert [segment[0][1] for segment in chance] == [0.5, 0.25]
+
 
 class TestTopologyFigure:
     """scripts/figures/visualise_topology.py: the kernel and the colonies with their links."""

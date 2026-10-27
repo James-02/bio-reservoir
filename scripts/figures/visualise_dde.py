@@ -9,9 +9,12 @@ receives it (:func:`training.figures.encoded_input`). The end of the warm-up, wi
 input, is drawn dashed (its last ``--warmup-steps``), and the beat starts at timestep 0.
 
     python scripts/figures/visualise_dde.py experiments/v0.2/designs/centre.yaml --beat 0
+    python scripts/figures/visualise_dde.py experiments/v0.2/slow-sensing/centre.yaml \\
+        --task pattern=order --task condition=device --beat 0
 
-It writes ``results/figures/states/<name>-dde-beat<N>.png`` (``--formats pdf,svg`` adds a PDF
-and an SVG).
+With an inducer task the "beat" is trace ``--beat`` of the task's pool; the script prints
+its class. It writes ``results/figures/states/<name>-dde-beat<N>.png``, where ``<name>`` ends
+with the ``--task`` values (``--formats pdf,svg`` adds a PDF and an SVG).
 """
 
 from __future__ import annotations
@@ -23,7 +26,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
 
-from training.figures import VARIABLES, colony_states, encoded_input, run_config, task_beat
+from training.figures import (
+    VARIABLES,
+    add_task_option,
+    colony_states,
+    encoded_input,
+    input_name,
+    run_config,
+    task_beat,
+    task_settings,
+)
 from utils.visualisation import OKABE_ITO, STATE_NAMES, STYLE, add_formats_option, save_figure
 
 LINES = {"I": {"color": OKABE_ITO[0], "lw": 1.8, "ls": "-"},
@@ -34,10 +46,10 @@ BOX = {"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 2}
 
 
 def draw(warm: np.ndarray, rest: np.ndarray, driven: dict[float, np.ndarray],
-         beat_input: np.ndarray, beat_class: str, config_scaling: float | None = None
-         ) -> plt.Figure:
+         beat_input: np.ndarray, beat_class: str, config_scaling: float | None = None,
+         source: str = "ECG") -> plt.Figure:
     """The colony's LuxI and AiiA without input and at each scaling in ``driven``, after the
-    ``warm`` steps of the warm-up, and the beat's input below."""
+    ``warm`` steps of the warm-up, and the beat's input (``source``: ECG or inducer) below."""
     w = len(warm)
     t = np.arange(-w, len(beat_input))
     start = max(w - 1, 0)  # each trace continues from the last step of the warm-up
@@ -72,9 +84,9 @@ def draw(warm: np.ndarray, rest: np.ndarray, driven: dict[float, np.ndarray],
         ax.axvline(-1, color="black", alpha=0.35, lw=1.0)
     ax.plot(t[start:], u[start:], **ECG)
     ax.grid(True, alpha=0.18)
-    ax.set_ylabel("ECG Input")
-    ax.legend(handles=[Line2D([], [], **ECG, label=f"ECG Class: {beat_class}"), warm_handle],
-              loc="upper right", fontsize=8)
+    ax.set_ylabel(f"{source} Input")
+    ax.legend(handles=[Line2D([], [], **ECG, label=f"{source} Class: {beat_class}"),
+                       warm_handle], loc="upper right", fontsize=8)
     fig.supxlabel("Timestep")
     fig.supylabel("Genetic Biopixel States")
     return fig
@@ -91,10 +103,11 @@ def main() -> None:
                                          "10 times the config's input_scaling).")
     parser.add_argument("--warmup-steps", type=int, default=100,
                         help="Steps at the end of the warm-up to draw (default: 100).")
+    add_task_option(parser)
     add_formats_option(parser)
     args = parser.parse_args()
 
-    cfg = run_config(args.config)
+    cfg = run_config(args.config, task_settings(args.task))
     gain = float(cfg["reservoir"]["params"]["input_scaling"])
     scales = ([float(s) for s in args.scales.split(",") if s.strip()] if args.scales
               else [0.1 * gain, gain, 10 * gain])
@@ -102,7 +115,8 @@ def main() -> None:
     warm, rest, driven = colony_states(cfg, beat, args.beat, scales)
     shown = warm[len(warm) - min(max(args.warmup_steps, 0), len(warm)):]
     plt.style.use(STYLE)
-    fig = draw(shown, rest, driven, encoded_input(cfg, beat), beat_class, gain)
+    fig = draw(shown, rest, driven, encoded_input(cfg, beat), beat_class, gain,
+               input_name(cfg))
     print(f"Beat {args.beat}: {beat_class}")
     paths = save_figure(fig, f"{cfg['name']}-dde-beat{args.beat}", topic="states",
                         formats=args.formats)

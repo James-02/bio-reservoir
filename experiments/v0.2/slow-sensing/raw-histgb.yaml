@@ -1,0 +1,24 @@
+# Slow sensing: gradient boosting on the whole input trace (240 values), its settings chosen
+# by inner three-fold CV on macro F1; one of the four nonlinear readers (see raw-rf).
+#    python -m training.run study experiments/v0.2/slow-sensing/raw-histgb.yaml --processes N
+#    python -m training.run study-table experiments/v0.2/slow-sensing/raw-histgb.yaml
+name: slow-sensing-raw-histgb
+description: >-
+  No reservoir: histogram gradient boosting (learning rate 0.05 or 0.1, 31 or 63 leaves by
+  inner CV) on the whole input trace, the eight tasks x ideal or pump delivery.
+seed: 6337
+task: {type: inducer, pattern: freq, condition: ideal, n_per_class: 400, scale: sd}
+reservoir: {type: none}
+readout:
+  classifier: HistGB
+  scale: true
+  params: {max_iter: 500, early_stopping: true, class_weight: balanced, random_state: 6337}
+  search: {learning_rate: [0.05, 0.1], max_leaf_nodes: [31, 63]}
+cv: {folds: 5, seed: 6337}
+study:
+  trials: 16
+  metric: f1
+  sampler: {type: grid, seed: 6337}
+  search:
+    task.pattern: {type: categorical, choices: [freq, ramp, order, shape, xor, parity3, xor_tr, parity3_tr]}
+    task.condition: {type: categorical, choices: [ideal, device]}
