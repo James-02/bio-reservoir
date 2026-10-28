@@ -55,6 +55,8 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 - [engineering] Unused plotting code: `plot_cv_results.py`, `analyse_fold_diagnostics.py`,
   the t-SNE and bar-chart plots.
+- [engineering] `deploy` no longer stops or starts a service on the hosts: the
+  `BIORESERVOIR_DEPLOY_SERVICE` setting and `--start-service` are removed.
 
 ### Fixed
 
@@ -70,8 +72,8 @@ Each entry is marked **[science]** if it changes a reported number, or
   under the resting input, not without input.
 - [engineering] A refit on saved states refuses task and fold settings, which it ignored
   (`task.scramble` included).
-- [engineering] `deploy --start-service` fails when the service does not start; a launch fails
-  unless its session starts, and records the commit whose files it copied.
+- [engineering] A `deploy` launch fails unless its session starts, and records the commit whose
+  files it copied.
 - [engineering] A job's log holds the errors of every part of its command (`a && b`); those of
   `a` went to the session log only.
 - [engineering] A run without the plotting packages skips its figures instead of stopping.

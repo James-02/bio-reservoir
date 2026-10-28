@@ -24,7 +24,7 @@ def settings(tmp_path, monkeypatch):
     monkeypatch.setenv("BIORESERVOIR_DEPLOY_USER", "runner")
     monkeypatch.setenv("BIORESERVOIR_DEPLOY_WORKSPACE", "/srv/bioreservoir/")
     for key in ("BIORESERVOIR_DEPLOY_PYTHON", "BIORESERVOIR_DEPLOY_PIP_PROXY",
-                "BIORESERVOIR_DEPLOY_SERVICE", "BIORESERVOIR_DEPLOY_WORKSPACES"):
+                "BIORESERVOIR_DEPLOY_WORKSPACES"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(deploy, "git_state", lambda: ("0" * 40, "false"))
     monkeypatch.setattr(deploy.subprocess, "run", _no_execution)
@@ -142,13 +142,6 @@ def _answer(text, returncode=0):
     return run
 
 
-def _systemctl_without_the_unit(cmd, check=False, **kwargs):
-    """subprocess.run on a host where the configured service unit does not exist."""
-    if check:
-        raise subprocess.CalledProcessError(5, cmd)
-    return subprocess.CompletedProcess(cmd, 0, stdout="absent\n", stderr="")
-
-
 class TestDeployer:
     def test_sync_replaces_the_code_and_adds_missing_data(self, settings):
         deployer = deploy.Deployer(settings, dry_run=True)
@@ -192,31 +185,6 @@ class TestDeployer:
         monkeypatch.setattr(shutil, "which", lambda name: None)
         with pytest.raises(SystemExit, match="uv is not installed"):
             deployer.setup_venv("host1")
-
-    def test_services_are_paused_and_started_only_when_configured(self, settings,
-                                                                  monkeypatch):
-        deployer = deploy.Deployer(settings, dry_run=True)
-        deployer.stop_service("host1")
-        deployer.start_service("host1")
-        assert deployer.commands == []
-        monkeypatch.setenv("BIORESERVOIR_DEPLOY_SERVICE", "worker.service")
-        deployer = deploy.Deployer(deploy.load_settings(), dry_run=True)
-        deployer.stop_service("host1")
-        deployer.start_service("host1")
-        stop, start = (cmd[-1] for cmd in deployer.commands)
-        assert "\nsystemctl stop worker.service" in stop
-        assert "\nsystemctl start worker.service" in start
-
-    def test_a_host_without_the_service_is_reported(self, settings, monkeypatch, caplog):
-        monkeypatch.setenv("BIORESERVOIR_DEPLOY_SERVICE", "worker.service")
-        monkeypatch.setattr(deploy.subprocess, "run", _systemctl_without_the_unit)
-        deployer = deploy.Deployer(deploy.load_settings())
-        with caplog.at_level(logging.WARNING, logger="deploy"):
-            deployer.stop_service("host1")
-        assert any("could not pause the service worker.service" in message
-                   for message in caplog.messages)
-        with pytest.raises(subprocess.CalledProcessError):
-            deployer.start_service("host1")
 
     def test_a_launch_fails_unless_the_session_starts(self, settings):
         deployer = deploy.Deployer(settings, dry_run=True)
@@ -375,11 +343,21 @@ class TestMain:
         with pytest.raises(SystemExit, match="aborted"):
             deploy.main(["--cleanup", "--host", "host1"])
 
-    def test_a_service_that_does_not_start_is_an_error(self, settings, quiet, monkeypatch):
-        monkeypatch.setenv("BIORESERVOIR_DEPLOY_SERVICE", "worker.service")
-        monkeypatch.setattr(deploy.subprocess, "run", _systemctl_without_the_unit)
-        with pytest.raises(SystemExit, match="could not start the service on host1"):
-            deploy.main(["--start-service", "--host", "host1"])
+    def test_deploying_never_stops_or_starts_a_service(self, settings, quiet, monkeypatch):
+        monkeypatch.setenv("BIORESERVOIR_DEPLOY_SERVICE", "worker.service")  # an old setting
+        made, real = [], deploy.Deployer
+
+        def recording(*args, **kwargs):
+            made.append(real(*args, **kwargs))
+            return made[-1]
+
+        monkeypatch.setattr(deploy, "Deployer", recording)
+        for argv in (["--host", "host1", "--run", "echo"], ["--setup"], ["--cleanup"]):
+            deploy.main([*argv, "--dry-run"])
+        commands = [" ".join(cmd) for deployer in made for cmd in deployer.commands]
+        assert commands and not any("systemctl" in cmd for cmd in commands)
+        with pytest.raises(SystemExit):
+            deploy.main(["--start-service", "--dry-run"])
 
     def test_runs_record_the_commit_whose_files_were_copied(self, settings, quiet,
                                                             monkeypatch):
@@ -399,7 +377,7 @@ class TestMain:
                                                                       monkeypatch):
         steps = []
         monkeypatch.setattr(deploy.Deployer, "session_alive", lambda self, host: True)
-        for step in ("sync", "push", "setup_venv", "stop_service", "launch"):
+        for step in ("sync", "push", "setup_venv", "launch"):
             monkeypatch.setattr(deploy.Deployer, step,
                                 lambda self, *args, step=step: steps.append(step))
         with pytest.raises(SystemExit, match="already running"):
