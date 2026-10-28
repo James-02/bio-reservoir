@@ -314,7 +314,8 @@ bin/uv sync --frozen --extra dev --quiet $SKIP
             run_log = q(f"{ws}/logs/run-{name}.log")
             lines += [
                 f'echo "=== {name} started $(date -u +%FT%TZ) ===" | tee -a {run_log}',
-                f"{command} 2>&1 | tee -a {run_log}",
+                # Grouped, so that every part of a command (a && b) logs its errors too.
+                f"( {command}\n) 2>&1 | tee -a {run_log}",
                 "RC=$?",
                 f'echo "=== {name} finished (exit $RC) $(date -u +%FT%TZ) ===" | tee -a {run_log}',
                 '[ "$RC" -eq 0 ] || FAILED=$((FAILED + 1))',

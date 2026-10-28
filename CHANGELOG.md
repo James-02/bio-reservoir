@@ -72,6 +72,8 @@ Each entry is marked **[science]** if it changes a reported number, or
   (`task.scramble` included).
 - [engineering] `deploy --start-service` fails when the service does not start; a launch fails
   unless its session starts, and records the commit whose files it copied.
+- [engineering] A job's log holds the errors of every part of its command (`a && b`); those of
+  `a` went to the session log only.
 - [engineering] A run without the plotting packages skips its figures instead of stopping.
 - [engineering] `study-table` lists the run seed of raw-beat and refit trials (it showed None).
 - [engineering] `evaluate_performance` reads class-index labels (it read all as class 0).

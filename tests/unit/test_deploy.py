@@ -11,6 +11,9 @@ import pytest
 from optimization import collect, deploy
 from utils import config
 
+# The settings fixture blocks subprocess.run; tests that run a local shell use this one.
+RUN = subprocess.run
+
 
 @pytest.fixture
 def settings(tmp_path, monkeypatch):
@@ -232,6 +235,15 @@ class TestDeployer:
         script = deployer.commands[-1][-1]
         log_file = "/srv/bioreservoir/logs/run-tests.log"
         assert f"| tee -a {log_file}" in script and f"| tee {log_file}" not in script
+
+    def test_every_part_of_a_command_writes_its_errors_to_the_job_log(self, settings, tmp_path):
+        deployer = deploy.Deployer(settings, dry_run=True)
+        deployer.launch("host1", deploy.command_jobs(["ls /missing && echo b"], "tests"))
+        job = "( ls /missing && echo b\n) 2>&1 | tee -a {}"
+        assert job.format("/srv/bioreservoir/logs/run-tests.log") in deployer.commands[-1][-1]
+        log = tmp_path / "run.log"
+        RUN(["bash", "-c", job.format(log)], capture_output=True, check=False)
+        assert "/missing" in log.read_text()
 
     def test_cleanup_stops_everything_the_session_started(self, settings):
         deployer = deploy.Deployer(settings, dry_run=True)
