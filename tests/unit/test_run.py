@@ -584,7 +584,7 @@ class TestHeldOutEvaluation:
             assert len(fold["Y_train"]) == len(X)
             np.testing.assert_array_equal(fold["Y_test"], Y_split)
             np.testing.assert_array_equal(fold["test_index"], ids)
-            y_true, y_pred = (run_module._classes(fold[k]) for k in ("Y_test", "Y_pred"))
+            y_true, y_pred = (run_module.class_indices(fold[k]) for k in ("Y_test", "Y_pred"))
         metrics = json.loads((run_dir / "metrics.json").read_text())
         assert metrics["n_folds"] == 1
         assert metrics["test"]["split"] == "validation-1"

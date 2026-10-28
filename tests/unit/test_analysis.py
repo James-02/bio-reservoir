@@ -124,6 +124,12 @@ class TestEvaluatePerformance:
         assert "0" in m.class_metrics
         assert "1" in m.class_metrics
 
+    def test_class_index_and_one_hot_labels_score_the_same(self):
+        labels, predicted = np.array([0, 1, 2, 2]), np.array([0, 1, 2, 1])
+        one_hot = evaluate_performance(np.eye(3)[labels][:, None, :], np.eye(3)[predicted])
+        indices = evaluate_performance(labels, predicted)
+        assert indices.f1 == pytest.approx(one_hot.f1) and indices.accuracy == 0.75
+
     def test_averages_can_run_over_the_classes_of_a_test_set(self):
         # Class 2 is predicted once but has no test beats: the error lowers class 0's
         # recall, and class 2 itself is left out of the averages.

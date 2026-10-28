@@ -59,6 +59,7 @@ import yaml
 
 from utils import config as settings
 from utils import provenance
+from utils.analysis import class_indices
 
 logger = logging.getLogger(__name__)
 
@@ -602,10 +603,6 @@ def _simulate(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray,
     )
 
 
-def _classes(Y: np.ndarray) -> np.ndarray:
-    return np.argmax(np.asarray(Y).reshape(len(Y), -1), axis=1)
-
-
 def _features(cfg: dict[str, Any], X: np.ndarray, reservoir,
               processes: int) -> tuple[np.ndarray, dict[str, Any]]:
     """Scale the beats, simulate each once on the run's ``reservoir`` and measure it; return
@@ -677,7 +674,7 @@ def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: n
         artifact = fit_on_features(features, Y_all, make_readout(cfg["readout"]), fold,
                                    save_states=bool(cfg["outputs"]["save_states"]),
                                    primary_average=str(cfg["cv"]["primary_average"]),
-                                   labels=np.unique(_classes(Y_test)),
+                                   labels=np.unique(class_indices(Y_test)),
                                    model_hypers=getattr(reservoir, "hypers", None),
                                    test_gains=None if gains is None else gains[0])
         artifact.test_index = np.asarray(beat_ids, dtype=np.int64)
@@ -692,7 +689,7 @@ def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: n
                         readout_window=int(cfg["features"]["window"]),
                         primary_average=str(cfg["cv"]["primary_average"]),
                         profile=bool(cfg["cv"]["profile"]),
-                        labels=np.unique(_classes(Y_test)))
+                        labels=np.unique(class_indices(Y_test)))
     artifact.test_index = np.asarray(beat_ids, dtype=np.int64)
     return artifact
 
@@ -879,17 +876,17 @@ def execute(cfg: dict[str, Any], *, out: str | Path | None = None, processes: in
             X, Y, data_files = load_task(cfg["task"])
             pool_sha256 = _pool_sha256(X, Y)
             logger.info("Pool: %d beats, class counts %s", len(X),
-                        np.bincount(_classes(Y)).tolist())
+                        np.bincount(class_indices(Y)).tolist())
             if split:
                 from utils import heldout
 
                 X_test, Y_test, beat_ids = heldout.load_split(split, cfg["task"]["scaler"])
                 data_files = [*data_files, heldout.SPLITS_FILE]
-                labels = np.unique(_classes(Y_test))
+                labels = np.unique(class_indices(Y_test))
                 logger.info("Held-out split %s: %d beats, class counts %s", split,
-                            len(X_test), np.bincount(_classes(Y_test)).tolist())
+                            len(X_test), np.bincount(class_indices(Y_test)).tolist())
                 artifacts = [_evaluate_split(cfg, X, Y, X_test, Y_test, beat_ids, processes)]
-                low, high = bootstrap_ci(_classes(Y_test), _classes(artifacts[0].Y_pred),
+                low, high = bootstrap_ci(class_indices(Y_test), class_indices(artifacts[0].Y_pred),
                                          seed=int(cfg["seed"]))
                 evaluation = {"split": split, "n_beats": int(len(X_test)),
                               "classes": labels.tolist(), "f1_macro_ci95": [low, high]}

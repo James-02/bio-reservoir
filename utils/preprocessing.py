@@ -9,7 +9,7 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 from utils import config
-from utils.analysis import count_labels
+from utils.analysis import class_indices, count_labels
 
 logger = logging.getLogger(__name__)
 
@@ -775,21 +775,6 @@ def _one_hot_encode(labels: np.ndarray, num_classes: int) -> np.ndarray:
         np.ndarray: One-hot encoded target labels.
     """
     return np.eye(num_classes)[labels.astype(int)]
-
-def class_indices(Y: np.ndarray) -> np.ndarray:
-    """The class index of each beat; the inverse of :func:`_one_hot_encode`.
-
-    ``Y`` holds class indices (N,), one-hot labels or class scores (N, C), or one row per
-    time step (N, T, C), of which the first is read.
-    """
-    Y = np.asarray(Y)
-    if Y.ndim == 1:
-        return Y.astype(int)
-    if Y.ndim == 2:
-        return np.argmax(Y, axis=1)
-    if Y.ndim == 3:
-        return np.argmax(Y[:, 0, :], axis=1)
-    raise ValueError(f"Labels must have shape (N,), (N, C) or (N, T, C); got {Y.shape}")
 
 def _reshape_data(X: np.ndarray, Y: np.ndarray) -> tuple[list[np.ndarray], list[np.ndarray]]:
     """
