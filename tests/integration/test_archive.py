@@ -1,4 +1,4 @@
-"""Integrity checks for the frozen v0.1 archive (skipped when archive/v0.1 is absent)."""
+"""Integrity checks for the frozen v0.1 archive (skipped unless a full copy is present)."""
 
 import csv
 import hashlib
@@ -15,7 +15,10 @@ from utils import config
 
 ARCHIVE = config.results_root(archive="v0.1")
 
-pytestmark = pytest.mark.skipif(not ARCHIVE.is_dir(), reason="archive/v0.1 not present")
+# A full copy of the archive carries its checksum list; a host with only some of the
+# databases (copied for one study) is not an archive to check.
+pytestmark = pytest.mark.skipif(not (ARCHIVE / "SHA256SUMS").is_file(),
+                                reason="no full archive/v0.1 (SHA256SUMS absent)")
 
 # study -> (trials, complete trials, best trial, best macro F1); SI Table S5.
 STUDIES = {
