@@ -283,6 +283,16 @@ class TestExecute:
             _execute({"name": "refit", "reservoir": {"states_from": str(first)},
                       "readout": _config()["readout"]}, tmp_path / "refit")
 
+    @pytest.mark.parametrize("section", [
+        {"task": {"scramble": True}}, {"task": {"rows": 12}}, {"cv": {"folds": 2}}])
+    def test_a_refit_cannot_change_the_beats_or_folds_of_its_source(self, section):
+        with pytest.raises(ValueError, match="A refit reads the beats, labels and folds"):
+            run_module.resolve({"name": "refit", "reservoir": {"states_from": "run"},
+                                "readout": {"classifier": "KNN"}, **section})
+        assert run_module.resolve({"name": "refit", "reservoir": {"states_from": "run"},
+                                   "readout": {"classifier": "KNN"},
+                                   "cv": {"primary_average": "weighted"}})
+
     def test_an_existing_run_folder_is_not_overwritten(self, tmp_path):
         _execute(_config(), tmp_path / "run")
         with pytest.raises(SystemExit, match="already exists"):

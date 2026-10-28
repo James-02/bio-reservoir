@@ -267,6 +267,13 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
 
     reservoir = dict(cfg.get("reservoir") or {})
     if "states_from" in reservoir:
+        fixed = [f"task.{key}" for key in cfg.get("task") or {}] + [
+            f"cv.{key}" for key in cfg.get("cv") or {}
+            if key in ("folds", "seed", "simulate", "noise_rate", "noise_ratio")]
+        if fixed:
+            raise ValueError("A refit reads the beats, labels and folds of the run whose states "
+                             "it takes (reservoir.states_from); it cannot change "
+                             f"{', '.join(fixed)}. Simulate again to change them.")
         resolved_reservoir = {"states_from": str(reservoir["states_from"])}
         if reservoir.get("surrogate") is not None:
             from training.surrogate import check_surrogate
