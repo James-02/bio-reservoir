@@ -6,6 +6,7 @@ import pytest
 from utils.analysis import (
     Metrics,
     _is_class_key,
+    class_indices,
     compute_class_dicts,
     compute_mean_dicts,
     compute_mean_metrics,
@@ -92,6 +93,26 @@ class TestMetrics:
     def test_getitem_raises_key_error(self, sample_metrics):
         with pytest.raises(KeyError):
             _ = sample_metrics["nonexistent"]
+
+
+# ---------------------------------------------------------------------------
+# class_indices
+# ---------------------------------------------------------------------------
+
+class TestClassIndices:
+    def test_labels_one_hot_labels_and_scores_give_the_classes(self):
+        labels = np.array([2, 0, 1, 2])
+        one_hot = np.eye(3)[labels]
+        for Y in (labels, one_hot, one_hot[:, None, :], 0.1 + 0.5 * one_hot):
+            np.testing.assert_array_equal(class_indices(Y), labels)
+
+    def test_the_first_time_step_is_read(self):
+        Y = np.eye(3)[np.array([[2, 1], [0, 2]])]  # two beats, two time steps
+        np.testing.assert_array_equal(class_indices(Y), [2, 0])
+
+    def test_other_shapes_are_rejected(self):
+        with pytest.raises(ValueError, match="shape"):
+            class_indices(np.zeros((2, 1, 1, 3)))
 
 
 # ---------------------------------------------------------------------------

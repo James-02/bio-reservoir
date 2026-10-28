@@ -9,7 +9,7 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 from utils import config
-from utils.analysis import class_indices, count_labels
+from utils.analysis import count_labels
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,6 @@ __all__ = [
     "ensure_kaggle_heartbeat_files",
     "standardize_data",
     "augment_data",
-    "class_indices",
     "save_npz",
     "load_npz",
     "dataset_sha256",

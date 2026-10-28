@@ -67,8 +67,7 @@ from sklearn.metrics import cohen_kappa_score, matthews_corrcoef
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from utils.analysis import evaluate_performance
-from utils.preprocessing import class_indices
+from utils.analysis import class_indices, evaluate_performance
 from utils.results import FoldArtifact
 from utils.visualisation import (
     CLASS_COLOURS,
@@ -211,7 +210,7 @@ def plot_state_pca(states: np.ndarray, labels: np.ndarray, name: str,
 
     Each feature is scaled to unit variance first, so that no state variable dominates by
     its units. ``labels`` are the true labels of the states, in any shape that
-    :func:`utils.preprocessing.class_indices` reads.
+    :func:`utils.analysis.class_indices` reads.
     """
     pca = make_pipeline(StandardScaler(), PCA(n_components=2))
     points = pca.fit_transform(states.reshape(len(states), -1))

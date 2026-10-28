@@ -20,7 +20,8 @@ from bioreservoir import distance_matrix
 from optimization.reservoirs import _build_bioreservoir_topology, build_reservoir
 from training.run import load_config, load_task, resolve
 from training.simulate import beat_seed, reseed_noise
-from utils.preprocessing import class_indices, standardize_data
+from utils.analysis import class_indices
+from utils.preprocessing import standardize_data
 from utils.visualisation import class_names
 
 #: The oscillator's variables, in the order of its state: AiiA, LuxI, and AHL in the cells
