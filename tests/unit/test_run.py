@@ -753,6 +753,29 @@ class TestReadoutSelection:
         for fold in metrics["folds"]:
             assert set(fold["selected"]) == {chosen}
 
+    def test_the_default_ridge_penalties_are_the_exact_half_powers_of_ten(self):
+        from decimal import Decimal, getcontext
+
+        getcontext().prec = 50
+        assert run_module.RIDGE_ALPHAS == tuple(
+            float(Decimal(10) ** (Decimal(k) / 2)) for k in range(-8, 13))
+
+    def test_settings_chosen_at_the_edge_of_their_grid_are_named(self):
+        readout = {"classifier": "SVM", "params": {},
+                   "search": {"C": [1.0, 10.0, 100.0], "kernel": ["rbf", "linear"]}}
+        folds = [{"fold": 0, "selected": {"classifier__C": 10.0, "classifier__kernel": "rbf"}},
+                 {"fold": 1, "selected": {"classifier__C": 100.0,
+                                          "classifier__kernel": "linear"}}]
+        assert run_module.grid_edges(readout, folds) == ["fold 1: classifier__C = 100.0"]
+        ridge = {"classifier": "RidgeCV", "params": {"alphas": [0.01, 1.0, 100.0]}}
+        assert run_module.grid_edges(ridge, [{"fold": 2, "selected": {"alpha": 0.01}}]) == [
+            "fold 2: alpha = 0.01"]
+
+    def test_a_run_warns_when_a_fold_chooses_the_edge_of_a_grid(self, tmp_path):
+        cfg = _config(readout={"classifier": "RidgeCV", "params": {"alphas": [0.01, 100.0]}})
+        run_log = (_execute(cfg, tmp_path / "run") / "run.log").read_text()
+        assert "Readout settings at the edge of their grid (widen it): fold 0: alpha" in run_log
+
     def test_a_readout_search_runs_on_the_run_processes_with_the_same_result(
             self, tmp_path, monkeypatch):
         cfg = _config(reservoir={"type": "none"}, readout={

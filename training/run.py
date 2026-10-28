@@ -101,8 +101,13 @@ RESERVOIR_KEYS = {
 SCALAR_METRICS = ("f1", "f1_macro", "f1_weighted", "accuracy", "precision", "recall",
                   "mcc", "kappa")
 
-# Ridge strengths a RidgeCV readout chooses from: 10^-4 to 10^6, two per decade.
-RIDGE_ALPHAS = tuple(float(a) for a in np.logspace(-4, 6, 21))
+# Ridge strengths a RidgeCV readout chooses from: 10^-4 to 10^6, two per decade, written out
+# because np.logspace differs in the last digit between CPUs.
+RIDGE_ALPHAS = (
+    0.0001, 0.00031622776601683794, 0.001, 0.0031622776601683794, 0.01, 0.03162277660168379,
+    0.1, 0.31622776601683794, 1.0, 3.1622776601683795, 10.0, 31.622776601683793, 100.0,
+    316.22776601683796, 1000.0, 3162.2776601683795, 10000.0, 31622.776601683792, 100000.0,
+    316227.7660168379, 1000000.0)
 
 # Third seed word of the stream that scrambles a beat; training.observation's streams use 1
 # and 2, so the draws are independent.
@@ -782,6 +787,22 @@ def summarise(artifacts: list, primary_average: str = "macro",
     }
 
 
+def grid_edges(readout: dict[str, Any], folds: list[dict[str, Any]]) -> list[str]:
+    """The numeric readout settings that a fold chose at either end of their grid (the
+    ridge penalties of ``RidgeCV``, the values of ``readout.search``): grids to widen."""
+    grids = {f"classifier__{key}": values for key, values in (readout.get("search") or {}).items()}
+    if readout["classifier"] == "RidgeCV":
+        grids["alpha"] = readout["params"]["alphas"]
+    edges = []
+    for fold in folds:
+        for key, value in (fold.get("selected") or {}).items():
+            grid = sorted(v for v in grids.get(key, ())
+                          if isinstance(v, int | float) and not isinstance(v, bool))
+            if len(grid) > 1 and value in (grid[0], grid[-1]):
+                edges.append(f"fold {fold['fold']}: {key} = {value}")
+    return edges
+
+
 def plot_run(fig_dir: Path, metrics: dict[str, Any]) -> list[Path]:
     """The run's figures in ``fig_dir``: the confusion matrix of all folds together, and the
     scores of each fold with their mean and SD (:func:`utils.visualisation.plot_fold_metrics`);
@@ -905,6 +926,10 @@ def execute(cfg: dict[str, Any], *, out: str | Path | None = None, processes: in
             artifact.save(results_dir=str(run_dir.parent),
                           save_states=bool(cfg["outputs"]["save_states"]))
         metrics = {**summarise(artifacts, cfg["cv"]["primary_average"], labels), **timings}
+        edges = grid_edges(cfg["readout"], metrics["folds"])
+        if edges:
+            logger.warning("Readout settings at the edge of their grid (widen it): %s",
+                           "; ".join(edges))
         if evaluation:
             metrics["test"] = evaluation
             metrics["summary"].update(f1_macro_ci95_low=evaluation["f1_macro_ci95"][0],

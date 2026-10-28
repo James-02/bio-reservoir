@@ -204,6 +204,7 @@ def run_study(cfg: dict[str, Any], *, processes: int = 1, trials: int | None = N
         _pool_sha256,
         _simulate,
         dump_config,
+        grid_edges,
         load_task,
         refit_readout,
         resolve,
@@ -259,6 +260,11 @@ def run_study(cfg: dict[str, Any], *, processes: int = 1, trials: int | None = N
         trial.set_user_attr("summary", metrics["summary"])
         trial.set_user_attr("fold_f1", [f["f1"] for f in metrics["folds"]])
         trial.set_user_attr("code", {"commit": git.get("commit"), "citable": citable})
+        edges = grid_edges(resolved["readout"], metrics["folds"])
+        if edges:
+            trial.set_user_attr("grid_edges", edges)
+            logger.warning("Trial %d: readout settings at the edge of their grid: %s",
+                           trial.number, "; ".join(edges))
         if "simulation" in result:
             trial.set_user_attr("simulation", result["simulation"])
         return float(metrics["mean"][metric])
