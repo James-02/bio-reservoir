@@ -267,9 +267,14 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
 
     reservoir = dict(cfg.get("reservoir") or {})
     if "states_from" in reservoir:
-        fixed = [f"task.{key}" for key in cfg.get("task") or {}] + [
-            f"cv.{key}" for key in cfg.get("cv") or {}
-            if key in ("folds", "seed", "simulate", "noise_rate", "noise_ratio")]
+        # The resolved config of a refit records the default task and fold settings, so only
+        # values that differ from them would change what the refit reads.
+        recorded = {key: {"seed": seed, **sections[key]} for key in ("task", "cv")}
+        fixed = [f"{key}.{name}" for key in ("task", "cv")
+                 for name, value in (cfg.get(key) or {}).items()
+                 if (key == "task" or name in ("folds", "seed", "simulate", "noise_rate",
+                                               "noise_ratio"))
+                 and (name not in recorded[key] or recorded[key][name] != value)]
         if fixed:
             raise ValueError("A refit reads the beats, labels and folds of the run whose states "
                              "it takes (reservoir.states_from); it cannot change "

@@ -293,6 +293,20 @@ class TestExecute:
                                    "readout": {"classifier": "KNN"},
                                    "cv": {"primary_average": "weighted"}})
 
+    @pytest.mark.parametrize("seed", [{}, {"seed": 5}])
+    def test_the_resolved_config_of_a_refit_resolves_again(self, seed):
+        resolved = run_module.resolve({"name": "refit", "reservoir": {"states_from": "run"},
+                                       "readout": {"classifier": "KNN"}, **seed})
+        assert run_module.resolve(resolved) == resolved
+
+    def test_a_refit_runs_again_from_the_config_in_its_folder(self, tmp_path):
+        first = _execute(_config(outputs={"save_states": True}), tmp_path / "first")
+        refit = _execute({"name": "refit", "reservoir": {"states_from": str(first)},
+                          "readout": _config()["readout"]}, tmp_path / "refit")
+        again = _execute(run_module.load_config(refit / "config.yaml"), tmp_path / "again")
+        for pa, pb in zip(_predictions(refit), _predictions(again), strict=True):
+            np.testing.assert_array_equal(pa, pb)
+
     def test_an_existing_run_folder_is_not_overwritten(self, tmp_path):
         _execute(_config(), tmp_path / "run")
         with pytest.raises(SystemExit, match="already exists"):

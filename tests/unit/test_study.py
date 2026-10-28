@@ -225,6 +225,18 @@ def test_a_study_on_saved_states_only_searches_the_readout(tmp_path):
         study_module.run_study(_readout_study(tmp_path, search))
 
 
+def test_the_best_trial_of_a_study_on_saved_states_runs_as_a_plain_config(tmp_path):
+    source_cfg = {k: v for k, v in _config().items() if k != "study"}
+    source = run_module.execute(dict(source_cfg, outputs={"save_states": True}),
+                                out=tmp_path / "source", allow_dirty=True)
+    cfg = _readout_study(source, {"readout.params.alpha": {"type": "float",
+                                                           "choices": [1e-3, 1.0]}})
+    study_module.run_study(cfg)
+    run_dir = run_module.execute(study_module.best_config(cfg), out=tmp_path / "best",
+                                 allow_dirty=True)
+    assert (run_dir / "metrics.json").is_file()
+
+
 def test_the_command_line_runs_a_study_and_writes_its_best_config(tmp_path, capsys):
     path = tmp_path / "study.yaml"
     path.write_text(yaml.safe_dump(_config()))
