@@ -107,6 +107,19 @@ def test_each_trial_row_holds_its_values_fold_scores_seed_and_times():
         assert row.commit == "abc"
 
 
+def test_a_raw_beat_trial_lists_its_run_seed():
+    cfg = {"name": "unit-raw-table", "seed": 3, "reservoir": {"type": "none"},
+           "readout": {"classifier": "Ridge", "params": {"alpha": 1e-3}},
+           "task": {"rows": 24, "seed": 3}, "cv": {"folds": 3, "seed": 3},
+           "study": {"trials": 2, "sampler": {"type": "grid", "seed": 1},
+                     "search": {"seed": {"type": "categorical", "choices": [5, 6]}}}}
+    study = study_module.run_study(cfg)
+    table = study_module.trials_table(cfg)
+    assert sorted(table["reservoir.seed"]) == [5, 6]
+    for trial, seed in zip(study.trials, table["reservoir.seed"], strict=True):
+        assert seed == trial.params["seed"]
+
+
 def test_the_grouped_view_averages_each_point_over_its_reservoir_seeds():
     cfg = _seed_grid()
     study_module.run_study(cfg)

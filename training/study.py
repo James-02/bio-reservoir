@@ -349,7 +349,9 @@ def trials_table(cfg: dict[str, Any], storage: str | None = None):
         attrs = trial.user_attrs
         seed = trial.params.get(SEED_PATH, fixed_seed)
         if "config" in attrs:
-            seed = yaml.safe_load(attrs["config"])["reservoir"].get("seed")
+            # A run without a reservoir (raw beat, saved states) draws from the run seed.
+            resolved = yaml.safe_load(attrs["config"])
+            seed = resolved["reservoir"].get("seed", resolved.get("seed"))
         started, ended = trial.datetime_start, trial.datetime_complete
         rows.append({
             "trial": trial.number, "state": trial.state.name,
