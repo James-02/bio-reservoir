@@ -5,6 +5,7 @@ import hashlib
 import importlib
 import json
 import logging
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -222,6 +223,14 @@ class TestExecute:
         assert {p.name for p in (run_dir / "figures").iterdir()} == {
             "confusion_matrix.png", "fold_metrics.png"}
         assert "Pool: 24 beats" in (run_dir / "run.log").read_text()
+
+    def test_a_run_without_the_plotting_packages_skips_its_figures(self, tmp_path,
+                                                                     monkeypatch):
+        monkeypatch.setitem(sys.modules, "matplotlib", None)
+        run_dir = _execute(_config(), tmp_path / "run")
+        assert (run_dir / "manifest.json").is_file()
+        assert not list(run_dir.glob("figures/*"))
+        assert "No figures" in (run_dir / "run.log").read_text()
 
     def test_metrics_report_folds_mean_and_sample_sd(self, tmp_path):
         metrics = json.loads((_execute(_config(), tmp_path / "run") / "metrics.json")

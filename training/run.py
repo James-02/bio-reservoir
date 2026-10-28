@@ -783,17 +783,22 @@ def summarise(artifacts: list, primary_average: str = "macro",
 
 def plot_run(fig_dir: Path, metrics: dict[str, Any]) -> list[Path]:
     """The run's figures in ``fig_dir``: the confusion matrix of all folds together, and the
-    scores of each fold with their mean and SD (:func:`utils.visualisation.plot_fold_metrics`)."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
+    scores of each fold with their mean and SD (:func:`utils.visualisation.plot_fold_metrics`);
+    none on a host without the plotting packages."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
 
-    from utils.visualisation import (
-        STYLE,
-        plot_confusion_matrix,
-        plot_fold_metrics,
-        save_figure,
-    )
+        from utils.visualisation import (
+            STYLE,
+            plot_confusion_matrix,
+            plot_fold_metrics,
+            save_figure,
+        )
+    except ImportError as error:
+        logger.warning("No figures: the plotting packages are not installed (%s).", error)
+        return []
 
     with plt.style.context(STYLE):
         ax = plot_confusion_matrix(metrics["pooled"]["confusion_matrix"])
