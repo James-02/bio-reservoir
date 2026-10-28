@@ -8,9 +8,8 @@ not used: setting up a host (``--setup``, and before every launch) copies the lo
 ``uv.lock`` there.
 
 Nothing host-specific is stored in the repository.  Host addresses, the SSH user, the
-remote workspace (shared, or one per host), an optional proxy and an optional systemd
-unit to pause during runs are read from the gitignored ``config.env`` (see
-``config.env.example``)::
+remote workspace (shared, or one per host) and an optional proxy are read from the
+gitignored ``config.env`` (see ``config.env.example``)::
 
     BIORESERVOIR_DEPLOY_HOSTS=host1=<address>,host2=<address>
     BIORESERVOIR_DEPLOY_USER=<ssh user>
@@ -20,7 +19,8 @@ unit to pause during runs are read from the gitignored ``config.env`` (see
 Hosts are referred to by label only (``host1``, ...).  Every remote run records its
 label as the machine label, with the CPU model, core counts, RAM, OS and the local git
 SHA (see ``optimization/environment.py``).  ``--inventory`` records the hardware of
-each host in ``results/metrics/hosts.json`` and checks the requirements.
+each host in ``results/metrics/hosts.json`` and checks the requirements.  Deploying never
+stops or starts a host's services: a run shares its host with whatever else runs there.
 
 Usage
 -----
@@ -36,7 +36,6 @@ Usage
   python -m optimization.deploy --wait                 # wait for sessions, then collect
   python -m optimization.deploy --reset-running --host host1 --study P2-distance
   python -m optimization.deploy --cleanup [--host host1]
-  python -m optimization.deploy --start-service [--host host1]
 
 Add ``--dry-run`` to print the commands without running them.  Collect results with
 ``python -m optimization.collect``.
@@ -88,7 +87,6 @@ class Settings:
     workspace: str
     python: str
     pip_proxy: str | None
-    service: str | None
     workspaces: dict[str, str] = field(default_factory=dict)
 
     def workspace_of(self, host: str) -> str:
@@ -136,7 +134,6 @@ def load_settings() -> Settings:
         workspace=_workspace(workspace, "BIORESERVOIR_DEPLOY_WORKSPACE"),
         python=config.get("BIORESERVOIR_DEPLOY_PYTHON", "python3"),
         pip_proxy=config.get("BIORESERVOIR_DEPLOY_PIP_PROXY"),
-        service=config.get("BIORESERVOIR_DEPLOY_SERVICE"),
         workspaces={label: _workspace(path, "BIORESERVOIR_DEPLOY_WORKSPACES")
                     for label, path in workspaces.items()},
     )
@@ -264,31 +261,23 @@ bin/uv sync --frozen --extra dev --quiet $SKIP
 """)
         log.info("[%s] environment ready", host)
 
-    def stop_service(self, host: str) -> None:
-        if self.settings.service:
-            self.ssh(host, f"systemctl stop {q(self.settings.service)} 2>/dev/null || true")
-            log.info("[%s] configured service paused", host)
-
-    def start_service(self, host: str) -> None:
-        if not self.settings.service:
-            log.info("[%s] no BIORESERVOIR_DEPLOY_SERVICE configured", host)
-            return
-        unit = q(self.settings.service)
-        self.ssh(host, f"systemctl start {unit} && echo 'service started' "
-                       f"|| echo 'could not start the service'", check=False)
-
-    def launch(self, host: str, jobs: Sequence[tuple[str, str]]) -> None:
+    def launch(self, host: str, jobs: Sequence[tuple[str, str]],
+               commit: tuple[str, str] | None = None) -> None:
         """Run *jobs* (log name, shell command) one after another in a detached session.
 
-        Each job logs to ``<workspace>/logs/run-<name>.log``.  The session exports the
-        host label and the local git SHA so that every trial records them, and runs in its
-        own process group, which ``--cleanup`` stops.
+        Each job appends to ``<workspace>/logs/run-<name>.log``.  The session exports the
+        host label and the local git SHA and dirty flag (*commit*, read before the code was
+        copied; by default now) so that every trial records them, and runs in its own
+        process group, which ``--cleanup`` stops.  The launch fails unless the session
+        starts within 10 s.
         """
         ws = self.settings.workspace_of(host)
-        sha, dirty = git_state()
+        sha, dirty = commit or git_state()
         if dirty == "true":
             log.warning("Uncommitted local changes: runs will record git_dirty=true.")
+        started = q(f"{ws}/logs/session.started")
         lines = [
+            f"touch {started}",
             "set -o pipefail",
             f"cd {q(ws)}",
             f"source {q(self.settings.venv_of(host))}/bin/activate",
@@ -300,8 +289,9 @@ bin/uv sync --frozen --extra dev --quiet $SKIP
         for name, command in jobs:
             run_log = q(f"{ws}/logs/run-{name}.log")
             lines += [
-                f'echo "=== {name} started $(date -u +%FT%TZ) ===" | tee {run_log}',
-                f"{command} 2>&1 | tee -a {run_log}",
+                f'echo "=== {name} started $(date -u +%FT%TZ) ===" | tee -a {run_log}',
+                # Grouped, so that every part of a command (a && b) logs its errors too.
+                f"( {command}\n) 2>&1 | tee -a {run_log}",
                 "RC=$?",
                 f'echo "=== {name} finished (exit $RC) $(date -u +%FT%TZ) ===" | tee -a {run_log}',
                 '[ "$RC" -eq 0 ] || FAILED=$((FAILED + 1))',
@@ -309,6 +299,7 @@ bin/uv sync --frozen --extra dev --quiet $SKIP
         lines.append('exit "$FAILED"')
         pid = q(f"{ws}/logs/session.pid")
         session = q(f"{ws}/logs/session.sh")
+        session_log = q(f"{ws}/logs/session.log")
         script = "\n".join([
             "set -e",
             f"mkdir -p {q(ws)}/logs",
@@ -319,8 +310,15 @@ bin/uv sync --frozen --extra dev --quiet $SKIP
             f"cat > {session} << 'BIORESERVOIR_SESSION'",
             *lines,
             "BIORESERVOIR_SESSION",
-            f"setsid nohup bash {session} > {q(f'{ws}/logs/session.log')} 2>&1 < /dev/null &",
+            f"rm -f {started}",
+            f"setsid nohup bash {session} > {session_log} 2>&1 < /dev/null &",
             f"echo $! > {pid}",
+            f"for _ in $(seq 20); do [ -f {started} ] && break; sleep 0.5; done",
+            f"if [ ! -f {started} ]; then",
+            '    echo "the session did not start; its log:" >&2',
+            f"    tail -n 20 {session_log} >&2",
+            "    exit 4",
+            "fi",
             f'echo "session started (PID $(cat {pid}))"',
         ])
         log.info("[%s] launching: %s", host, ", ".join(name for name, _ in jobs))
@@ -631,8 +629,6 @@ def build_parser() -> argparse.ArgumentParser:
                       help="Mark RUNNING trials of --study as FAIL in the remote database.")
     mode.add_argument("--cleanup", action="store_true",
                       help="Stop the session and delete the remote workspace.")
-    mode.add_argument("--start-service", action="store_true",
-                      help="Start the configured BIORESERVOIR_DEPLOY_SERVICE again.")
     p.add_argument("--host", action="append", metavar="LABEL",
                    help="Host label (repeatable; default: all configured hosts).")
     p.add_argument("--study", "--studies", dest="studies", nargs="+", metavar="STUDY",
@@ -691,8 +687,6 @@ def main(argv: Sequence[str] | None = None) -> None:
                     f"Delete the remote workspace on {', '.join(hosts)}? [y/N] ").lower() != "y":
                 raise SystemExit("aborted")
             for_hosts(hosts, deployer.cleanup)
-        elif args.start_service:
-            for_hosts(hosts, deployer.start_service)
         else:
             if not args.host or len(args.host) != 1:
                 parser.error("launching needs exactly one --host")
@@ -704,11 +698,14 @@ def main(argv: Sequence[str] | None = None) -> None:
             if deployer.session_alive(host):
                 raise SystemExit(f"[{host}] a session is already running; wait for it or "
                                  "use --cleanup")
+            commit = git_state()
             deployer.sync(host)
             deployer.push(host, args.push)
             deployer.setup_venv(host)
-            deployer.stop_service(host)
-            deployer.launch(host, jobs)
+            if git_state() != commit:
+                raise SystemExit("The local checkout changed (a commit, or its first uncommitted "
+                                 "edit) while its files were copied; launch again.")
+            deployer.launch(host, jobs, commit=commit)
             log.info("[%s] follow with: python -m optimization.deploy --logs --host %s",
                      host, host)
     except subprocess.CalledProcessError as exc:

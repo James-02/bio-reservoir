@@ -61,13 +61,6 @@ def test_macro_and_weighted_averages_are_stored(pool):
 
 
 class TestFoldHelpers:
-    def test_labels_become_class_indices(self):
-        labels = np.array([2, 0, 1])
-        for Y in (labels, np.eye(3)[labels], np.eye(3)[labels][:, None, :]):
-            np.testing.assert_array_equal(baseline._labels_to_1d(Y), labels)
-        with pytest.raises(ValueError, match="Unsupported"):
-            baseline._labels_to_1d(np.zeros((2, 1, 1, 3)))
-
     def test_beats_are_flattened(self):
         X = np.arange(12.0).reshape(2, 6, 1)
         assert baseline._flatten_X(X).shape == (2, 6)

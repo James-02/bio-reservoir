@@ -12,7 +12,8 @@ description: >-
   800, N = 1,024 traps, 32 substeps); one image of the LuxI reporter with 1% measurement
   noise, RidgeCV readout; three reservoir seeds.
 reservoir:
-  params: {topology_type: distance}
+  params: {topology_type: distance, fade_alpha: 2.80278092396274e-05, sparsity: 1.0,
+           signed: false, p_excite: 1.0, normalize_after_masks: true}
 study:
   trials: 45
   metric: f1

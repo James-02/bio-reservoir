@@ -35,6 +35,17 @@ def test_a_colony_without_promoter_activity_settles():
     np.testing.assert_allclose(oscillation_amplitudes(node, 100), 0.0, atol=1e-6)
 
 
+def test_a_rest_warm_up_is_continued_under_the_resting_input():
+    # Settled under the resting inducer level, the colonies stay settled; without it their
+    # AHL would fall.
+    node = BioReservoir(units=4, warmup=300, rk4_substeps=16, seed=5, dde_kwargs={"alpha": 0.0},
+                        input_connectivity=1.0, input_encoding="nonnegative",
+                        input_sign="positive", warmup_input="rest")
+    np.testing.assert_allclose(oscillation_amplitudes(node, 100, variable="Hi"), 0.0,
+                               atol=1e-6)
+    assert not node.is_initialized
+
+
 def _load_script():
     spec = importlib.util.spec_from_file_location("script_drive_bounds", SCRIPT)
     module = importlib.util.module_from_spec(spec)

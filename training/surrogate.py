@@ -31,6 +31,8 @@ from typing import Any
 import numpy as np
 import yaml
 
+from utils.analysis import class_indices
+
 logger = logging.getLogger(__name__)
 
 SURROGATES = ("linear",)
@@ -132,10 +134,6 @@ def source_beats(states_from: str) -> tuple[np.ndarray, np.ndarray, list]:
     return beats, Y, folds
 
 
-def _classes(Y: np.ndarray) -> np.ndarray:
-    return np.argmax(np.asarray(Y).reshape(len(Y), -1), axis=1)
-
-
 def _measured(rows: np.ndarray, noise: float, seed: int, beats: np.ndarray) -> np.ndarray:
     """``rows`` of the pool's ``beats`` measured as :func:`training.observation.measure` does
     for the whole pool."""
@@ -158,8 +156,8 @@ def surrogate_folds(cfg: dict[str, Any], source_folds: list) -> list:
         if (len(source.train_states) != len(train) or len(source.test_states) != len(test)
                 or (source.test_index is not None
                     and not np.array_equal(source.test_index, test))
-                or not np.array_equal(_classes(source.Y_train), _classes(Y[train]))
-                or not np.array_equal(_classes(source.Y_test), _classes(Y[test]))):
+                or not np.array_equal(class_indices(source.Y_train), class_indices(Y[train]))
+                or not np.array_equal(class_indices(source.Y_test), class_indices(Y[test]))):
             raise ValueError(f"Fold {source.fold_index} of {cfg['reservoir']['states_from']} "
                              "does not match the fold rebuilt from its config.")
         train_states = source.train_states.reshape(len(train), -1)

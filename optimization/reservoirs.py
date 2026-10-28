@@ -8,6 +8,7 @@ ReservoirPy leaky ESN can now be evaluated through the same workflow.
 
 from __future__ import annotations
 
+import numbers
 from typing import Any
 
 from reservoirpy.node import Node
@@ -106,11 +107,11 @@ def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, 
         het_seed = int(het_seed_raw) if het_seed_raw is not None else None
         dde_kwargs = {}
         if params.get("delay") is not None:
-            delay = float(params["delay"])
-            if not delay >= 0:
-                raise ValueError(f"delay is the feedback delay in input steps; it must be 0 "
-                                 f"(no delay) or more, got {params['delay']}.")
-            dde_kwargs["delay"] = delay
+            raw = params["delay"]
+            if isinstance(raw, bool) or not isinstance(raw, numbers.Real) or not raw >= 0:
+                raise ValueError(f"delay is the feedback delay in input steps, a number: 0 "
+                                 f"(no delay) or more, got {raw!r}.")
+            dde_kwargs["delay"] = float(raw)
         node = BioReservoir(
             units=units,
             warmup=int(params["warmup"]),

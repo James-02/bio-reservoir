@@ -40,6 +40,22 @@ def normalize_average_name(average: str) -> str:
     return average
 
 
+def class_indices(Y: np.ndarray) -> np.ndarray:
+    """The class index of each beat; the inverse of one-hot encoding.
+
+    ``Y`` holds class indices (N,), one-hot labels or class scores (N, C), or one row per
+    time step (N, T, C), of which the first is read.
+    """
+    Y = np.asarray(Y)
+    if Y.ndim == 1:
+        return Y.astype(int)
+    if Y.ndim == 2:
+        return np.argmax(Y, axis=1)
+    if Y.ndim == 3:
+        return np.argmax(Y[:, 0, :], axis=1)
+    raise ValueError(f"Labels must have shape (N,), (N, C) or (N, T, C); got {Y.shape}")
+
+
 def _nanmean_attr(metrics_list: list[Metrics], attr_name: str) -> float:
     values = np.array([getattr(m, attr_name, float("nan")) for m in metrics_list], dtype=float)
     if values.size == 0 or np.isnan(values).all():
@@ -210,11 +226,10 @@ def evaluate_performance(
     Parameters
     ----------
     Y_true : np.ndarray
-        True labels in any shape accepted by argmax reduction, e.g. one-hot
-        ``(N, 1, C)`` or class-index ``(N,)``.
+        True labels in a shape :func:`class_indices` reads, e.g. one-hot ``(N, 1, C)``
+        or class-index ``(N,)``.
     Y_pred : np.ndarray
-        Predicted scores / one-hot outputs.  Argmax is taken to obtain the
-        predicted class index.
+        Predicted scores or one-hot outputs, read the same way.
     time : float
         Wall-clock runtime in seconds stored directly in the returned
         :class:`Metrics` object; not computed here.
@@ -229,8 +244,8 @@ def evaluate_performance(
     """
     primary_average = normalize_average_name(primary_average)
     logger.info("Calculating model performance metrics (primary_average=%s)", primary_average)
-    yt = np.array([np.argmax(y_t) for y_t in Y_true])
-    yp = np.array([np.argmax(y_p) for y_p in Y_pred])
+    yt = class_indices(Y_true)
+    yp = class_indices(Y_pred)
 
     f1_macro = float(f1_score(yt, yp, labels=labels, average="macro"))
     f1_weighted = float(f1_score(yt, yp, labels=labels, average="weighted"))
@@ -414,9 +429,7 @@ def count_labels(Y: np.ndarray | list[np.ndarray]) -> dict[int, int]:
     Returns:
         dict: Mapping from class label to occurrence count.
     """
-    Y = np.array([targets[0] for targets in Y])
-    if len(Y.shape) != 1:
-        Y = np.argmax(Y, axis=1)
+    Y = class_indices(np.array([targets[0] for targets in Y]))
     return {int(label): int(count)
             for label, count in zip(*np.unique(Y, return_counts=True), strict=True)}
 

@@ -6,6 +6,7 @@ import pytest
 from utils.analysis import (
     Metrics,
     _is_class_key,
+    class_indices,
     compute_class_dicts,
     compute_mean_dicts,
     compute_mean_metrics,
@@ -95,6 +96,26 @@ class TestMetrics:
 
 
 # ---------------------------------------------------------------------------
+# class_indices
+# ---------------------------------------------------------------------------
+
+class TestClassIndices:
+    def test_labels_one_hot_labels_and_scores_give_the_classes(self):
+        labels = np.array([2, 0, 1, 2])
+        one_hot = np.eye(3)[labels]
+        for Y in (labels, one_hot, one_hot[:, None, :], 0.1 + 0.5 * one_hot):
+            np.testing.assert_array_equal(class_indices(Y), labels)
+
+    def test_the_first_time_step_is_read(self):
+        Y = np.eye(3)[np.array([[2, 1], [0, 2]])]  # two beats, two time steps
+        np.testing.assert_array_equal(class_indices(Y), [2, 0])
+
+    def test_other_shapes_are_rejected(self):
+        with pytest.raises(ValueError, match="shape"):
+            class_indices(np.zeros((2, 1, 1, 3)))
+
+
+# ---------------------------------------------------------------------------
 # evaluate_performance
 # ---------------------------------------------------------------------------
 
@@ -123,6 +144,12 @@ class TestEvaluatePerformance:
         m = evaluate_performance(Y_true, Y_pred)
         assert "0" in m.class_metrics
         assert "1" in m.class_metrics
+
+    def test_class_index_and_one_hot_labels_score_the_same(self):
+        labels, predicted = np.array([0, 1, 2, 2]), np.array([0, 1, 2, 1])
+        one_hot = evaluate_performance(np.eye(3)[labels][:, None, :], np.eye(3)[predicted])
+        indices = evaluate_performance(labels, predicted)
+        assert indices.f1 == pytest.approx(one_hot.f1) and indices.accuracy == 0.75
 
     def test_averages_can_run_over_the_classes_of_a_test_set(self):
         # Class 2 is predicted once but has no test beats: the error lowers class 0's

@@ -27,7 +27,8 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
 from training.run import load_config, load_task, resolve
-from utils.preprocessing import class_indices, standardize_data
+from utils.analysis import class_indices
+from utils.preprocessing import standardize_data
 from utils.visualisation import (
     CLASS_COLOURS,
     OKABE_ITO,

@@ -196,6 +196,18 @@ def test_the_best_trial_becomes_a_plain_run_config(tmp_path):
     assert (run_dir / "metrics.json").is_file()
 
 
+def test_a_trial_records_the_readout_settings_chosen_at_the_edge_of_their_grid():
+    # With two ridge penalties, every fold chooses one at an edge of the grid.
+    cfg = _config(search={"reservoir.params.input_scaling": {"type": "categorical",
+                                                             "choices": [1.0]}},
+                  sampler={"type": "grid", "seed": 1}, trials=1)
+    cfg["readout"] = {"classifier": "RidgeCV", "params": {"alphas": [1e-3, 1e3]}}
+    trial = study_module.run_study(cfg).trials[0]
+    assert [edge.split(":")[0] for edge in trial.user_attrs["grid_edges"]] == [
+        "fold 0", "fold 1", "fold 2"]
+    assert all(" alpha = " in edge for edge in trial.user_attrs["grid_edges"])
+
+
 def _readout_study(states_from, search):
     return {"name": "readout-study", "reservoir": {"states_from": str(states_from)},
             "readout": {"classifier": "Ridge", "params": {"alpha": 1e-3}},
@@ -223,6 +235,18 @@ def test_a_study_on_saved_states_only_searches_the_readout(tmp_path):
     search = {"reservoir.params.input_scaling": {"type": "float", "low": 0.1, "high": 1.0}}
     with pytest.raises(ValueError, match="only search readout settings"):
         study_module.run_study(_readout_study(tmp_path, search))
+
+
+def test_the_best_trial_of_a_study_on_saved_states_runs_as_a_plain_config(tmp_path):
+    source_cfg = {k: v for k, v in _config().items() if k != "study"}
+    source = run_module.execute(dict(source_cfg, outputs={"save_states": True}),
+                                out=tmp_path / "source", allow_dirty=True)
+    cfg = _readout_study(source, {"readout.params.alpha": {"type": "float",
+                                                           "choices": [1e-3, 1.0]}})
+    study_module.run_study(cfg)
+    run_dir = run_module.execute(study_module.best_config(cfg), out=tmp_path / "best",
+                                 allow_dirty=True)
+    assert (run_dir / "metrics.json").is_file()
 
 
 def test_the_command_line_runs_a_study_and_writes_its_best_config(tmp_path, capsys):

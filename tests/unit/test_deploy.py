@@ -11,6 +11,9 @@ import pytest
 from optimization import collect, deploy
 from utils import config
 
+# The settings fixture blocks subprocess.run; tests that run a local shell use this one.
+RUN = subprocess.run
+
 
 @pytest.fixture
 def settings(tmp_path, monkeypatch):
@@ -21,7 +24,7 @@ def settings(tmp_path, monkeypatch):
     monkeypatch.setenv("BIORESERVOIR_DEPLOY_USER", "runner")
     monkeypatch.setenv("BIORESERVOIR_DEPLOY_WORKSPACE", "/srv/bioreservoir/")
     for key in ("BIORESERVOIR_DEPLOY_PYTHON", "BIORESERVOIR_DEPLOY_PIP_PROXY",
-                "BIORESERVOIR_DEPLOY_SERVICE", "BIORESERVOIR_DEPLOY_WORKSPACES"):
+                "BIORESERVOIR_DEPLOY_WORKSPACES"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(deploy, "git_state", lambda: ("0" * 40, "false"))
     monkeypatch.setattr(deploy.subprocess, "run", _no_execution)
@@ -183,19 +186,32 @@ class TestDeployer:
         with pytest.raises(SystemExit, match="uv is not installed"):
             deployer.setup_venv("host1")
 
-    def test_services_are_paused_and_started_only_when_configured(self, settings,
-                                                                  monkeypatch):
+    def test_a_launch_fails_unless_the_session_starts(self, settings):
         deployer = deploy.Deployer(settings, dry_run=True)
-        deployer.stop_service("host1")
-        deployer.start_service("host1")
-        assert deployer.commands == []
-        monkeypatch.setenv("BIORESERVOIR_DEPLOY_SERVICE", "worker.service")
-        deployer = deploy.Deployer(deploy.load_settings(), dry_run=True)
-        deployer.stop_service("host1")
-        deployer.start_service("host1")
-        stop, start = (cmd[-1] for cmd in deployer.commands)
-        assert "\nsystemctl stop worker.service" in stop
-        assert "\nsystemctl start worker.service" in start
+        deployer.launch("host1", deploy.command_jobs(["echo a"], None))
+        script = deployer.commands[-1][-1]
+        session = script.split("<< 'BIORESERVOIR_SESSION'\n", 1)[1]
+        assert session.startswith("touch /srv/bioreservoir/logs/session.started\n")
+        launch = script.split("\nBIORESERVOIR_SESSION\n", 1)[1]
+        assert launch.index("rm -f /srv/bioreservoir/logs/session.started") < launch.index(
+            "setsid nohup bash") < launch.index("[ ! -f /srv/bioreservoir/logs/session.started ]")
+        assert "tail -n 20 /srv/bioreservoir/logs/session.log >&2\n    exit 4" in launch
+
+    def test_a_relaunch_with_the_same_label_keeps_the_earlier_log(self, settings):
+        deployer = deploy.Deployer(settings, dry_run=True)
+        deployer.launch("host1", deploy.command_jobs(["echo a"], "tests"))
+        script = deployer.commands[-1][-1]
+        log_file = "/srv/bioreservoir/logs/run-tests.log"
+        assert f"| tee -a {log_file}" in script and f"| tee {log_file}" not in script
+
+    def test_every_part_of_a_command_writes_its_errors_to_the_job_log(self, settings, tmp_path):
+        deployer = deploy.Deployer(settings, dry_run=True)
+        deployer.launch("host1", deploy.command_jobs(["ls /missing && echo b"], "tests"))
+        job = "( ls /missing && echo b\n) 2>&1 | tee -a {}"
+        assert job.format("/srv/bioreservoir/logs/run-tests.log") in deployer.commands[-1][-1]
+        log = tmp_path / "run.log"
+        RUN(["bash", "-c", job.format(log)], capture_output=True, check=False)
+        assert "/missing" in log.read_text()
 
     def test_cleanup_stops_everything_the_session_started(self, settings):
         deployer = deploy.Deployer(settings, dry_run=True)
@@ -327,11 +343,41 @@ class TestMain:
         with pytest.raises(SystemExit, match="aborted"):
             deploy.main(["--cleanup", "--host", "host1"])
 
+    def test_deploying_never_stops_or_starts_a_service(self, settings, quiet, monkeypatch):
+        monkeypatch.setenv("BIORESERVOIR_DEPLOY_SERVICE", "worker.service")  # an old setting
+        made, real = [], deploy.Deployer
+
+        def recording(*args, **kwargs):
+            made.append(real(*args, **kwargs))
+            return made[-1]
+
+        monkeypatch.setattr(deploy, "Deployer", recording)
+        for argv in (["--host", "host1", "--run", "echo"], ["--setup"], ["--cleanup"]):
+            deploy.main([*argv, "--dry-run"])
+        commands = [" ".join(cmd) for deployer in made for cmd in deployer.commands]
+        assert commands and not any("systemctl" in cmd for cmd in commands)
+        with pytest.raises(SystemExit):
+            deploy.main(["--start-service", "--dry-run"])
+
+    def test_runs_record_the_commit_whose_files_were_copied(self, settings, quiet,
+                                                            monkeypatch):
+        launched = []
+        monkeypatch.setattr(deploy.Deployer, "launch", lambda self, host, jobs, commit=None:
+                            launched.append(commit))
+        states = iter([("a" * 40, "false"), ("a" * 40, "false")])
+        monkeypatch.setattr(deploy, "git_state", lambda: next(states))
+        deploy.main(["--host", "host1", "--run", "echo", "--dry-run"])
+        assert launched == [("a" * 40, "false")]
+        states = iter([("a" * 40, "false"), ("b" * 40, "false")])
+        with pytest.raises(SystemExit, match="changed"):
+            deploy.main(["--host", "host1", "--run", "echo", "--dry-run"])
+        assert len(launched) == 1
+
     def test_a_launch_leaves_the_workspace_of_a_running_session_alone(self, settings, quiet,
                                                                       monkeypatch):
         steps = []
         monkeypatch.setattr(deploy.Deployer, "session_alive", lambda self, host: True)
-        for step in ("sync", "push", "setup_venv", "stop_service", "launch"):
+        for step in ("sync", "push", "setup_venv", "launch"):
             monkeypatch.setattr(deploy.Deployer, step,
                                 lambda self, *args, step=step: steps.append(step))
         with pytest.raises(SystemExit, match="already running"):

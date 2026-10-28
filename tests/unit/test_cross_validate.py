@@ -70,18 +70,6 @@ def test_thread_limits_default_to_one_but_keep_user_settings(monkeypatch):
     assert all(os.environ[var] == "1" for var in others)
 
 
-class TestLabels:
-    def test_labels_become_class_indices(self):
-        labels = np.array([2, 0, 1, 2])
-        one_hot = np.eye(3)[labels]
-        for Y in (labels, one_hot, one_hot[:, None, :]):
-            np.testing.assert_array_equal(cv._labels_to_1d(Y), labels)
-
-    def test_other_shapes_are_rejected(self):
-        with pytest.raises(ValueError, match="Unsupported"):
-            cv._labels_to_1d(np.zeros((2, 1, 1, 3)))
-
-
 class TestFolds:
     def test_validation_sets_partition_the_data(self):
         X, Y, _ = _dataset(n_per_class=20)

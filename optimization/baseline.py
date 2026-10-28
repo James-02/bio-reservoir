@@ -67,6 +67,7 @@ from optimization.environment import get_environment
 from optimization.readout import _important_params, choose_classifier
 from training.profiling import ResourceMonitor
 from utils.analysis import (
+    class_indices,
     compute_class_dicts,
     evaluate_performance,
     sample_sd,
@@ -123,18 +124,6 @@ def _get_dataset(
 # ---------------------------------------------------------------------------
 # Fold helpers (mirrors training.cross_validate._iter_folds / _prepare_fold_data)
 # ---------------------------------------------------------------------------
-
-def _labels_to_1d(Y: np.ndarray) -> np.ndarray:
-    """Convert labels to a 1-D class-index vector for stratified splitting."""
-    Y = np.asarray(Y)
-    if Y.ndim == 1:
-        return Y.astype(int)
-    if Y.ndim == 3:  # (N, 1, C) one-hot
-        return np.argmax(Y[:, 0, :], axis=-1).astype(int)
-    if Y.ndim == 2:  # (N, C) one-hot
-        return np.argmax(Y, axis=-1).astype(int)
-    raise ValueError(f"Unsupported Y shape for stratification: {Y.shape}")
-
 
 def _flatten_X(X: np.ndarray) -> np.ndarray:
     """Flatten ECG time-series to 2-D feature matrix for sklearn classifiers.
@@ -299,7 +288,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
     trial.set_user_attr("feature_dim",           int(np.prod(X.shape[1:])))
 
     # ── Stratified k-fold CV ────────────────────────────────────────────────
-    y_1d = _labels_to_1d(Y)
+    y_1d = class_indices(Y)
     skf = StratifiedKFold(n_splits=folds, shuffle=True, random_state=seed)
 
     f1s: list[float] = []
@@ -324,7 +313,7 @@ def objective(trial: optuna.Trial, **kwargs) -> float:
         )
 
         # Y must be 1-D class indices for sklearn.
-        y_tr = _labels_to_1d(Y_tr)
+        y_tr = class_indices(Y_tr)
 
         clf = clf_cls(**hypers)
 

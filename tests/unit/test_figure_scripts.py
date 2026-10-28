@@ -61,7 +61,7 @@ class TestFoldAnalysisFigures:
     def test_older_fold_files_get_mcc_and_kappa_from_their_labels(self, tmp_path, load_script):
         from sklearn.metrics import cohen_kappa_score, matthews_corrcoef
 
-        from utils.preprocessing import class_indices
+        from utils.analysis import class_indices
         from utils.results import FoldArtifact
 
         _fold_files(tmp_path / "runs")

@@ -6,10 +6,11 @@ drawn while it runs. Each beat is therefore simulated once and every fold fits i
 on the cached rows (:func:`training.cross_validate.cross_validate_features`): the same
 cross-validation as simulating the beats of every fold, for the cost of one pass over the
 pool. The reservoir warms up once, when the run builds it, and each worker process gets a
-copy of the warmed-up reservoir. The beats run in worker processes with one thread each,
-which keeps every core busy, and each beat draws its noise (and the perturbation of its
-starting state, ``reset_noise``) from its own seed, so the features do not depend on how
-the beats are shared between the processes.
+copy of the warmed-up reservoir; with ``warmup_input: rest`` the warm-up needs the input
+weights, so each copy warms itself up, identically, on its first beat. The beats run in
+worker processes with one thread each, which keeps every core busy, and each beat draws its
+noise (and the perturbation of its starting state, ``reset_noise``) from its own seed, so
+the features do not depend on how the beats are shared between the processes.
 """
 
 from __future__ import annotations

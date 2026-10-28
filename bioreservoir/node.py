@@ -494,10 +494,10 @@ class BioReservoir(Node):
         self.states[-1] = new_state
 
     def _warmup_nodes(self, drive: np.ndarray | None = None) -> None:
-        drive = np.zeros(self.units) if drive is None else drive
+        self._warmup_drive = np.zeros(self.units) if drive is None else drive
         logger.info("Warmup: running %s steps of %s input", self.warmup, self.warmup_input)
         for _ in range(self.warmup):
-            self._step(drive)
+            self._step(self._warmup_drive)
 
     def _save_warmup(self) -> None:
         self._warmup_states = self.states.copy()
