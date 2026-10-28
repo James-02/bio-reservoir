@@ -3,12 +3,19 @@ and calibration error.
 
 In a device the colonies' fluorescent reporter (LuxI) is imaged, so the readout sees one
 variable of each colony rather than its whole state (``features.variables``), at one or a
-few times (``features.aggregation: images:K``). Each measured value is multiplied by its own
+few times (``features.aggregation``: ``images:K`` evenly spaced, or ``images_at:t1,t2,...`` at
+chosen times). Each measured value is multiplied by its own
 1 + sigma N(0, 1) (``features.measurement_noise``), drawn from a generator of the beat's own.
 The noise applies to the feature row, after aggregation: an image is one noisy snapshot,
 and an average over the beat (``mean``, ``last_N:K``) one noisy measurement of the average.
 The colonies of a test fold are read with gains calibrated to a relative error
 (``features.calibration_error``), which the readout never sees during training.
+
+With ``features.reference: start`` every image is read over the trap's own image of the
+state the beat starts from (F / F0). A trap's gain is the same in every image of a session,
+so it multiplies the reference as it multiplies the images and cancels. Every beat starts
+from the same warmed-up state, so the reference can be averaged over many beats: it is the
+noise-free start state (with ``reset_noise``, the average of the perturbed starts).
 """
 
 from __future__ import annotations
@@ -60,6 +67,26 @@ def calibration_gains(channels: int, images: int, error: float, seed: int,
     return np.tile(1.0 + error * rng.standard_normal(channels), images)
 
 
+def image_times(aggregation: str) -> list[int]:
+    """Times of the images of ``images_at:t1,t2,...``, in input steps after the beat starts
+    (one step is one minute): positive integers in increasing order.
+
+    The image at time t is the state after t steps.
+    """
+    text = aggregation.split(":", 1)[1] if aggregation.startswith("images_at:") else ""
+    parts = text.split(",")
+    if not all(p.strip().isdigit() for p in parts):
+        raise ValueError(f"Invalid images_at mode {aggregation!r}; expected "
+                         "'images_at:t1,t2,...' with whole minutes, e.g. 'images_at:155,187'.")
+    times = [int(p) for p in parts]
+    if times[0] < 1 or any(b <= a for a, b in zip(times[:-1], times[1:], strict=True)):
+        raise ValueError(f"{aggregation!r}: the image times must be 1 or more and strictly "
+                         "increasing.")
+    return times
+
+
 def image_count(aggregation: str) -> int:
     """Number of images in a feature row of ``aggregation``."""
+    if aggregation.startswith("images_at:"):
+        return len(image_times(aggregation))
     return int(aggregation.split(":")[1]) if aggregation.startswith("images:") else 1

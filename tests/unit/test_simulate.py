@@ -7,7 +7,13 @@ import pytest
 from optimization.reservoirs import build_reservoir
 from training import run as run_module
 from training.cross_validate import _iter_folds, cross_validate_features
-from training.observation import calibration_gains, image_count, measure, observed_columns
+from training.observation import (
+    calibration_gains,
+    image_count,
+    image_times,
+    measure,
+    observed_columns,
+)
 from training.pipeline import _aggregate_states, train
 from training.simulate import beat_seed, reseed_noise, simulate_beats
 
@@ -155,6 +161,26 @@ def test_test_gains_multiply_only_the_test_rows_of_their_fold():
         np.testing.assert_array_equal(artifact.train_states[:, 0], features[fold.train_idx])
 
 
+def test_a_reference_divides_every_row_and_cancels_the_test_gains():
+    rng = np.random.default_rng(2)
+    labels = np.repeat([0, 1], 9)
+    features = rng.uniform(1, 2, size=(18, 4)) + labels[:, None]
+    reference = rng.uniform(0.5, 2, size=4)
+    Y = np.eye(2)[labels][:, None, :]
+    readout = run_module.make_readout({"classifier": "Ridge", "params": {}, "scale": True})
+    gains = [1.0 + 0.3 * rng.standard_normal(4) for _ in range(3)]
+    runs = [cross_validate_features(features, Y, readout, folds=3, seed=0, save_states=True,
+                                    test_gains=g, reference=reference)[1]
+            for g in (gains, None)]
+    for with_gains, without, fold in zip(*runs, _iter_folds(features, Y, folds=3, seed=0),
+                                         strict=True):
+        np.testing.assert_array_equal(with_gains.train_states[:, 0],
+                                      features[fold.train_idx] / reference)
+        np.testing.assert_allclose(with_gains.test_states[:, 0],
+                                   features[fold.val_idx] / reference, rtol=1e-15)
+        np.testing.assert_array_equal(with_gains.Y_pred, without.Y_pred)
+
+
 def test_images_are_evenly_spaced_and_end_at_the_last_timestep():
     states = np.arange(187 * 2).reshape(187, 2)
     np.testing.assert_array_equal(_aggregate_states(states, "images:4", None),
@@ -163,6 +189,33 @@ def test_images_are_evenly_spaced_and_end_at_the_last_timestep():
     with pytest.raises(ValueError, match="between 1 and 187"):
         _aggregate_states(states, "images:188", None)
     assert (image_count("images:4"), image_count("final")) == (4, 1)
+
+
+def test_images_at_chosen_times_take_the_state_after_that_many_steps():
+    states = np.arange(187 * 2).reshape(187, 2)
+    np.testing.assert_array_equal(_aggregate_states(states, "images_at:46,93,140,187", None),
+                                  _aggregate_states(states, "images:4", None))
+    np.testing.assert_array_equal(_aggregate_states(states, "images_at:187", None),
+                                  _aggregate_states(states, "final", None))
+    np.testing.assert_array_equal(_aggregate_states(states, "images_at:1,155", None),
+                                  states[[0, 154]].reshape(1, -1))
+    with pytest.raises(ValueError, match="187 steps long"):
+        _aggregate_states(states, "images_at:155,188", None)
+    assert image_times("images_at:155,187") == [155, 187]
+    assert (image_count("images_at:155,187"), image_count("images_at:187")) == (2, 1)
+
+
+@pytest.mark.parametrize("mode, message", [
+    ("images_at:187,155", "strictly increasing"),
+    ("images_at:155,155", "strictly increasing"),
+    ("images_at:0,187", "1 or more"),
+    ("images_at:", "Invalid images_at"),
+    ("images_at:1.5", "Invalid images_at"),
+    ("images_at:-3,4", "Invalid images_at"),
+])
+def test_image_times_are_whole_increasing_minutes(mode, message):
+    with pytest.raises(ValueError, match=message):
+        image_times(mode)
 
 
 def test_observed_columns_take_the_variables_of_every_colony():
