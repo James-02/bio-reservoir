@@ -27,7 +27,9 @@ Each entry is marked **[science]** if it changes a reported number, or
 - [engineering] Ablations: `reservoir.params.delay: 0` removes the feedback delay and
   `task.scramble: true` puts each beat's time steps in a random order.
 - [engineering] `bioreservoir.diagnostics.oscillation_amplitudes` (`drive_bounds.py
-  --oscillation`) and `utils.preprocessing.class_indices`.
+  --oscillation`) and `utils.analysis.class_indices`, which every label conversion uses.
+- [engineering] A run warns, and a study trial records (`grid_edges`), when a fold picks a
+  readout setting at the end of its grid.
 
 ### Changed
 
@@ -43,6 +45,11 @@ Each entry is marked **[science]** if it changes a reported number, or
 - [engineering] `pyproject.toml` gives the version as 0.2.1 and pins ruff to CI's 0.15.0; the
   Pillow pin is removed (matplotlib installs it).
 - [engineering] The README and this changelog are shorter.
+- [engineering] The P designs no longer list settings they never read (`rc_scaling`,
+  `noise_rc`, the distance-kernel settings); their simulations are unchanged.
+- [engineering] The default ridge penalties are written out, so every CPU records the same.
+- [engineering] A readout grid search uses the run's `--processes` when folds run in turn.
+- [engineering] A relaunch with the same `--label` adds to the job log instead of replacing it.
 
 ### Removed
 
@@ -59,6 +66,17 @@ Each entry is marked **[science]** if it changes a reported number, or
 - [engineering] Workers no longer print a progress bar per beat.
 - [engineering] `drive_bounds.py` works on diffusive and uncoupled arrays;
   `analyse_fold_results.py` reports MCC and kappa, also for `v0.1` files.
+- [engineering] The oscillation diagnostic and the colony figure continue a `rest` warm-up
+  under the resting input, not without input.
+- [engineering] A refit on saved states refuses task and fold settings, which it ignored
+  (`task.scramble` included).
+- [engineering] `deploy --start-service` fails when the service does not start; a launch fails
+  unless its session starts, and records the commit whose files it copied.
+- [engineering] A run without the plotting packages skips its figures instead of stopping.
+- [engineering] `study-table` lists the run seed of raw-beat and refit trials (it showed None).
+- [engineering] `evaluate_performance` reads class-index labels (it read all as class 0).
+- [engineering] `delay` must be a number (`true` read as 1); the archive tests skip a host
+  without a full copy of the archive.
 
 ## [0.2.1] - 2026-10-25
 
