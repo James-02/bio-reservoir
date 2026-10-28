@@ -79,8 +79,8 @@ Each entry is marked **[science]** if it changes a reported number, or
 - [engineering] A run without the plotting packages skips its figures instead of stopping.
 - [engineering] `study-table` lists the run seed of raw-beat and refit trials (it showed None).
 - [engineering] `evaluate_performance` reads class-index labels (it read all as class 0).
-- [engineering] `delay` must be a number (`true` read as 1); the archive tests skip a host
-  without a full copy of the archive.
+- [engineering] `reservoir.params.delay` must be a number (`true` read as 1).
+- [engineering] The archive tests skip a host without a full copy of the archive.
 
 ## [0.2.1] - 2026-10-25
 
