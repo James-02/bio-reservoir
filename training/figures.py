@@ -80,14 +80,17 @@ def colony_states(cfg: dict, beat: np.ndarray, index: int, scalings: list[float]
     The colony has the design's kinetics without heterogeneity, no neighbours, and receives
     the beat with a positive weight, the input scaling; the beat is encoded, and its input
     noise drawn, as a run of beat ``index`` draws it. Each driven state starts from the
-    state at the end of the warm-up, as in a run.
+    state at the end of the warm-up, as in a run. With ``warmup_input: rest`` the warm-up
+    and the beat without input receive the resting input (a sample of 0) at the design's
+    input scaling.
     """
     alone = {"units": 1, "coupling": "none", "topology_type": "lattice",
              "param_heterogeneity_cv": 0.0, "input_connectivity": 1.0,
              "input_sign": "positive"}
     warmup = int(cfg["reservoir"]["params"]["warmup"])
     free = build(cfg, **alone, warmup=0)
-    rest = np.array([free._step(np.zeros(1))[0] for _ in range(warmup + len(beat))])
+    free.initialize(np.zeros((1, 1)))  # the input weights, which the resting drive needs
+    rest = np.array([free._step(free._warmup_drive)[0] for _ in range(warmup + len(beat))])
     driven = {}
     for scaling in scalings:
         node = build(cfg, **alone, input_scaling=scaling)

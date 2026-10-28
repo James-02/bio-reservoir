@@ -53,6 +53,19 @@ class TestColony:
                               input_sign="positive")
         np.testing.assert_array_equal(warm[-1], alone._warmup_states[-1][0])
 
+    def test_a_rest_warm_up_and_the_beat_without_input_are_at_the_resting_input(
+            self, small_design, ecg_data):
+        cfg = figures.run_config(small_design("centre", warmup_input="rest"))
+        beat, _ = figures.task_beat(cfg, 0)
+        warm, rest, _ = figures.colony_states(cfg, beat, 0, [0.1])
+        alone = {"units": 1, "coupling": "none", "topology_type": "lattice",
+                 "param_heterogeneity_cv": 0.0, "input_connectivity": 1.0,
+                 "input_sign": "positive"}
+        for steps, states in ((5, warm), (5 + len(beat), rest)):
+            node = figures.build(cfg, **alone, warmup=steps)
+            node.initialize(beat[:1])  # runs the warm-up at rest
+            np.testing.assert_array_equal(states[-1], node._warmup_states[-1][0])
+
     def test_a_larger_input_scaling_moves_the_colony_further(self, small_design, ecg_data):
         cfg = figures.run_config(small_design("centre"))
         beat, _ = figures.task_beat(cfg, 0)
