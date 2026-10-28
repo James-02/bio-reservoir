@@ -196,6 +196,18 @@ def test_the_best_trial_becomes_a_plain_run_config(tmp_path):
     assert (run_dir / "metrics.json").is_file()
 
 
+def test_a_trial_records_the_readout_settings_chosen_at_the_edge_of_their_grid():
+    # With two ridge penalties, every fold chooses one at an edge of the grid.
+    cfg = _config(search={"reservoir.params.input_scaling": {"type": "categorical",
+                                                             "choices": [1.0]}},
+                  sampler={"type": "grid", "seed": 1}, trials=1)
+    cfg["readout"] = {"classifier": "RidgeCV", "params": {"alphas": [1e-3, 1e3]}}
+    trial = study_module.run_study(cfg).trials[0]
+    assert [edge.split(":")[0] for edge in trial.user_attrs["grid_edges"]] == [
+        "fold 0", "fold 1", "fold 2"]
+    assert all(" alpha = " in edge for edge in trial.user_attrs["grid_edges"])
+
+
 def _readout_study(states_from, search):
     return {"name": "readout-study", "reservoir": {"states_from": str(states_from)},
             "readout": {"classifier": "Ridge", "params": {"alpha": 1e-3}},
