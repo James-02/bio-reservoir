@@ -9,6 +9,7 @@ databases (``results/optuna/<name>.db``), by the names of the final-run configs 
     python scripts/paper/paper_figures.py --design p1024 numbers
     python scripts/paper/paper_figures.py --design p1024 figures --formats png,pdf
     python scripts/paper/paper_figures.py --design p1024 tables
+    python scripts/paper/paper_figures.py --design p1024 images     # simulates 5 beats
 
 ``numbers`` writes ``numbers.json`` and ``numbers.tex`` (one ``\\newcommand`` per number) and
 prints them; ``figures`` writes Fig. 2-5 and the SI figures; ``tables`` writes the SI tables
@@ -534,6 +535,61 @@ def figure_refinement(r: Results):
     return fig
 
 
+def figure_images(design: Path, seed: int = SEEDS[0]):
+    """What the readout sees: for one typical beat of each class (the pool beat closest to its
+    class's mean), the beat as the traps receive it and the array's LuxI images at 46, 93, 140
+    and 187 min, each over the trap's image at the start of the beat (the reference). The
+    array is stepped through each beat as a run steps it (simulates five beats)."""
+    from training.figures import VARIABLES, array_states, build, encoded_input, run_config
+    from training.run import load_task
+    from utils.preprocessing import standardize_data
+
+    cfg = run_config(design)
+    cfg["reservoir"]["seed"] = seed
+    X, Y, _ = load_task(cfg["task"])
+    X, _ = standardize_data(X, X[:1], scaler_type=str(cfg["task"]["scaler"]))
+    X = np.asarray(X, dtype=float).reshape(len(X), -1)
+    labels = np.argmax(np.asarray(Y).reshape(len(Y), -1), axis=1)
+    side = int(round(np.sqrt(cfg["reservoir"]["params"]["units"])))
+    times = (46, 93, 140, 187)
+    lux = VARIABLES.index("I")
+    reference = build(cfg)
+    # the noise-free state every beat starts from, as features.reference reads it
+    start = np.asarray(reference.start_state(input_dim=1)).reshape(-1, 4)[:, lux]
+    fig, axes = plt.subplots(5, 1 + len(times), figsize=(15, 15),
+                             gridspec_kw={"width_ratios": [1.6] + [1] * len(times)})
+    images = []
+    for k, name in enumerate(CLASS_NAMES):
+        members = np.flatnonzero(labels == k)
+        index = int(members[np.argmin(((X[members] - X[members].mean(axis=0)) ** 2).sum(1))])
+        beat = X[index].reshape(-1, 1)
+        states, _ = array_states(cfg, beat, index)
+        ax = axes[k, 0]
+        ax.plot(np.arange(len(beat)), encoded_input(cfg, beat), color=OKABE_ITO[k], lw=LW)
+        for t in times:
+            ax.axvline(t, color="#999999", lw=LW * 0.5, ls=":")
+        ax.set_ylabel(name, color=OKABE_ITO[k])
+        ax.set_xlim(0, len(beat))
+        if k == 4:
+            ax.set_xlabel("Time in the beat (min)")
+        for j, t in enumerate(times):
+            image = np.log2(states[t - 1, :, lux] / start).reshape(side, side)
+            images.append(axes[k, j + 1].imshow(image, cmap="RdBu_r", interpolation="nearest"))
+            axes[k, j + 1].set_xticks([])
+            axes[k, j + 1].set_yticks([])
+            if k == 0:
+                axes[k, j + 1].set_title(f"{t} min")
+    values = np.concatenate([np.ravel(im.get_array()) for im in images])
+    values = values[np.isfinite(values)]
+    span = max(np.percentile(np.abs(values), 98), 1e-3) if len(values) else 1.0
+    norm = matplotlib.colors.Normalize(-span, span)
+    for im in images:
+        im.set_norm(norm)
+    fig.colorbar(images[0], ax=axes[:, 1:], shrink=0.6,
+                 label="log$_2$ of LuxI over the reference image")
+    return fig
+
+
 # ---------------------------------------------------------------------------------------
 # Tables
 # ---------------------------------------------------------------------------------------
@@ -598,7 +654,9 @@ def tables(r: Results, d: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("command", choices=("numbers", "figures", "tables", "all"))
+    parser.add_argument("command", choices=("numbers", "figures", "tables", "images", "all"),
+                        help="images simulates five beats of the design; the others only read "
+                             "results.")
     parser.add_argument("--design", choices=sorted(UNITS), default="p1024",
                         help="The design the figures and numbers are for (default p1024).")
     parser.add_argument("--compare", action="store_true",
@@ -637,6 +695,11 @@ def main(argv: list[str] | None = None) -> int:
                 if fig is not None:
                     for path in save_figure(fig, name, folder=out, formats=args.formats):
                         print(path)
+    if args.command == "images":
+        with plt.style.context(STYLE):
+            fig = figure_images(Path("experiments/v0.2/designs") / f"{d}.yaml")
+            for path in save_figure(fig, "fig1_images", folder=out, formats=args.formats):
+                print(path)
     if r.missing:
         print(f"\nNot found ({len(r.missing)}): " + ", ".join(sorted(r.missing)[:40])
               + (" ..." if len(r.missing) > 40 else ""), file=sys.stderr)
