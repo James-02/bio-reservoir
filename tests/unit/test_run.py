@@ -753,6 +753,20 @@ class TestReadoutSelection:
         for fold in metrics["folds"]:
             assert set(fold["selected"]) == {chosen}
 
+    def test_a_readout_search_runs_on_the_run_processes_with_the_same_result(
+            self, tmp_path, monkeypatch):
+        cfg = _config(reservoir={"type": "none"}, readout={
+            "classifier": "KNN", "params": {}, "search": {"n_neighbors": [1, 5, 15]}})
+        jobs = []
+        make_readout = run_module.make_readout
+        monkeypatch.setattr(run_module, "make_readout", lambda readout, n_jobs=1: (
+            jobs.append(n_jobs) or make_readout(readout, n_jobs)))
+        one = _execute(cfg, tmp_path / "one")
+        two = _execute(cfg, tmp_path / "two", processes=2)
+        assert jobs == [1, 2]
+        for a, b in zip(_predictions(one), _predictions(two), strict=True):
+            np.testing.assert_array_equal(a, b)
+
 
 class TestOptimizeCommands:
     """optimize rerun-best and apply-best build a run config and call the runner."""

@@ -535,9 +535,10 @@ def _load_pool(task: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, list[Path]
     return X, Y, [cache] if cache.is_file() else []
 
 
-def make_readout(readout: dict[str, Any]):
+def make_readout(readout: dict[str, Any], n_jobs: int = 1):
     """The readout node: the classifier, after a StandardScaler when ``scale`` is set, inside
-    a grid search over the training fold (inner stratified folds) when ``search`` is set."""
+    a grid search over the training fold (inner stratified folds, ``n_jobs`` candidates in
+    parallel) when ``search`` is set."""
     from reservoirpy.nodes import ScikitLearnNode
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
@@ -555,7 +556,7 @@ def make_readout(readout: dict[str, Any]):
         grid = {f"classifier__{k}": list(v) for k, v in readout["search"].items()}
         return ScikitLearnNode(GridSearchCV, model_hypers={
             "estimator": Pipeline(steps), "param_grid": grid, "scoring": "f1_macro",
-            "cv": inner})
+            "cv": inner, "n_jobs": int(n_jobs)})
     if readout.get("scale"):
         return ScikitLearnNode(Pipeline, model_hypers={"steps": steps})
     return ScikitLearnNode(cls, model_hypers=params)
@@ -580,7 +581,7 @@ def _simulate(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray,
         folds = int(cfg["cv"]["folds"])
         features, timing = _features(cfg, X, reservoir, processes)
         result, artifacts = cross_validate_features(
-            features, Y, make_readout(cfg["readout"]), folds=folds,
+            features, Y, make_readout(cfg["readout"], n_jobs=processes), folds=folds,
             seed=int(cfg["cv"]["seed"]), primary_average=str(cfg["cv"]["primary_average"]),
             save_states=bool(cfg["outputs"]["save_states"]),
             model_hypers=getattr(reservoir, "hypers", None),
@@ -671,7 +672,7 @@ def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: n
 
         features, _ = _features(cfg, X_all, reservoir, processes)
         gains = _test_gains(cfg, features, folds=1)
-        artifact = fit_on_features(features, Y_all, make_readout(cfg["readout"]), fold,
+        artifact = fit_on_features(features, Y_all, make_readout(cfg["readout"], processes), fold,
                                    save_states=bool(cfg["outputs"]["save_states"]),
                                    primary_average=str(cfg["cv"]["primary_average"]),
                                    labels=np.unique(class_indices(Y_test)),
@@ -683,7 +684,7 @@ def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: n
                               noise_ratio=float(cfg["cv"]["noise_ratio"]),
                               seed=int(cfg["cv"]["seed"]),
                               scaler_type=str(cfg["task"]["scaler"]))
-    artifact = run_fold(reservoir, make_readout(cfg["readout"]), *data, fold_index=0,
+    artifact = run_fold(reservoir, make_readout(cfg["readout"], processes), *data, fold_index=0,
                         save_states=bool(cfg["outputs"]["save_states"]),
                         readout_aggregation=str(cfg["features"]["aggregation"]),
                         readout_window=int(cfg["features"]["window"]),
