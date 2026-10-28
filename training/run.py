@@ -59,6 +59,7 @@ import yaml
 
 from utils import config as settings
 from utils import provenance
+from utils.analysis import class_indices
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +101,13 @@ RESERVOIR_KEYS = {
 SCALAR_METRICS = ("f1", "f1_macro", "f1_weighted", "accuracy", "precision", "recall",
                   "mcc", "kappa")
 
-# Ridge strengths a RidgeCV readout chooses from: 10^-4 to 10^6, two per decade.
-RIDGE_ALPHAS = tuple(float(a) for a in np.logspace(-4, 6, 21))
+# Ridge strengths a RidgeCV readout chooses from: 10^-4 to 10^6, two per decade, written out
+# because np.logspace differs in the last digit between CPUs.
+RIDGE_ALPHAS = (
+    0.0001, 0.00031622776601683794, 0.001, 0.0031622776601683794, 0.01, 0.03162277660168379,
+    0.1, 0.31622776601683794, 1.0, 3.1622776601683795, 10.0, 31.622776601683793, 100.0,
+    316.22776601683796, 1000.0, 3162.2776601683795, 10000.0, 31622.776601683792, 100000.0,
+    316227.7660168379, 1000000.0)
 
 # Third seed word of the stream that scrambles a beat; training.observation's streams use 1
 # and 2, so the draws are independent.
@@ -261,6 +267,18 @@ def resolve(cfg: dict[str, Any]) -> dict[str, Any]:
 
     reservoir = dict(cfg.get("reservoir") or {})
     if "states_from" in reservoir:
+        # The resolved config of a refit records the default task and fold settings, so only
+        # values that differ from them would change what the refit reads.
+        recorded = {key: {"seed": seed, **sections[key]} for key in ("task", "cv")}
+        fixed = [f"{key}.{name}" for key in ("task", "cv")
+                 for name, value in (cfg.get(key) or {}).items()
+                 if (key == "task" or name in ("folds", "seed", "simulate", "noise_rate",
+                                               "noise_ratio"))
+                 and (name not in recorded[key] or recorded[key][name] != value)]
+        if fixed:
+            raise ValueError("A refit reads the beats, labels and folds of the run whose states "
+                             "it takes (reservoir.states_from); it cannot change "
+                             f"{', '.join(fixed)}. Simulate again to change them.")
         resolved_reservoir = {"states_from": str(reservoir["states_from"])}
         if reservoir.get("surrogate") is not None:
             from training.surrogate import check_surrogate
@@ -534,9 +552,10 @@ def _load_pool(task: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, list[Path]
     return X, Y, [cache] if cache.is_file() else []
 
 
-def make_readout(readout: dict[str, Any]):
+def make_readout(readout: dict[str, Any], n_jobs: int = 1):
     """The readout node: the classifier, after a StandardScaler when ``scale`` is set, inside
-    a grid search over the training fold (inner stratified folds) when ``search`` is set."""
+    a grid search over the training fold (inner stratified folds, ``n_jobs`` candidates in
+    parallel) when ``search`` is set."""
     from reservoirpy.nodes import ScikitLearnNode
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
@@ -554,7 +573,7 @@ def make_readout(readout: dict[str, Any]):
         grid = {f"classifier__{k}": list(v) for k, v in readout["search"].items()}
         return ScikitLearnNode(GridSearchCV, model_hypers={
             "estimator": Pipeline(steps), "param_grid": grid, "scoring": "f1_macro",
-            "cv": inner})
+            "cv": inner, "n_jobs": int(n_jobs)})
     if readout.get("scale"):
         return ScikitLearnNode(Pipeline, model_hypers={"steps": steps})
     return ScikitLearnNode(cls, model_hypers=params)
@@ -579,7 +598,7 @@ def _simulate(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray,
         folds = int(cfg["cv"]["folds"])
         features, timing = _features(cfg, X, reservoir, processes)
         result, artifacts = cross_validate_features(
-            features, Y, make_readout(cfg["readout"]), folds=folds,
+            features, Y, make_readout(cfg["readout"], n_jobs=processes), folds=folds,
             seed=int(cfg["cv"]["seed"]), primary_average=str(cfg["cv"]["primary_average"]),
             save_states=bool(cfg["outputs"]["save_states"]),
             model_hypers=getattr(reservoir, "hypers", None),
@@ -600,10 +619,6 @@ def _simulate(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray,
         profile=bool(cfg["cv"]["profile"]),
         return_artifacts=True,
     )
-
-
-def _classes(Y: np.ndarray) -> np.ndarray:
-    return np.argmax(np.asarray(Y).reshape(len(Y), -1), axis=1)
 
 
 def _features(cfg: dict[str, Any], X: np.ndarray, reservoir,
@@ -674,10 +689,10 @@ def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: n
 
         features, _ = _features(cfg, X_all, reservoir, processes)
         gains = _test_gains(cfg, features, folds=1)
-        artifact = fit_on_features(features, Y_all, make_readout(cfg["readout"]), fold,
+        artifact = fit_on_features(features, Y_all, make_readout(cfg["readout"], processes), fold,
                                    save_states=bool(cfg["outputs"]["save_states"]),
                                    primary_average=str(cfg["cv"]["primary_average"]),
-                                   labels=np.unique(_classes(Y_test)),
+                                   labels=np.unique(class_indices(Y_test)),
                                    model_hypers=getattr(reservoir, "hypers", None),
                                    test_gains=None if gains is None else gains[0])
         artifact.test_index = np.asarray(beat_ids, dtype=np.int64)
@@ -686,13 +701,13 @@ def _evaluate_split(cfg: dict[str, Any], X: np.ndarray, Y: np.ndarray, X_test: n
                               noise_ratio=float(cfg["cv"]["noise_ratio"]),
                               seed=int(cfg["cv"]["seed"]),
                               scaler_type=str(cfg["task"]["scaler"]))
-    artifact = run_fold(reservoir, make_readout(cfg["readout"]), *data, fold_index=0,
+    artifact = run_fold(reservoir, make_readout(cfg["readout"], processes), *data, fold_index=0,
                         save_states=bool(cfg["outputs"]["save_states"]),
                         readout_aggregation=str(cfg["features"]["aggregation"]),
                         readout_window=int(cfg["features"]["window"]),
                         primary_average=str(cfg["cv"]["primary_average"]),
                         profile=bool(cfg["cv"]["profile"]),
-                        labels=np.unique(_classes(Y_test)))
+                        labels=np.unique(class_indices(Y_test)))
     artifact.test_index = np.asarray(beat_ids, dtype=np.int64)
     return artifact
 
@@ -784,19 +799,40 @@ def summarise(artifacts: list, primary_average: str = "macro",
     }
 
 
+def grid_edges(readout: dict[str, Any], folds: list[dict[str, Any]]) -> list[str]:
+    """The numeric readout settings that a fold chose at either end of their grid (the
+    ridge penalties of ``RidgeCV``, the values of ``readout.search``): grids to widen."""
+    grids = {f"classifier__{key}": values for key, values in (readout.get("search") or {}).items()}
+    if readout["classifier"] == "RidgeCV":
+        grids["alpha"] = readout["params"]["alphas"]
+    edges = []
+    for fold in folds:
+        for key, value in (fold.get("selected") or {}).items():
+            grid = sorted(v for v in grids.get(key, ())
+                          if isinstance(v, int | float) and not isinstance(v, bool))
+            if len(grid) > 1 and value in (grid[0], grid[-1]):
+                edges.append(f"fold {fold['fold']}: {key} = {value}")
+    return edges
+
+
 def plot_run(fig_dir: Path, metrics: dict[str, Any]) -> list[Path]:
     """The run's figures in ``fig_dir``: the confusion matrix of all folds together, and the
-    scores of each fold with their mean and SD (:func:`utils.visualisation.plot_fold_metrics`)."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
+    scores of each fold with their mean and SD (:func:`utils.visualisation.plot_fold_metrics`);
+    none on a host without the plotting packages."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
 
-    from utils.visualisation import (
-        STYLE,
-        plot_confusion_matrix,
-        plot_fold_metrics,
-        save_figure,
-    )
+        from utils.visualisation import (
+            STYLE,
+            plot_confusion_matrix,
+            plot_fold_metrics,
+            save_figure,
+        )
+    except ImportError as error:
+        logger.warning("No figures: the plotting packages are not installed (%s).", error)
+        return []
 
     with plt.style.context(STYLE):
         ax = plot_confusion_matrix(metrics["pooled"]["confusion_matrix"])
@@ -879,17 +915,17 @@ def execute(cfg: dict[str, Any], *, out: str | Path | None = None, processes: in
             X, Y, data_files = load_task(cfg["task"])
             pool_sha256 = _pool_sha256(X, Y)
             logger.info("Pool: %d beats, class counts %s", len(X),
-                        np.bincount(_classes(Y)).tolist())
+                        np.bincount(class_indices(Y)).tolist())
             if split:
                 from utils import heldout
 
                 X_test, Y_test, beat_ids = heldout.load_split(split, cfg["task"]["scaler"])
                 data_files = [*data_files, heldout.SPLITS_FILE]
-                labels = np.unique(_classes(Y_test))
+                labels = np.unique(class_indices(Y_test))
                 logger.info("Held-out split %s: %d beats, class counts %s", split,
-                            len(X_test), np.bincount(_classes(Y_test)).tolist())
+                            len(X_test), np.bincount(class_indices(Y_test)).tolist())
                 artifacts = [_evaluate_split(cfg, X, Y, X_test, Y_test, beat_ids, processes)]
-                low, high = bootstrap_ci(_classes(Y_test), _classes(artifacts[0].Y_pred),
+                low, high = bootstrap_ci(class_indices(Y_test), class_indices(artifacts[0].Y_pred),
                                          seed=int(cfg["seed"]))
                 evaluation = {"split": split, "n_beats": int(len(X_test)),
                               "classes": labels.tolist(), "f1_macro_ci95": [low, high]}
@@ -902,6 +938,10 @@ def execute(cfg: dict[str, Any], *, out: str | Path | None = None, processes: in
             artifact.save(results_dir=str(run_dir.parent),
                           save_states=bool(cfg["outputs"]["save_states"]))
         metrics = {**summarise(artifacts, cfg["cv"]["primary_average"], labels), **timings}
+        edges = grid_edges(cfg["readout"], metrics["folds"])
+        if edges:
+            logger.warning("Readout settings at the edge of their grid (widen it): %s",
+                           "; ".join(edges))
         if evaluation:
             metrics["test"] = evaluation
             metrics["summary"].update(f1_macro_ci95_low=evaluation["f1_macro_ci95"][0],

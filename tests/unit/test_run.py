@@ -5,6 +5,7 @@ import hashlib
 import importlib
 import json
 import logging
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -223,6 +224,14 @@ class TestExecute:
             "confusion_matrix.png", "fold_metrics.png"}
         assert "Pool: 24 beats" in (run_dir / "run.log").read_text()
 
+    def test_a_run_without_the_plotting_packages_skips_its_figures(self, tmp_path,
+                                                                     monkeypatch):
+        monkeypatch.setitem(sys.modules, "matplotlib", None)
+        run_dir = _execute(_config(), tmp_path / "run")
+        assert (run_dir / "manifest.json").is_file()
+        assert not list(run_dir.glob("figures/*"))
+        assert "No figures" in (run_dir / "run.log").read_text()
+
     def test_metrics_report_folds_mean_and_sample_sd(self, tmp_path):
         metrics = json.loads((_execute(_config(), tmp_path / "run") / "metrics.json")
                              .read_text())
@@ -273,6 +282,30 @@ class TestExecute:
         with pytest.raises(SystemExit, match="no saved states"):
             _execute({"name": "refit", "reservoir": {"states_from": str(first)},
                       "readout": _config()["readout"]}, tmp_path / "refit")
+
+    @pytest.mark.parametrize("section", [
+        {"task": {"scramble": True}}, {"task": {"rows": 12}}, {"cv": {"folds": 2}}])
+    def test_a_refit_cannot_change_the_beats_or_folds_of_its_source(self, section):
+        with pytest.raises(ValueError, match="A refit reads the beats, labels and folds"):
+            run_module.resolve({"name": "refit", "reservoir": {"states_from": "run"},
+                                "readout": {"classifier": "KNN"}, **section})
+        assert run_module.resolve({"name": "refit", "reservoir": {"states_from": "run"},
+                                   "readout": {"classifier": "KNN"},
+                                   "cv": {"primary_average": "weighted"}})
+
+    @pytest.mark.parametrize("seed", [{}, {"seed": 5}])
+    def test_the_resolved_config_of_a_refit_resolves_again(self, seed):
+        resolved = run_module.resolve({"name": "refit", "reservoir": {"states_from": "run"},
+                                       "readout": {"classifier": "KNN"}, **seed})
+        assert run_module.resolve(resolved) == resolved
+
+    def test_a_refit_runs_again_from_the_config_in_its_folder(self, tmp_path):
+        first = _execute(_config(outputs={"save_states": True}), tmp_path / "first")
+        refit = _execute({"name": "refit", "reservoir": {"states_from": str(first)},
+                          "readout": _config()["readout"]}, tmp_path / "refit")
+        again = _execute(run_module.load_config(refit / "config.yaml"), tmp_path / "again")
+        for pa, pb in zip(_predictions(refit), _predictions(again), strict=True):
+            np.testing.assert_array_equal(pa, pb)
 
     def test_an_existing_run_folder_is_not_overwritten(self, tmp_path):
         _execute(_config(), tmp_path / "run")
@@ -584,7 +617,7 @@ class TestHeldOutEvaluation:
             assert len(fold["Y_train"]) == len(X)
             np.testing.assert_array_equal(fold["Y_test"], Y_split)
             np.testing.assert_array_equal(fold["test_index"], ids)
-            y_true, y_pred = (run_module._classes(fold[k]) for k in ("Y_test", "Y_pred"))
+            y_true, y_pred = (run_module.class_indices(fold[k]) for k in ("Y_test", "Y_pred"))
         metrics = json.loads((run_dir / "metrics.json").read_text())
         assert metrics["n_folds"] == 1
         assert metrics["test"]["split"] == "validation-1"
@@ -743,6 +776,43 @@ class TestReadoutSelection:
                               / "metrics.json").read_text())
         for fold in metrics["folds"]:
             assert set(fold["selected"]) == {chosen}
+
+    def test_the_default_ridge_penalties_are_the_exact_half_powers_of_ten(self):
+        from decimal import Decimal, getcontext
+
+        getcontext().prec = 50
+        assert run_module.RIDGE_ALPHAS == tuple(
+            float(Decimal(10) ** (Decimal(k) / 2)) for k in range(-8, 13))
+
+    def test_settings_chosen_at_the_edge_of_their_grid_are_named(self):
+        readout = {"classifier": "SVM", "params": {},
+                   "search": {"C": [1.0, 10.0, 100.0], "kernel": ["rbf", "linear"]}}
+        folds = [{"fold": 0, "selected": {"classifier__C": 10.0, "classifier__kernel": "rbf"}},
+                 {"fold": 1, "selected": {"classifier__C": 100.0,
+                                          "classifier__kernel": "linear"}}]
+        assert run_module.grid_edges(readout, folds) == ["fold 1: classifier__C = 100.0"]
+        ridge = {"classifier": "RidgeCV", "params": {"alphas": [0.01, 1.0, 100.0]}}
+        assert run_module.grid_edges(ridge, [{"fold": 2, "selected": {"alpha": 0.01}}]) == [
+            "fold 2: alpha = 0.01"]
+
+    def test_a_run_warns_when_a_fold_chooses_the_edge_of_a_grid(self, tmp_path):
+        cfg = _config(readout={"classifier": "RidgeCV", "params": {"alphas": [0.01, 100.0]}})
+        run_log = (_execute(cfg, tmp_path / "run") / "run.log").read_text()
+        assert "Readout settings at the edge of their grid (widen it): fold 0: alpha" in run_log
+
+    def test_a_readout_search_runs_on_the_run_processes_with_the_same_result(
+            self, tmp_path, monkeypatch):
+        cfg = _config(reservoir={"type": "none"}, readout={
+            "classifier": "KNN", "params": {}, "search": {"n_neighbors": [1, 5, 15]}})
+        jobs = []
+        make_readout = run_module.make_readout
+        monkeypatch.setattr(run_module, "make_readout", lambda readout, n_jobs=1: (
+            jobs.append(n_jobs) or make_readout(readout, n_jobs)))
+        one = _execute(cfg, tmp_path / "one")
+        two = _execute(cfg, tmp_path / "two", processes=2)
+        assert jobs == [1, 2]
+        for a, b in zip(_predictions(one), _predictions(two), strict=True):
+            np.testing.assert_array_equal(a, b)
 
 
 class TestOptimizeCommands:

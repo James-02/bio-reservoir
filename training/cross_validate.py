@@ -38,7 +38,7 @@ from training.pipeline import (
 )
 from training.profiling import Profiler, _merge_profiles
 from utils import config
-from utils.analysis import Metrics, compute_mean_metrics, evaluate_performance
+from utils.analysis import Metrics, class_indices, compute_mean_metrics, evaluate_performance
 from utils.logger import setup_logging
 from utils.preprocessing import augment_data, standardize_data
 from utils.results import FoldArtifact
@@ -69,22 +69,6 @@ def _limit_native_threads() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Label helpers
-# ---------------------------------------------------------------------------
-
-def _labels_to_1d(Y: np.ndarray) -> np.ndarray:
-    """Convert labels to a 1-D class-index vector for stratified splitting."""
-    Y = np.asarray(Y)
-    if Y.ndim == 1:
-        return Y.astype(int)
-    if Y.ndim == 3:      # (N, 1, C) one-hot
-        return np.argmax(Y[:, 0, :], axis=-1).astype(int)
-    if Y.ndim == 2:      # (N, C) one-hot
-        return np.argmax(Y, axis=-1).astype(int)
-    raise ValueError(f"Unsupported Y shape for stratification: {Y.shape}")
-
-
-# ---------------------------------------------------------------------------
 # Fold dataclass
 # ---------------------------------------------------------------------------
 
@@ -112,7 +96,7 @@ def _iter_folds(
     (``StratifiedShuffleSplit``) because ``StratifiedKFold`` requires at
     least 2 splits.  For *folds* >= 2 standard k-fold is used.
     """
-    y_1d = _labels_to_1d(Y)
+    y_1d = class_indices(Y)
     if folds == 1:
         splitter = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=int(seed))
     else:

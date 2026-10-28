@@ -204,6 +204,7 @@ def run_study(cfg: dict[str, Any], *, processes: int = 1, trials: int | None = N
         _pool_sha256,
         _simulate,
         dump_config,
+        grid_edges,
         load_task,
         refit_readout,
         resolve,
@@ -259,6 +260,11 @@ def run_study(cfg: dict[str, Any], *, processes: int = 1, trials: int | None = N
         trial.set_user_attr("summary", metrics["summary"])
         trial.set_user_attr("fold_f1", [f["f1"] for f in metrics["folds"]])
         trial.set_user_attr("code", {"commit": git.get("commit"), "citable": citable})
+        edges = grid_edges(resolved["readout"], metrics["folds"])
+        if edges:
+            trial.set_user_attr("grid_edges", edges)
+            logger.warning("Trial %d: readout settings at the edge of their grid: %s",
+                           trial.number, "; ".join(edges))
         if "simulation" in result:
             trial.set_user_attr("simulation", result["simulation"])
         return float(metrics["mean"][metric])
@@ -349,7 +355,9 @@ def trials_table(cfg: dict[str, Any], storage: str | None = None):
         attrs = trial.user_attrs
         seed = trial.params.get(SEED_PATH, fixed_seed)
         if "config" in attrs:
-            seed = yaml.safe_load(attrs["config"])["reservoir"].get("seed")
+            # A run without a reservoir (raw beat, saved states) draws from the run seed.
+            resolved = yaml.safe_load(attrs["config"])
+            seed = resolved["reservoir"].get("seed", resolved.get("seed"))
         started, ended = trial.datetime_start, trial.datetime_complete
         rows.append({
             "trial": trial.number, "state": trial.state.name,

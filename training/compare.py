@@ -21,6 +21,7 @@ from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
 
 from utils import config as settings
 from utils import provenance
+from utils.analysis import class_indices
 
 METRICS = ("f1_macro", "f1_weighted", "accuracy", "mcc")
 
@@ -69,10 +70,6 @@ class _Labels:
         self.test_index = test_index
 
 
-def _classes(Y: np.ndarray) -> np.ndarray:
-    return np.argmax(np.asarray(Y).reshape(len(Y), -1), axis=1)
-
-
 def _scores(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
     """Metrics over the classes of the test labels (other predicted classes are errors)."""
     labels = np.unique(y_true)
@@ -118,7 +115,7 @@ def gap_closed(f1_a, f1_b, f1_ceiling):
 def _same_beats(folds_a: list, folds_b: list) -> bool:
     if [f.fold_index for f in folds_a] != [f.fold_index for f in folds_b]:
         return False
-    return all(np.array_equal(_classes(a.Y_test), _classes(b.Y_test))
+    return all(np.array_equal(class_indices(a.Y_test), class_indices(b.Y_test))
                and (a.test_index is None or b.test_index is None
                     or np.array_equal(a.test_index, b.test_index))
                for a, b in zip(folds_a, folds_b, strict=True))
@@ -147,8 +144,8 @@ def compare(ref_a: str | Path, ref_b: str | Path, *, out: str | Path | None = No
     paired = same_folds
     by_index = True
     for fa, fb in zip(folds_a, folds_b, strict=False):
-        ta, tb = _classes(fa.Y_test), _classes(fb.Y_test)
-        pa, pb = _classes(fa.Y_pred), _classes(fb.Y_pred)
+        ta, tb = class_indices(fa.Y_test), class_indices(fb.Y_test)
+        pa, pb = class_indices(fa.Y_pred), class_indices(fb.Y_pred)
         same = len(ta) == len(tb) and bool(np.array_equal(ta, tb))
         if fa.test_index is not None and fb.test_index is not None:
             same = same and bool(np.array_equal(fa.test_index, fb.test_index))
@@ -173,14 +170,14 @@ def compare(ref_a: str | Path, ref_b: str | Path, *, out: str | Path | None = No
     if (ceiling is not None or margin is not None) and not paired:
         raise ValueError("A margin or a ceiling needs runs A and B on the same folds and beats.")
     if paired:
-        y_true = np.concatenate([_classes(f.Y_test) for f in folds_a])
-        preds = [np.concatenate([_classes(f.Y_pred) for f in folds]) for folds in (folds_a, folds_b)]
+        y_true = np.concatenate([class_indices(f.Y_test) for f in folds_a])
+        preds = [np.concatenate([class_indices(f.Y_pred) for f in folds]) for folds in (folds_a, folds_b)]
         if ceiling is not None:
             folds_c = load_folds(ceiling)
             if not _same_beats(folds_a, folds_c):
                 raise ValueError(f"{run_path(ceiling).name} does not share the folds and beats "
                                  f"of {names[0]}.")
-            preds.append(np.concatenate([_classes(f.Y_pred) for f in folds_c]))
+            preds.append(np.concatenate([class_indices(f.Y_pred) for f in folds_c]))
         f1 = [_f1_macro(y_true, pred) for pred in preds]
         draws = _paired_draws(y_true, preds, n_boot, seed)
         low, high, bound = np.percentile(draws[:, 1] - draws[:, 0], [2.5, 97.5, 5.0])
@@ -235,8 +232,8 @@ def plot_comparison(out: Path, result: dict[str, Any], folds_a: list, folds_b: l
         fig, axes = plt.subplots(1, 2, figsize=(16, 7.5), sharey=True)
         for ax, folds, name in ((axes[0], folds_a, result["a"]), (axes[1], folds_b, result["b"])):
             labels = np.arange(np.asarray(folds[0].Y_test).shape[-1])
-            y_true = np.concatenate([_classes(f.Y_test) for f in folds])
-            y_pred = np.concatenate([_classes(f.Y_pred) for f in folds])
+            y_true = np.concatenate([class_indices(f.Y_test) for f in folds])
+            y_pred = np.concatenate([class_indices(f.Y_pred) for f in folds])
             plot_confusion_matrix(confusion_matrix(y_true, y_pred, labels=labels), ax,
                                   colorbar=ax is axes[1])
             ax.set_title(name)

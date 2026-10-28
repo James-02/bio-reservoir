@@ -52,8 +52,10 @@ def _read_by_builder(reservoir, key):
         return coupling == "diffusion"
     if key in ("rc_scaling", "noise_rc"):
         return coupling == "abstract"
-    if key in ("interaction_diameters", "fade_alpha"):
+    if key in ("interaction_diameters", "fade_alpha", "normalize_after_masks"):
         return coupling != "none" and topology == "distance"
+    if key in ("sparsity", "signed", "p_excite"):
+        return coupling != "none" and topology in ("distance", "random")
     if key == "rc_connectivity":
         return coupling != "none" and topology == "random"
     if key == "param_heterogeneity_seed":
@@ -87,6 +89,14 @@ def test_each_config_resolves_and_never_scores_the_test_split(path):
         run_cfg = cfg
     resolved = resolve(run_cfg)
     assert resolved.get("test", {}).get("split") != "test"
+
+
+@pytest.mark.parametrize("path", CONFIGS, ids=_ids(CONFIGS))
+def test_each_config_sets_only_reservoir_settings_its_model_reads(path):
+    cfg = load_config(path)
+    reservoir = resolve(study_module.split(cfg)[0] if "study" in cfg else cfg)["reservoir"]
+    unread = [key for key in reservoir.get("params", {}) if not _read_by_builder(reservoir, key)]
+    assert unread == []
 
 
 @pytest.mark.parametrize("path", STUDIES, ids=_ids(STUDIES))
