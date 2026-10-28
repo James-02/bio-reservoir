@@ -139,6 +139,13 @@ def _answer(text, returncode=0):
     return run
 
 
+def _systemctl_without_the_unit(cmd, check=False, **kwargs):
+    """subprocess.run on a host where the configured service unit does not exist."""
+    if check:
+        raise subprocess.CalledProcessError(5, cmd)
+    return subprocess.CompletedProcess(cmd, 0, stdout="absent\n", stderr="")
+
+
 class TestDeployer:
     def test_sync_replaces_the_code_and_adds_missing_data(self, settings):
         deployer = deploy.Deployer(settings, dry_run=True)
@@ -196,6 +203,35 @@ class TestDeployer:
         stop, start = (cmd[-1] for cmd in deployer.commands)
         assert "\nsystemctl stop worker.service" in stop
         assert "\nsystemctl start worker.service" in start
+
+    def test_a_host_without_the_service_is_reported(self, settings, monkeypatch, caplog):
+        monkeypatch.setenv("BIORESERVOIR_DEPLOY_SERVICE", "worker.service")
+        monkeypatch.setattr(deploy.subprocess, "run", _systemctl_without_the_unit)
+        deployer = deploy.Deployer(deploy.load_settings())
+        with caplog.at_level(logging.WARNING, logger="deploy"):
+            deployer.stop_service("host1")
+        assert any("could not pause the service worker.service" in message
+                   for message in caplog.messages)
+        with pytest.raises(subprocess.CalledProcessError):
+            deployer.start_service("host1")
+
+    def test_a_launch_fails_unless_the_session_starts(self, settings):
+        deployer = deploy.Deployer(settings, dry_run=True)
+        deployer.launch("host1", deploy.command_jobs(["echo a"], None))
+        script = deployer.commands[-1][-1]
+        session = script.split("<< 'BIORESERVOIR_SESSION'\n", 1)[1]
+        assert session.startswith("touch /srv/bioreservoir/logs/session.started\n")
+        launch = script.split("\nBIORESERVOIR_SESSION\n", 1)[1]
+        assert launch.index("rm -f /srv/bioreservoir/logs/session.started") < launch.index(
+            "setsid nohup bash") < launch.index("[ ! -f /srv/bioreservoir/logs/session.started ]")
+        assert "tail -n 20 /srv/bioreservoir/logs/session.log >&2\n    exit 4" in launch
+
+    def test_a_relaunch_with_the_same_label_keeps_the_earlier_log(self, settings):
+        deployer = deploy.Deployer(settings, dry_run=True)
+        deployer.launch("host1", deploy.command_jobs(["echo a"], "tests"))
+        script = deployer.commands[-1][-1]
+        log_file = "/srv/bioreservoir/logs/run-tests.log"
+        assert f"| tee -a {log_file}" in script and f"| tee {log_file}" not in script
 
     def test_cleanup_stops_everything_the_session_started(self, settings):
         deployer = deploy.Deployer(settings, dry_run=True)
@@ -326,6 +362,26 @@ class TestMain:
         monkeypatch.setattr("builtins.input", lambda prompt: "n")
         with pytest.raises(SystemExit, match="aborted"):
             deploy.main(["--cleanup", "--host", "host1"])
+
+    def test_a_service_that_does_not_start_is_an_error(self, settings, quiet, monkeypatch):
+        monkeypatch.setenv("BIORESERVOIR_DEPLOY_SERVICE", "worker.service")
+        monkeypatch.setattr(deploy.subprocess, "run", _systemctl_without_the_unit)
+        with pytest.raises(SystemExit, match="could not start the service on host1"):
+            deploy.main(["--start-service", "--host", "host1"])
+
+    def test_runs_record_the_commit_whose_files_were_copied(self, settings, quiet,
+                                                            monkeypatch):
+        launched = []
+        monkeypatch.setattr(deploy.Deployer, "launch", lambda self, host, jobs, commit=None:
+                            launched.append(commit))
+        states = iter([("a" * 40, "false"), ("a" * 40, "false")])
+        monkeypatch.setattr(deploy, "git_state", lambda: next(states))
+        deploy.main(["--host", "host1", "--run", "echo", "--dry-run"])
+        assert launched == [("a" * 40, "false")]
+        states = iter([("a" * 40, "false"), ("b" * 40, "false")])
+        with pytest.raises(SystemExit, match="changed"):
+            deploy.main(["--host", "host1", "--run", "echo", "--dry-run"])
+        assert len(launched) == 1
 
     def test_a_launch_leaves_the_workspace_of_a_running_session_alone(self, settings, quiet,
                                                                       monkeypatch):

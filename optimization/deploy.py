@@ -265,30 +265,43 @@ bin/uv sync --frozen --extra dev --quiet $SKIP
         log.info("[%s] environment ready", host)
 
     def stop_service(self, host: str) -> None:
-        if self.settings.service:
-            self.ssh(host, f"systemctl stop {q(self.settings.service)} 2>/dev/null || true")
+        """Pause the configured service, if the host has it, so that it frees the CPUs."""
+        if not self.settings.service:
+            return
+        out = self.ssh(host, f"systemctl stop {q(self.settings.service)} 2>/dev/null "
+                             "&& echo paused || echo absent", capture=True, check=False)
+        if out == "paused" or self.dry_run:
             log.info("[%s] configured service paused", host)
+        else:
+            log.warning("[%s] could not pause the service %s (not installed on this host?)",
+                        host, self.settings.service)
 
-    def start_service(self, host: str) -> None:
+    def start_service(self, host: str) -> bool:
+        """Start the configured service again; a failure raises ``CalledProcessError``."""
         if not self.settings.service:
             log.info("[%s] no BIORESERVOIR_DEPLOY_SERVICE configured", host)
-            return
-        unit = q(self.settings.service)
-        self.ssh(host, f"systemctl start {unit} && echo 'service started' "
-                       f"|| echo 'could not start the service'", check=False)
+            return True
+        self.ssh(host, f"systemctl start {q(self.settings.service)}")
+        log.info("[%s] service started", host)
+        return True
 
-    def launch(self, host: str, jobs: Sequence[tuple[str, str]]) -> None:
+    def launch(self, host: str, jobs: Sequence[tuple[str, str]],
+               commit: tuple[str, str] | None = None) -> None:
         """Run *jobs* (log name, shell command) one after another in a detached session.
 
-        Each job logs to ``<workspace>/logs/run-<name>.log``.  The session exports the
-        host label and the local git SHA so that every trial records them, and runs in its
-        own process group, which ``--cleanup`` stops.
+        Each job appends to ``<workspace>/logs/run-<name>.log``.  The session exports the
+        host label and the local git SHA and dirty flag (*commit*, read before the code was
+        copied; by default now) so that every trial records them, and runs in its own
+        process group, which ``--cleanup`` stops.  The launch fails unless the session
+        starts within 10 s.
         """
         ws = self.settings.workspace_of(host)
-        sha, dirty = git_state()
+        sha, dirty = commit or git_state()
         if dirty == "true":
             log.warning("Uncommitted local changes: runs will record git_dirty=true.")
+        started = q(f"{ws}/logs/session.started")
         lines = [
+            f"touch {started}",
             "set -o pipefail",
             f"cd {q(ws)}",
             f"source {q(self.settings.venv_of(host))}/bin/activate",
@@ -300,7 +313,7 @@ bin/uv sync --frozen --extra dev --quiet $SKIP
         for name, command in jobs:
             run_log = q(f"{ws}/logs/run-{name}.log")
             lines += [
-                f'echo "=== {name} started $(date -u +%FT%TZ) ===" | tee {run_log}',
+                f'echo "=== {name} started $(date -u +%FT%TZ) ===" | tee -a {run_log}',
                 f"{command} 2>&1 | tee -a {run_log}",
                 "RC=$?",
                 f'echo "=== {name} finished (exit $RC) $(date -u +%FT%TZ) ===" | tee -a {run_log}',
@@ -309,6 +322,7 @@ bin/uv sync --frozen --extra dev --quiet $SKIP
         lines.append('exit "$FAILED"')
         pid = q(f"{ws}/logs/session.pid")
         session = q(f"{ws}/logs/session.sh")
+        session_log = q(f"{ws}/logs/session.log")
         script = "\n".join([
             "set -e",
             f"mkdir -p {q(ws)}/logs",
@@ -319,8 +333,15 @@ bin/uv sync --frozen --extra dev --quiet $SKIP
             f"cat > {session} << 'BIORESERVOIR_SESSION'",
             *lines,
             "BIORESERVOIR_SESSION",
-            f"setsid nohup bash {session} > {q(f'{ws}/logs/session.log')} 2>&1 < /dev/null &",
+            f"rm -f {started}",
+            f"setsid nohup bash {session} > {session_log} 2>&1 < /dev/null &",
             f"echo $! > {pid}",
+            f"for _ in $(seq 20); do [ -f {started} ] && break; sleep 0.5; done",
+            f"if [ ! -f {started} ]; then",
+            '    echo "the session did not start; its log:" >&2',
+            f"    tail -n 20 {session_log} >&2",
+            "    exit 4",
+            "fi",
             f'echo "session started (PID $(cat {pid}))"',
         ])
         log.info("[%s] launching: %s", host, ", ".join(name for name, _ in jobs))
@@ -692,7 +713,10 @@ def main(argv: Sequence[str] | None = None) -> None:
                 raise SystemExit("aborted")
             for_hosts(hosts, deployer.cleanup)
         elif args.start_service:
-            for_hosts(hosts, deployer.start_service)
+            started = for_hosts(hosts, deployer.start_service)
+            failed = [host for host in hosts if not started[host]]
+            if failed:
+                raise SystemExit(f"could not start the service on {', '.join(failed)}")
         else:
             if not args.host or len(args.host) != 1:
                 parser.error("launching needs exactly one --host")
@@ -704,11 +728,15 @@ def main(argv: Sequence[str] | None = None) -> None:
             if deployer.session_alive(host):
                 raise SystemExit(f"[{host}] a session is already running; wait for it or "
                                  "use --cleanup")
+            commit = git_state()
             deployer.sync(host)
             deployer.push(host, args.push)
             deployer.setup_venv(host)
+            if git_state() != commit:
+                raise SystemExit("The local checkout changed (a commit, or its first uncommitted "
+                                 "edit) while its files were copied; launch again.")
             deployer.stop_service(host)
-            deployer.launch(host, jobs)
+            deployer.launch(host, jobs, commit=commit)
             log.info("[%s] follow with: python -m optimization.deploy --logs --host %s",
                      host, host)
     except subprocess.CalledProcessError as exc:
