@@ -55,8 +55,8 @@ class TestDelay:
         assert RECORDED["res_delay"] == "delay"
         assert _resolve_params_from_trial(Trial(), {})["delay"] == 0.0
 
-    @pytest.mark.parametrize("delay", [-1, -0.5, float("nan")])
-    def test_a_negative_or_undefined_delay_is_refused(self, delay):
+    @pytest.mark.parametrize("delay", [-1, -0.5, float("nan"), True, "10", [10]])
+    def test_a_delay_that_is_not_a_non_negative_number_is_refused(self, delay):
         with pytest.raises(ValueError, match="delay is the feedback delay in input steps"):
             build_reservoir(dict(P_LIKE, delay=delay), seed=3)
 
