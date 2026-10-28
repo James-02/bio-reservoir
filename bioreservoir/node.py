@@ -630,6 +630,21 @@ class BioReservoir(Node):
         """Draw the following reset perturbations (``reset_noise``) from ``seed``'s stream."""
         self._reset_rng = stream(seed, RESET_STREAM)
 
+    def start_state(self, input_dim: int = 1) -> np.ndarray:
+        """The observed state every input sequence starts from: the state after the warm-up,
+        colony by colony, as the node outputs it (``units * len(output_variables)`` values).
+
+        With ``reset_noise`` each sequence starts from this state times mean-preserving
+        log-normal factors, so it is their average start. With ``warmup_input="rest"`` the
+        warm-up runs on the first input; an uninitialised node is then copied and the copy
+        initialised with ``input_dim`` inputs, leaving this node unchanged.
+        """
+        node = self
+        if self.warmup_input == "rest" and not self.is_initialized:
+            node = self.copy()
+            node.initialize(np.zeros((1, self.input_dim or input_dim)))
+        return node._warmup_states[-1][:, node.output_indices].ravel()
+
     def reset(self, to_state: np.ndarray = None) -> "BioReservoir":
         """Reset the reservoir to warmup state or a specified state."""
         # Clear per-timestep timing lists so each run's stats are independent.

@@ -16,6 +16,7 @@ import numpy as np
 from reservoirpy.node import Node
 from sklearn.base import is_classifier
 
+from training.observation import image_times
 from training.profiling import Profiler
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,10 @@ def _aggregate_states(states: np.ndarray, mode: str, x: np.ndarray) -> np.ndarra
         ``"images:K"``
             K snapshots evenly spaced over the beat, the last at its final timestep
             (``"images:4"``: timesteps T/4, T/2, 3T/4 and T), one after another.
+        ``"images_at:t1,t2,..."``
+            One snapshot after each of t1 < t2 < ... timesteps (in minutes after the beat
+            starts, one timestep per minute), one after another: ``"images_at:155,187"``
+            takes rows 154 and 186. ``"images_at:T"`` is ``"final"``.
     x : np.ndarray
         Input sequence for this instance (not used by the current modes).
     """
@@ -103,9 +108,17 @@ def _aggregate_states(states: np.ndarray, mode: str, x: np.ndarray) -> np.ndarra
         steps = np.arange(1, k + 1) * len(states) // k - 1
         return states[steps].reshape(1, -1)
 
+    if mode.startswith("images_at:"):
+        times = image_times(mode)
+        if times[-1] > len(states):
+            raise ValueError(f"'{mode}': the beat is {len(states)} steps long, so images can "
+                             f"be taken at times 1 to {len(states)}.")
+        return states[np.asarray(times) - 1].reshape(1, -1)
+
     raise ValueError(
         f"Unknown readout_aggregation mode '{mode}'. "
-        "Choose from: 'final', 'mean', 'signal_mean', 'first_N:K', 'last_N:K', 'images:K'."
+        "Choose from: 'final', 'mean', 'signal_mean', 'first_N:K', 'last_N:K', 'images:K', "
+        "'images_at:t1,t2,...'."
     )
 
 
