@@ -278,7 +278,7 @@ def figure_readouts(r: Results, designs: list[str]):
             ax.bar(2 - 0.4 + width * (j + 1.5), svm[d], width=width, color=COLOURS[d], alpha=0.6,
                    hatch="//")
     reference_line(ax, r.f1("P5-balanced-raw-histgb"), "raw beat, HistGB", vertical=False)
-    ax.set_xticks(range(3), ["Ridge\n(linear)", "Random forest", "RBF SVM\n(2 images, 1 seed)"])
+    ax.set_xticks(range(3), ["Ridge", "Random forest", "RBF SVM\n(2 images, 1 seed)"])
     ax.set_ylim(0.6, 0.93)
     ax.set_ylabel("Macro F1 (balanced, 5 folds)")
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=2, fontsize=12,
@@ -317,7 +317,7 @@ def figure_ladder(r: Results, d: str):
     for ax, sfx, row, title in ((axes[0], "", "headline", "Ridge, 2 images"),
                                 (axes[1], "-forest", "forest", "Random forest, 4 images")):
         steps = [
-            ("All states, clean mean", r.seeds(f"P5-balanced-{d}-full{sfx}")),
+            ("Ideal: LuxI and AHL,\nbeat average, no noise", r.seeds(f"P5-balanced-{d}-full{sfx}")),
             ("LuxI images, no noise", noise[sfx].get(0.0, [])),
             ("+ 1% noise (design)", r.seeds(f"P5-balanced-{d}-{row}")),
             ("+ 2% noise", noise[sfx].get(0.02, [])),
@@ -327,9 +327,9 @@ def figure_ladder(r: Results, d: str):
         for i, (_, values) in enumerate(steps):
             dots(ax, -i, values, COLOURS[d] if sfx == "" else COLOURS["forest"])
         if sfx == "":
-            others = [("ESN, clean mean", r.seeds("P5-balanced-esn"), COLOURS["esn"]),
+            others = [("ESN, ideal", r.seeds("P5-balanced-esn"), COLOURS["esn"]),
                       ("ESN, 2 images", r.seeds("P5-balanced-esn-image"), COLOURS["esn"]),
-                      ("A′ (abstract), 2 images", r.seeds("P5-balanced-abstract"),
+                      ("Submitted model, 2 images", r.seeds("P5-balanced-abstract"),
                        COLOURS["other"]),
                       ("Uncoupled array, 2 images", r.seeds("P5-balanced-uncoupled"),
                        COLOURS["other"])]
@@ -366,18 +366,21 @@ def figure_controls(r: Results, d: str):
         rows = [
             ("Array (design)", ablated("coupling", "reservoir.params.coupling", "diffusion"),
              COLOURS[d]),
-            ("No coupling", ablated("coupling", "reservoir.params.coupling", "none"),
+            ("No AHL exchange", ablated("coupling", "reservoir.params.coupling", "none"),
              COLOURS["other"]),
             ("No delay (no oscillation)", ablated("delay", "reservoir.params.delay", 0),
              COLOURS["other"]),
-            ("Scrambled time", ablated("scramble", "task.scramble", True), COLOURS["other"]),
-            ("Linear surrogate of the array", r.seeds(f"P6-{d}-surrogate-{obs}", SEEDS[:3]),
+            ("Beat samples shuffled", ablated("scramble", "task.scramble", True),
+             COLOURS["other"]),
+            ("Linear imitation of the array", r.seeds(f"P6-{d}-surrogate-{obs}", SEEDS[:3]),
              COLOURS["esn"]),
-            (f"Random tanh features ({n:,})", rf_rows.get((n, "tanh"), []), COLOURS["esn"]),
-            ("Random tanh features (8,000)", rf_rows.get((8000, "tanh"), []), COLOURS["esn"]),
-            (f"Random linear features ({n:,})", rf_rows.get((n, "linear"), []),
+            (f"Random nonlinear features ({n:,})", rf_rows.get((n, "tanh"), []),
              COLOURS["esn"]),
-            ("Leaky-integrator bank", bank.get(None, []), COLOURS["esn"]),
+            ("Random nonlinear features (8,000)", rf_rows.get((8000, "tanh"), []),
+             COLOURS["esn"]),
+            (f"Random weighted sums ({n:,})", rf_rows.get((n, "linear"), []),
+             COLOURS["esn"]),
+            ("Fading memories (24 timescales)", bank.get(None, []), COLOURS["esn"]),
         ]
         for i, (_, values, colour) in enumerate(rows):
             dots(ax, -i, values, colour)
@@ -480,7 +483,8 @@ def figure_realism(r: Results, d: str):
                "Dilution variability (CV)"),
               ("P3-{d}-reset", "reservoir.params.reset_noise", "Imperfect reset (CV)"),
               ("P3-{d}-warmup", "reservoir.params.warmup", "Settling time before a beat (min)"),
-              ("P3-{d}-image-time", "features.aggregation", "Time of the first image (min)"),
+              ("P3-{d}-image-time", "features.aggregation",
+               "Time of the earlier image (min; the later is at 187)"),
               ("P3-{d}-input-levels", "reservoir.params.input_levels", "Input levels")]
     fig, axes = plt.subplots(2, 3, figsize=(15, 9))
     for ax, (study, x, label) in zip(axes.flat, panels, strict=True):
@@ -610,10 +614,11 @@ def tables(r: Results, d: str) -> str:
     out.append("| Row | Balanced | Unbalanced | Binary |\n|---|---|---|---|")
     for label, row in ((f"Array, ridge, 2 images ({d})", f"{d}-headline"),
                        (f"Array, forest, 4 images ({d})", f"{d}-forest"),
-                       ("Array, clean mean, ridge", f"{d}-full"),
-                       ("Array, clean mean, forest", f"{d}-full-forest"),
-                       ("A′ (abstract), ridge", "abstract"), ("Uncoupled, ridge", "uncoupled"),
-                       ("ESN, clean, ridge", "esn"), ("ESN, 2 images, ridge", "esn-image")):
+                       ("Array, ideal (LuxI and AHL, beat average), ridge", f"{d}-full"),
+                       ("Array, ideal (LuxI and AHL, beat average), forest",
+                        f"{d}-full-forest"),
+                       ("Submitted model, ridge", "abstract"), ("Uncoupled, ridge", "uncoupled"),
+                       ("ESN, ideal, ridge", "esn"), ("ESN, 2 images, ridge", "esn-image")):
         out.append(f"| {label} | {fmt(r.seeds(f'P5-balanced-{row}'))} | "
                    f"{fmt(r.f1(f'P5-unbalanced-{row}-s{SEEDS[0]}'))} | "
                    f"{fmt(r.f1(f'P5-binary-{row}-s{SEEDS[0]}'))} |")
@@ -634,7 +639,8 @@ def tables(r: Results, d: str) -> str:
     for label, key in ((f"Array, ridge, 2 images ({d})", f"{d}-c"),
                        (f"Array, ridge, 1 image ({d})", f"{d}-a"),
                        (f"Array, forest, 4 images ({d})", f"{d}-e"),
-                       ("A′", "abstract"), ("Uncoupled", "uncoupled"), ("ESN, clean", "esn"),
+                       ("Submitted model", "abstract"), ("Uncoupled", "uncoupled"),
+                       ("ESN, ideal", "esn"),
                        ("ESN, 2 images", "esn-image")):
         seeds = SEEDS[:3] if key.startswith(d) else SEEDS[:1]  # as the validation runs
         out.append(f"| {label} | " + " | ".join(fmt(r.seeds(f"P3-{s}-{key}", seeds))
