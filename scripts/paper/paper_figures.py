@@ -636,7 +636,8 @@ def tables(r: Results, d: str) -> str:
                        (f"Array, forest, 4 images ({d})", f"{d}-e"),
                        ("A′", "abstract"), ("Uncoupled", "uncoupled"), ("ESN, clean", "esn"),
                        ("ESN, 2 images", "esn-image")):
-        out.append(f"| {label} | " + " | ".join(fmt(r.seeds(f"P3-{s}-{key}"))
+        seeds = SEEDS[:3] if key.startswith(d) else SEEDS[:1]  # as the validation runs
+        out.append(f"| {label} | " + " | ".join(fmt(r.seeds(f"P3-{s}-{key}", seeds))
                                                 for s in ("validation-1", "validation-2")) + " |")
     out.append("\n## Per-class F1 (seed 6348, all folds)\n")
     out.append("| Run | " + " | ".join(CLASS_NAMES) + " |\n|---|" + "---|" * len(CLASS_NAMES))
