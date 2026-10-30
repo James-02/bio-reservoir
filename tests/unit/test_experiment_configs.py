@@ -142,11 +142,11 @@ def test_each_study_is_seeded_and_runs_its_intended_trials(path):
 
 
 def _stiffest_points(study):
-    """Points of a study with the fastest AHL exchange: the largest coupling rate and
-    heterogeneity, the fewest substeps and the shortest Gaussian range, at each array size
-    and reservoir seed of the study."""
+    """Points of a study with the fastest AHL exchange: the largest coupling rate,
+    heterogeneity, cell density and washout, the fewest substeps and the shortest Gaussian
+    range, at each array size and reservoir seed of the study."""
     extreme = {"diffusion_rate": max, "param_heterogeneity_cv": max, "rk4_substeps": min,
-               "interaction_diameters": min}
+               "interaction_diameters": min, "cell_density": max, "washout_rate": max}
     fixed, each = {}, {}
     for path, spec in study["search"].items():
         values = spec.get("choices") or [spec["low"], spec["high"]]
