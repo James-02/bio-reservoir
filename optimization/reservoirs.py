@@ -15,6 +15,7 @@ from reservoirpy.node import Node
 from reservoirpy.nodes import Reservoir
 
 from bioreservoir import BioReservoir, distance_matrix, lattice_matrix, random_gaussian_weights
+from bioreservoir.dde import DEFAULT_DDE_PARAMS
 
 
 def normalize_reservoir_type(value: str | None) -> str:
@@ -112,6 +113,19 @@ def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, 
                 raise ValueError(f"delay is the feedback delay in input steps, a number: 0 "
                                  f"(no delay) or more, got {raw!r}.")
             dde_kwargs["delay"] = float(raw)
+        if params.get("washout_rate") is not None:
+            raw = params["washout_rate"]
+            if isinstance(raw, bool) or not isinstance(raw, numbers.Real) or not raw > 0:
+                raise ValueError(f"washout_rate is the AHL washout rate per time unit (set by "
+                                 f"the flow), a number above 0, got {raw!r}.")
+            dde_kwargs["mu"] = float(raw)
+        if params.get("cell_density") is not None:
+            raw, d0 = params["cell_density"], DEFAULT_DDE_PARAMS["d0"]
+            if isinstance(raw, bool) or not isinstance(raw, numbers.Real) or not 0 < raw < d0:
+                raise ValueError(f"cell_density is the volume fraction of cells in a colony, "
+                                 f"a number between 0 and the carrying capacity d0 = {d0}, "
+                                 f"got {raw!r}.")
+            dde_kwargs["d"] = float(raw)
         node = BioReservoir(
             units=units,
             warmup=int(params["warmup"]),
@@ -153,6 +167,8 @@ def build_reservoir(params: dict[str, Any], seed: int) -> tuple[Node, dict[str, 
             "res_geometry": str(params.get("geometry", "per_node")),
             "res_delay_scheme": str(params.get("delay_scheme", "substep")),
             "res_delay": node.dde_kwargs["delay"],
+            "res_washout_rate": node.dde_kwargs["mu"],
+            "res_cell_density": node.dde_kwargs["d"],
             "res_coupling": coupling,
             "res_diffusion_rate": float(params.get("diffusion_rate", 1.0)),
             "res_input_encoding": str(params.get("input_encoding", "signed")),

@@ -20,6 +20,8 @@ Each entry is marked **[science]** if it changes a reported number, or
   share of the gap closed.
 - [engineering] Realism options, off by default: cell-density and dilution heterogeneity,
   discrete input levels and an imperfect reset (`bioreservoir.realism`).
+- [engineering] `reservoir.params.washout_rate` and `cell_density` set the AHL washout rate
+  (the flow, `mu`) and the cell density (`d`) of every colony; unset, the defaults apply.
 - [engineering] `warmup_input: rest` warms the colonies up at the resting inducer level, so a
   beat starts without a step in the inducer.
 - [engineering] Controls: random features, a leaky-integrator bank, and a linear surrogate of

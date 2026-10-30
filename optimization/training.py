@@ -93,6 +93,7 @@ RECORDED: dict[str, str] = {
     "res_heterogeneity_seed": "param_heterogeneity_seed",
     "res_heterogeneity_mean_preserving": "heterogeneity_mean_preserving",
     "res_geometry": "geometry", "res_delay_scheme": "delay_scheme", "res_delay": "delay",
+    "res_washout_rate": "washout_rate", "res_cell_density": "cell_density",
     "res_coupling": "coupling", "res_diffusion_rate": "diffusion_rate",
     "res_input_encoding": "input_encoding", "res_input_range": "input_range",
     "res_input_sign": "input_sign",
