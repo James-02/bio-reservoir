@@ -2,7 +2,8 @@
 robustness grid (P3-<design>-heterogeneity and -64), each design and reservoir seed.
 
 Each array is built and warmed up as a trial builds it, then run on without input for 300
-steps. A colony is flat when its LuxI trace over the last 200 of those steps has max / min
+steps (with ``--warmup-input rest``: warmed up and run on at the resting inducer level of a
+beat). A colony is flat when its LuxI trace over the last 200 of those steps has max / min
 below 1.5 (the "explainer" definition of investigation I14), or, by the stricter definition,
 when (max - min) / mean over the 300 steps is at most 0.1
 (:func:`bioreservoir.diagnostics.oscillation_amplitudes`). CV 0.3 and above use 64 substeps,
@@ -28,7 +29,7 @@ DESIGNS = ("p1024", "p1600")
 STEPS, WINDOW, FLAT_RATIO, FLAT_REL = 300, 200, 1.5, 0.1
 
 
-def one(job: tuple[str, float, int]) -> dict:
+def one(job: tuple[str, float, int, str]) -> dict:
     import reservoirpy
 
     from bioreservoir.diagnostics import STATE_NAMES, oscillation_amplitudes
@@ -36,10 +37,11 @@ def one(job: tuple[str, float, int]) -> dict:
     from training.run import load_config, resolve
 
     reservoirpy.verbosity(0)
-    design, cv, seed = job
+    design, cv, seed, warmup_input = job
     cfg = resolve(load_config(Path("experiments/v0.2/designs") / f"{design}.yaml"))
     params = dict(cfg["reservoir"]["params"], param_heterogeneity_cv=cv,
-                  rk4_substeps=64 if cv >= 0.3 else 32, reservoir_type="bioreservoir")
+                  rk4_substeps=64 if cv >= 0.3 else 32, reservoir_type="bioreservoir",
+                  warmup_input=warmup_input)
     node, _ = build_reservoir(params, seed=seed)
     node.initialize(np.zeros((1, 1)))
     relative = oscillation_amplitudes(node, steps=STEPS)
@@ -47,9 +49,8 @@ def one(job: tuple[str, float, int]) -> dict:
     work.states = work._warmup_states.copy()
     if getattr(work, "_warmup_ring", None) is not None:
         work._ring, work._ring_pos = work._warmup_ring[0].copy(), work._warmup_ring[1]
-    zero = np.zeros(work.states.shape[1])
     index = STATE_NAMES.index("I")
-    trace = np.array([work._step(zero)[:, index] for _ in range(STEPS)])[-WINDOW:]
+    trace = np.array([work._step(work._warmup_drive)[:, index] for _ in range(STEPS)])[-WINDOW:]
     with np.errstate(all="ignore"):
         ratio = trace.max(axis=0) / trace.min(axis=0)
     return {"design": design, "cv": cv, "seed": seed, "units": len(relative),
@@ -63,8 +64,11 @@ def main() -> None:
     parser.add_argument("--processes", type=int, default=1)
     parser.add_argument("--designs", nargs="+", default=list(DESIGNS),
                         help="Design files in experiments/v0.2/designs/ (default: %(default)s).")
+    parser.add_argument("--warmup-input", choices=("zero", "rest"), default="zero",
+                        help="Drive during the warm-up and the run after it: no inducer "
+                             "(default) or the resting inducer level of a beat.")
     args = parser.parse_args()
-    jobs = [(d, cv, s) for d in args.designs for cv in CVS for s in SEEDS]
+    jobs = [(d, cv, s, args.warmup_input) for d in args.designs for cv in CVS for s in SEEDS]
     with ProcessPoolExecutor(args.processes) as pool:
         rows = list(pool.map(one, jobs))
     args.out.parent.mkdir(parents=True, exist_ok=True)
