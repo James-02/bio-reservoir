@@ -61,8 +61,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("out", type=Path)
     parser.add_argument("--processes", type=int, default=1)
+    parser.add_argument("--designs", nargs="+", default=list(DESIGNS),
+                        help="Design files in experiments/v0.2/designs/ (default: %(default)s).")
     args = parser.parse_args()
-    jobs = [(d, cv, s) for d in DESIGNS for cv in CVS for s in SEEDS]
+    jobs = [(d, cv, s) for d in args.designs for cv in CVS for s in SEEDS]
     with ProcessPoolExecutor(args.processes) as pool:
         rows = list(pool.map(one, jobs))
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -70,7 +72,7 @@ def main() -> None:
         writer = csv.DictWriter(f, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
-    for d in DESIGNS:
+    for d in args.designs:
         for cv in CVS:
             part = [r for r in rows if r["design"] == d and r["cv"] == cv]
             print(f"{d} CV {cv:<6.3g} flat {np.mean([r['flat'] for r in part]):6.1%}  "
