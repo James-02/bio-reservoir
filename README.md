@@ -160,6 +160,7 @@ config change, so the effect of each change can be measured on its own.
 |---|---|
 | `param_heterogeneity_cv` | Colony-to-colony variation of the kinetic rates |
 | `heterogeneity_density_cv`, `heterogeneity_dilution_cv` | Variation of cell density and washout |
+| `washout_rate`, `cell_density` | The AHL washout rate set by the flow (µ, default 0.6) and the cell density (d, default 0.7) of every colony |
 | `input_levels: K` | The input reaches the traps at K discrete levels |
 | `reset_noise: cv` | Each beat starts from a slightly different state |
 | `warmup_input: rest` | The colonies warm up at the resting inducer level |
