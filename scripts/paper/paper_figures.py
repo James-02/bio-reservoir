@@ -1,20 +1,26 @@
-"""Draw the figures and write the numbers of the revised paper from the final runs.
+"""Draw the figures and tables and write the numbers of the revised paper, for design p576.
 
-Reads only collected results: run folders (``results/runs/<name>/metrics.json``) and study
-databases (``results/optuna/<name>.db``), by the names of the final-run configs (design
-``p1024`` or ``p1600``; ``P3-p1024-noise``, ``P5-balanced-p1024-headline-s6348``, ...).
-``--preview`` reads the names of the 28 Oct preview runs instead (``P3-noise``,
-``P5-balanced-headline-s6348``, ...; ``p1600`` there is ``P5-refined-*``).
+Reads only collected results: run folders (``runs/<name>/metrics.json``) and study databases
+(``optuna/optuna-<name>.db``) in the results folder (``BIORESERVOIR_RESULTS_DIR``), by the
+names of the final-run configs: ``P5-balanced-p576-headline-s6348``, ``P3-p576-noise``,
+``extra-576-connectivity``, ... (``--design p576r``: the alternative design's runs).
 
-    python scripts/paper/paper_figures.py --design p1024 numbers
-    python scripts/paper/paper_figures.py --design p1024 figures --formats png,pdf
-    python scripts/paper/paper_figures.py --design p1024 tables
-    python scripts/paper/paper_figures.py --design p1024 images     # simulates 5 beats
+    python scripts/paper/paper_figures.py numbers --flat-share flat_share.csv
+    python scripts/paper/paper_figures.py tables
+    python scripts/paper/paper_figures.py figures --oscillation oscillation_map.csv \\
+        --flat-share flat_share.csv --formats png,pdf
+    python scripts/paper/paper_figures.py images      # simulates five beats: Fig. 1d
+    python scripts/paper/paper_figures.py dynamics    # simulates the design: Fig. 2a
 
 ``numbers`` writes ``numbers.json`` and ``numbers.tex`` (one ``\\newcommand`` per number) and
-prints them; ``figures`` writes Fig. 2-5 and the SI figures; ``tables`` writes the SI tables
-as Markdown. Everything goes to ``results/figures/paper/<design>/`` (``--out`` to change it).
-A missing run or study is reported and its part left empty, so drafts work on partial results.
+prints them; ``tables`` writes Tables 2-3 and the SI tables as Markdown; ``figures`` draws
+Fig. 2-6 and the SI figures. Fig. 2a needs ``dynamics.npz`` in the output folder (written by
+``dynamics``), Fig. 2b the CSV of ``oscillation_map.py``, and Fig. 6b's share of flat colonies
+the CSV of ``flat_share.py``; without them those panels stay empty. Everything goes to
+``results/figures/paper/<design>/`` (``--out`` to change it). A missing run or study is
+reported and its part left empty, so drafts work on partial results. ``images`` and
+``dynamics`` read the design file (``experiments/v0.2/designs/<design>.yaml``) and run from
+the repository root.
 """
 
 from __future__ import annotations
@@ -34,9 +40,12 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import optuna  # noqa: E402
 import yaml  # noqa: E402
+from matplotlib.ticker import FuncFormatter  # noqa: E402
+from matplotlib.transforms import blended_transform_factory  # noqa: E402
 
 from utils import config  # noqa: E402
 from utils.visualisation import (  # noqa: E402
+    CLASS_COLOURS,
     CLASS_NAMES,
     OKABE_ITO,
     STYLE,
@@ -48,69 +57,86 @@ optuna.logging.set_verbosity(optuna.logging.ERROR)
 
 SEEDS = (6348, 6349, 6350, 6351, 6352)
 HEADLINE, FOREST, ONE = "images_at:140,187", "images:4", "final"
-UNITS = {"p1024": 1024, "p1600": 1600}
-LW = 2.6  # line width on the figures as drawn (about 12 in wide, printed at 7 in)
-COLOURS = {"array": OKABE_ITO[0], "raw": "#7f7f7f", "forest": OKABE_ITO[1],
-           "p1024": OKABE_ITO[0], "p1600": OKABE_ITO[2], "esn": OKABE_ITO[3],
-           "other": OKABE_ITO[4]}
-
-# Final-run name -> 28 Oct preview name.
-PREVIEW = [(r"^P5-balanced-p1600-(headline|forest)", r"P5-refined-\1"),
-           (r"^P5-(\w+)-p1024-", r"P5-\1-"),
-           (r"^P3-p1024-observation", "P3-frozen"),
-           (r"^P3-(validation-\d)-p1024-", r"P3-\1-p-"),
-           (r"^P(\d)-p1024-", r"P\1-"),
-           (r"^P2-refine$", "P2-frozen-refine")]
+#: Each design and the prefix of its LaTeX macros.
+DESIGNS = {"p576": "P", "p576r": "Pr"}
+#: The flows of the flow x density map (studies extra-576-map-flow-<flow>).
+FLOWS = (0.3, 0.4, 0.6, 0.9, 1.2)
+FLOW, DENSITY = "reservoir.params.washout_rate", "reservoir.params.cell_density"
+#: Trap arrays built by Prindle et al. (2012): 416 and 500 traps; the largest 12,224.
+BUILT, LARGEST = (416, 500), 12224
+#: Periods measured by Danino et al. (2010) over their flow rates (min).
+DANINO_PERIODS = (52, 90)
+LW = 3.2  # line width on the figures as drawn (up to 18 in wide, printed at 7 in)
+THIN = 2.7  # reference lines and single colonies: 1 pt once printed
+SMALL = 13  # legends and labels inside the axes (about 5.5 pt printed)
+COLOURS = {"array": OKABE_ITO[0], "forest": OKABE_ITO[1], "svm": OKABE_ITO[2],
+           "raw": "#7f7f7f", "digital": OKABE_ITO[3], "isolated": OKABE_ITO[4],
+           "alternative": "#8c564b", "ideal": "#000000"}
+READOUTS = (("ridge", "Ridge"), ("lr", "Logistic\nregression"), ("knn", "kNN"),
+            ("rf", "Random\nforest"), ("histgb", "HistGB"), ("svm", "RBF SVM"))
+#: The raw-beat run of each readout, with the readout's settings on the array.
+RAW = {"ridge": "P5-balanced-raw-ridge", "lr": "extra-576-raw-lr",
+       "knn": "extra-576-raw-knn", "rf": "P5-balanced-raw-rf",
+       "histgb": "P5-balanced-raw-histgb", "svm": "extra-576-raw-svm"}
+#: Comparison models tuned at 576 units with the array's budget, each read by ridge.
+TUNED = {"uncoupled-576": "Isolated traps (no AHL exchange)",
+         "esn-image-576": "ESN, read like the array",
+         "esn-576": "ESN, clean states",
+         "abstract-576": "Submitted model (corrected)"}
+#: Controls tuned like the models (two TPE studies), their best point on the reporting seeds.
+CONTROLS = {"random_features": "extra-576-random-features-report",
+            "fading_memories": "extra-576-leaky-bank-report"}
 
 
 class Results:
     """The collected runs and studies, by final-run name."""
 
-    def __init__(self, preview: bool = False):
-        self.preview = preview
+    def __init__(self):
         self.missing: set[str] = set()
 
-    def name(self, name: str) -> str:
-        if self.preview:
-            for pattern, replacement in PREVIEW:
-                name = re.sub(pattern, replacement, name)
-        return name
-
     def metrics(self, run: str) -> dict | None:
-        path = config.runs_dir() / self.name(run) / "metrics.json"
+        path = config.runs_dir() / run / "metrics.json"
         if not path.is_file():
-            self.missing.add(self.name(run))
+            self.missing.add(run)
             return None
         return json.loads(path.read_text())
+
+    def settings(self, run: str) -> dict | None:
+        """The config a run ran with (its ``config.yaml``)."""
+        path = config.runs_dir() / run / "config.yaml"
+        return yaml.safe_load(path.read_text()) if path.is_file() else None
 
     def f1(self, run: str) -> float | None:
         metrics = self.metrics(run)
         return None if metrics is None else float(metrics["summary"]["f1"])
 
+    def by_seed(self, prefix: str, seeds=SEEDS) -> dict[int, float]:
+        """Macro F1 of the runs ``<prefix>-s<seed>`` that exist, by seed."""
+        values = {s: self.f1(f"{prefix}-s{s}") for s in seeds}
+        return {s: v for s, v in values.items() if v is not None}
+
     def seeds(self, prefix: str, seeds=SEEDS) -> list[float]:
         """Macro F1 of the runs ``<prefix>-s<seed>`` that exist, in seed order."""
-        return [v for v in (self.f1(f"{prefix}-s{s}") for s in seeds) if v is not None]
+        return list(self.by_seed(prefix, seeds).values())
 
     def per_class(self, run: str) -> np.ndarray | None:
         """F1 of each class over all folds (the pooled confusion matrix)."""
         metrics = self.metrics(run)
         if metrics is None:
             return None
-        cm = np.asarray(json.loads(metrics["pooled"]["confusion_matrix"])
-                        if isinstance(metrics["pooled"]["confusion_matrix"], str)
-                        else metrics["pooled"]["confusion_matrix"], dtype=float)
+        cm = metrics["pooled"]["confusion_matrix"]
+        cm = np.asarray(json.loads(cm) if isinstance(cm, str) else cm, dtype=float)
         tp = np.diag(cm)
         return 2 * tp / (cm.sum(axis=0) + cm.sum(axis=1))
 
     def trials(self, study: str) -> list[dict]:
         """The finished trials of ``study``: their searched values, seed and macro F1."""
-        name = self.name(study)
-        path = config.optuna_db(name)
+        path = config.optuna_db(study)
         if not Path(path).is_file():
-            self.missing.add(name)
+            self.missing.add(study)
             return []
         rows = []
-        for trial in optuna.load_study(study_name=name, storage=f"sqlite:///{path}").trials:
+        for trial in optuna.load_study(study_name=study, storage=f"sqlite:///{path}").trials:
             if trial.state.name != "COMPLETE":
                 continue
             row = dict(trial.params)
@@ -122,16 +148,29 @@ class Results:
         return rows
 
     def sweep(self, study: str, x: str, **fixed) -> dict:
-        """Macro F1 over seeds at each value of ``x`` (other searched values fixed)."""
+        """Macro F1 over seeds at each value of ``x`` (other searched values fixed; write
+        ``features.aggregation`` as ``features__aggregation``)."""
         out = defaultdict(list)
         for row in self.trials(study):
             if all(row.get(k.replace("__", ".")) == v for k, v in fixed.items()):
                 out[row.get(x)].append(row["f1"])
         return dict(out)
 
+    def grid(self, study: str, *keys: str) -> dict[tuple, dict[int, float]]:
+        """Macro F1 by the values of ``keys``, then by seed."""
+        out = defaultdict(dict)
+        for row in self.trials(study):
+            seed = row.get("reservoir.seed", row.get("seed"))
+            out[tuple(row.get(k) for k in keys)][seed] = row["f1"]
+        return dict(out)
+
+    def report(self, study: str) -> dict[int, float]:
+        """Macro F1 by seed of a study that reruns one point on the reporting seeds."""
+        return {seed: values[seed] for values in self.grid(study).values() for seed in values}
+
 
 def mean_sd(values) -> tuple[float, float]:
-    values = np.asarray(values, dtype=float)
+    values = np.asarray(list(values), dtype=float)
     if not len(values):
         return float("nan"), float("nan")
     return float(values.mean()), float(values.std(ddof=1)) if len(values) > 1 else 0.0
@@ -142,261 +181,345 @@ def ordered(points: dict) -> tuple[list, list, list]:
     return keys, [mean_sd(points[k])[0] for k in keys], [mean_sd(points[k])[1] for k in keys]
 
 
+def paired(a: dict, b: dict | float) -> list[float]:
+    """``a - b`` seed by seed (``b`` a single score: the same for every seed)."""
+    if isinstance(b, dict):
+        return [a[s] - b[s] for s in sorted(a) if s in b]
+    return [a[s] - b for s in sorted(a)]
+
+
+def scaled(points: dict, factor: float = 100.0) -> dict:
+    """The points with their x values multiplied by ``factor`` (fractions to percent)."""
+    return {k * factor: v for k, v in points.items() if k is not None and not isinstance(k, str)}
+
+
+# ---------------------------------------------------------------------------------------
+# What the figures, tables and numbers read
+# ---------------------------------------------------------------------------------------
+
+def readout(r: Results, d: str, obs: str, key: str) -> dict[int, float]:
+    """Macro F1 by seed of readout ``key`` refitted on the saved features ``obs`` (``c``: two
+    images, ``e``: four) of each reporting seed: Phase 4 ran seed 6348, the extra runs of
+    p576 the other seeds."""
+    values = {}
+    first = r.f1(f"P4-{d}-{obs}-{key}")
+    if first is not None:
+        values[SEEDS[0]] = first
+    if d == "p576":
+        values.update(r.by_seed(f"extra-576-readout-{obs}-{key}", SEEDS[1:]))
+    return values
+
+
+def ablation(r: Results, d: str, stem: str, value, forest: bool = False) -> list[float]:
+    key = {"coupling": "reservoir.params.coupling", "delay": "reservoir.params.delay",
+           "scramble": "task.scramble"}[stem]
+    return r.sweep(f"P6-{d}-ablation-{stem}{'-forest' if forest else ''}", key).get(value, [])
+
+
+def untuned_control(r: Results, name: str, forest: bool = False) -> list[float]:
+    """The controls at their standard settings (Phase 6): 576 random tanh features, or the
+    bank of leaky integrators of 24 timescales."""
+    sfx = "-forest" if forest else ""
+    if name == "random_features":
+        return [row["f1"] for row in r.trials(f"P6-random-features{sfx}")
+                if row["reservoir.params.units"] == 576
+                and row["reservoir.params.activation"] == "tanh"]
+    return r.sweep(f"P6-leaky-bank{sfx}", "reservoir.params.expansion").get(None, [])
+
+
+def traps(r: Results, d: str, forest: bool = False) -> dict[int, list[float]]:
+    """Macro F1 at each array size: Phase 6 (100-4,096 traps) and, for ridge on p576, the
+    trap-ceiling studies above 4,096 traps."""
+    points = r.sweep(f"P6-{d}-units{'-forest' if forest else ''}", "reservoir.params.units")
+    if d == "p576" and not forest:
+        studies = [f"trap-ceiling-576-units-{n}" for n in (6400, 9216, 12544)]
+        studies += [f"trap-ceiling-576-units-{n}-s{s}" for n in (16384, 25600, 36864)
+                    for s in SEEDS]
+        for study in studies:
+            for size, values in r.sweep(study, "reservoir.params.units").items():
+                points.setdefault(size, []).extend(values)
+    return points
+
+
+def ideal_traps(r: Results, d: str) -> dict[int, list[float]]:
+    """Ridge on the clean mean of all states (no imaging) at 576 traps and, for p576, at
+    4,096 and 16,384."""
+    points = {576: r.seeds(f"P5-balanced-{d}-full")}
+    if d == "p576":
+        studies = ["trap-ceiling-576-ideal-4096"]
+        studies += [f"trap-ceiling-576-ideal-16384-s{s}" for s in SEEDS]
+        for study in studies:
+            for size, values in r.sweep(study, "reservoir.params.units").items():
+                points.setdefault(size, []).extend(values)
+    return {k: v for k, v in points.items() if v}
+
+
+def f1_map(r: Results) -> tuple[list[float], list[float], np.ndarray]:
+    """Mean macro F1 over the reporting seeds on the flow x density grid (rows: densities)."""
+    cells = defaultdict(list)
+    for flow in FLOWS:
+        for row in r.trials(f"extra-576-map-flow-{flow:g}"):
+            cells[(row[FLOW], row[DENSITY])].extend([row["f1"]])
+    if not cells:
+        return [], [], np.zeros((0, 0))
+    flows, densities = sorted({k[0] for k in cells}), sorted({k[1] for k in cells})
+    grid = np.array([[np.mean(cells[(f, x)]) if cells.get((f, x)) else np.nan for f in flows]
+                     for x in densities])
+    return flows, densities, grid
+
+
+def oscillation_map(path: Path | None, d: str) -> tuple[list, list, np.ndarray, np.ndarray]:
+    """Share of oscillating colonies (%) and median period (min) on the flow x density grid,
+    from the CSV of ``oscillation_map.py``."""
+    if path is None or not path.is_file():
+        return [], [], np.zeros((0, 0)), np.zeros((0, 0))
+    rows = [row for row in csv.DictReader(path.open()) if row["design"] == d]
+    flows = sorted({float(row["flow"]) for row in rows})
+    densities = sorted({float(row["density"]) for row in rows})
+    share = np.full((len(densities), len(flows)), np.nan)
+    period = share.copy()
+    for i, x in enumerate(densities):
+        for j, f in enumerate(flows):
+            part = [row for row in rows if float(row["flow"]) == f
+                    and float(row["density"]) == x]
+            share[i, j] = 100 * np.mean([float(row["oscillating"]) for row in part])
+            periods = [float(row["period"]) for row in part if row["period"] not in ("", "nan")]
+            period[i, j] = np.median(periods) if periods else np.nan
+    return flows, densities, share, period
+
+
+def flat_shares(path: Path | None, d: str) -> dict[float, list[float]]:
+    """Colonies that do not oscillate (%) at each kinetic CV, from ``flat_share.py``'s CSV."""
+    shares = defaultdict(list)
+    if path is not None and path.is_file():
+        for row in csv.DictReader(path.open()):
+            if row["design"] == d:
+                shares[float(row["cv"])].append(100 * float(row["flat"]))
+    return dict(shares)
+
+
+def design_point(r: Results, d: str) -> tuple[float, float] | None:
+    """The design's flow and cell density, from the config of its headline run."""
+    cfg = r.settings(f"P5-balanced-{d}-headline-s{SEEDS[0]}") or {}
+    params = cfg.get("reservoir", {}).get("params", {})
+    if "washout_rate" not in params or "cell_density" not in params:
+        return None
+    return float(params["washout_rate"]), float(params["cell_density"])
+
+
+def image_times(r: Results, d: str) -> tuple[dict[int, list[float]], list[float]]:
+    """Ridge on two images by the time of the earlier one (the later at 187 min), and ridge
+    on the final image alone."""
+    points = r.sweep(f"P3-{d}-image-time", "features.aggregation")
+    times = {int(k.split(":")[1].split(",")[0]): v for k, v in points.items()
+             if str(k).startswith("images_at")}
+    return times, points.get(ONE, [])
+
+
 # ---------------------------------------------------------------------------------------
 # Numbers
 # ---------------------------------------------------------------------------------------
 
-def numbers(r: Results, d: str) -> dict:
+def numbers(r: Results, d: str, flat_share: Path | None = None,
+            dynamics: Path | None = None) -> dict:
     """The numbers the text quotes, for design ``d``."""
     out: dict = {}
 
     def put(key, values):
-        m, s = mean_sd(values)
-        out[key] = {"mean": round(m, 4), "sd": round(s, 4), "n": len(list(values))}
+        values = list(values)
+        if values:
+            m, s = mean_sd(values)
+            out[key] = {"mean": round(m, 4), "sd": round(s, 4), "n": len(values)}
 
-    put("headline", r.seeds(f"P5-balanced-{d}-headline"))
+    def one(key, value):
+        if value is not None and np.isfinite(value):
+            out[key] = round(float(value), 4)
+
+    headline = r.by_seed(f"P5-balanced-{d}-headline")
+    put("headline", headline.values())
     put("forest", r.seeds(f"P5-balanced-{d}-forest"))
-    put("full", r.seeds(f"P5-balanced-{d}-full"))
-    put("full_forest", r.seeds(f"P5-balanced-{d}-full-forest"))
-    for key in ("abstract", "uncoupled", "esn", "esn-image"):
-        put(key.replace("-", "_"), r.seeds(f"P5-balanced-{key}"))
-    for key in ("ridge", "rf", "histgb", "ridge-wide", "histgb-wide"):
-        value = r.f1(f"P5-balanced-raw-{key}")
-        out[f"raw_{key.replace('-', '_')}"] = None if value is None else round(value, 4)
-    raw, ceiling = out.get("raw_ridge"), out.get("raw_histgb")
-    if raw is not None and ceiling is not None:
-        gains = [v - raw for v in r.seeds(f"P5-balanced-{d}-headline")]
-        put("gain_over_raw_ridge", gains)
-        put("gap_closed", [g / (ceiling - raw) for g in gains])
-    if out.get("raw_rf") is not None:
-        put("forest_minus_raw_rf", [v - out["raw_rf"] for v in r.seeds(f"P5-balanced-{d}-forest")])
+    put("ideal", r.seeds(f"P5-balanced-{d}-full"))
+    put("ideal_forest", r.seeds(f"P5-balanced-{d}-full-forest"))
+    for obs, images in (("c", "two"), ("e", "four")):
+        for key, _ in READOUTS:
+            put(f"readout_{images}_{key}", readout(r, d, obs, key).values())
+    raw = {key: r.f1(run) for key, run in RAW.items()}
+    for key, value in raw.items():
+        one(f"raw_{key}", value)
+    for key in ("ridge-wide", "histgb-wide"):
+        one(f"raw_{key.replace('-', '_')}", r.f1(f"P5-balanced-raw-{key}"))
+    for key in TUNED:
+        other = r.by_seed(f"P5-balanced-{key}")
+        put(key.replace("-", "_"), other.values())
+        put(f"headline_minus_{key.replace('-', '_')}", paired(headline, other))
+    for name, study in CONTROLS.items():
+        tuned = r.report(study)
+        put(name, tuned.values())
+        put(f"headline_minus_{name}", paired(headline, tuned))
+        put(f"{name}_untuned", untuned_control(r, name))
+    if headline and raw["ridge"] is not None:
+        put("gain_over_raw_ridge", paired(headline, raw["ridge"]))
+        put("ideal_gain_over_raw_ridge", [v - raw["ridge"]
+                                          for v in r.seeds(f"P5-balanced-{d}-full")])
+        if raw["histgb"] is not None:
+            put("gap_closed", [100 * g / (raw["histgb"] - raw["ridge"])
+                               for g in paired(headline, raw["ridge"])])
+    forest = r.seeds(f"P5-balanced-{d}-forest")
+    if forest and raw["rf"] is not None:
+        put("forest_minus_raw_rf", [v - raw["rf"] for v in forest])
+        one("forest_minus_raw_rf_worst", min(v - raw["rf"] for v in forest))
+    svm = readout(r, d, "c", "svm")
+    if svm and raw["histgb"] is not None:
+        put("svm_minus_raw_histgb", paired(svm, raw["histgb"]))
+        put("svm_minus_headline", paired(svm, headline))
     for task in ("unbalanced", "binary"):
-        for row in (f"{d}-headline", f"{d}-forest", "abstract", "uncoupled", "esn", "esn-image"):
-            value = r.f1(f"P5-{task}-{row}-s{SEEDS[0]}")
-            out[f"{task}_{row.replace(f'{d}-', 'p_').replace('-', '_')}"] = \
-                None if value is None else round(value, 4)
+        for row in ("headline", "forest"):
+            one(f"{task}_{row}", r.f1(f"P5-{task}-{d}-{row}-s{SEEDS[0]}"))
         for key in ("ridge", "rf", "histgb"):
-            value = r.f1(f"P5-{task}-raw-{key}")
-            out[f"{task}_raw_{key}"] = None if value is None else round(value, 4)
-    for obs in ("c", "e"):
-        for key in ("ridge", "lr", "svm", "knn", "rf", "histgb"):
-            value = r.f1(f"P4-{d}-{obs}-{key}")
-            out[f"readout_{obs}_{key}"] = None if value is None else round(value, 4)
-    ablation = {}
+            one(f"{task}_raw_{key}", r.f1(f"P5-{task}-raw-{key}"))
+        for key in TUNED:
+            one(f"{task}_{key.replace('-', '_')}", r.f1(f"P5-{task}-{key}-s{SEEDS[0]}"))
+    for split in ("validation-1", "validation-2"):
+        tag = split.replace("-", "_")
+        put(f"{tag}_headline", r.seeds(f"P3-{split}-{d}-c", SEEDS[:3]))
+        put(f"{tag}_forest", r.seeds(f"P3-{split}-{d}-e", SEEDS[:3]))
+        put(f"{tag}_one_image", r.seeds(f"P3-{split}-{d}-a", SEEDS[:3]))
     for stem, on, off in (("coupling", "diffusion", "none"), ("delay", 10, 0),
                           ("scramble", False, True)):
-        key = {"coupling": "reservoir.params.coupling", "delay": "reservoir.params.delay",
-               "scramble": "task.scramble"}[stem]
-        for sfx in ("", "-forest"):
-            points = r.sweep(f"P6-{d}-ablation-{stem}{sfx}", key)
-            if points:
-                ablation[f"{stem}{sfx or '-ridge'}"] = {"intact": round(mean_sd(points[on])[0], 4),
-                                                        "ablated": round(mean_sd(points[off])[0], 4)}
-    out["ablations"] = ablation
-    put("surrogate_ridge", r.seeds(f"P6-{d}-surrogate-c", SEEDS[:3]))
-    put("surrogate_forest", r.seeds(f"P6-{d}-surrogate-e", SEEDS[:3]))
-    for split in ("validation-1", "validation-2"):
-        put(f"{split.replace('-', '_')}_headline", r.seeds(f"P3-{split}-{d}-c", SEEDS[:3]))
-        put(f"{split.replace('-', '_')}_forest", r.seeds(f"P3-{split}-{d}-e", SEEDS[:3]))
+        for forest_ in (False, True):
+            tag = f"ablation_{stem}{'_forest' if forest_ else ''}"
+            put(f"{tag}_intact", ablation(r, d, stem, on, forest_))
+            put(tag, ablation(r, d, stem, off, forest_))
+    put("imitation", r.seeds(f"P6-{d}-surrogate-c", SEEDS[:3]))
+    put("imitation_forest", r.seeds(f"P6-{d}-surrogate-e", SEEDS[:3]))
+    connectivity = r.grid("extra-576-connectivity", "reservoir.params.input_connectivity",
+                          "reservoir.params.coupling") if d == "p576" else {}
+    for share in sorted({k[0] for k in connectivity}):
+        on, off = connectivity.get((share, "diffusion"), {}), connectivity.get((share, "none"), {})
+        tag = f"induced_{round(100 * share)}"
+        put(f"{tag}_exchange", on.values())
+        put(f"{tag}_isolated", off.values())
+        put(f"{tag}_exchange_adds", paired(on, off))
+    curve, forest_curve = traps(r, d), traps(r, d, forest=True)
+    for size in (100, 256, 576, 1024, 4096):
+        put(f"traps_{size}", curve.get(size, []))
+        put(f"traps_forest_{size}", forest_curve.get(size, []))
+    put("traps_plateau", [v for size, values in curve.items() if size >= 9216 for v in values])
+    for size, values in ideal_traps(r, d).items():
+        put(f"traps_ideal_{size}", values)
+    for agg, tag in ((ONE, "one_image"), (HEADLINE, "two_images"), (FOREST, "four_images")):
+        points = r.sweep(f"P3-{d}-noise", "features.measurement_noise", features__aggregation=agg)
+        for level in (0.0, 0.01, 0.02, 0.05, 0.1):
+            put(f"noise_{tag}_{round(100 * level)}", points.get(level, []))
+    times, final = image_times(r, d)
+    if times:
+        means = [mean_sd(v)[0] for v in times.values()]
+        one("image_time_lowest", min(means))
+        one("image_time_highest", max(means))
+        one("image_time_first", min(times))
+        one("image_time_last", max(times))
+    put("image_final_only", final)
+    for study, tag in ((f"P3-{d}-calibration", "reference"),
+                       (f"P3-{d}-calibration-noref", "no_reference")):
+        points = r.sweep(study, "features.calibration_error", features__aggregation=HEADLINE)
+        for level in (0.02, 0.05):
+            put(f"calibration_{tag}_{round(100 * level)}", points.get(level, []))
+    kinetic = r.sweep(f"P3-{d}-heterogeneity", "reservoir.params.param_heterogeneity_cv")
+    kinetic.update(r.sweep(f"P3-{d}-heterogeneity-64", "reservoir.params.param_heterogeneity_cv"))
+    for cv in (0.0, 0.05, 0.1, 0.2, 0.3, 0.5):
+        put(f"kinetic_cv_{round(100 * cv)}", kinetic.get(cv, []))
+    for cv, values in flat_shares(flat_share, d).items():
+        if cv in (0.1, 0.2, 0.3, 0.5):
+            put(f"flat_cv_{round(100 * cv)}", values)
+    for study, key, tag in ((f"P3-{d}-density", "density", "density_spread"),
+                            (f"P3-{d}-dilution", "dilution", "washout_spread")):
+        points = r.sweep(study, f"reservoir.params.heterogeneity_{key}_cv")
+        for cv in (0.1, 0.2, 0.3):
+            put(f"{tag}_{round(100 * cv)}", points.get(cv, []))
+    if d == "p576":
+        put("alternative_headline", r.seeds("P5-balanced-p576r-headline"))
+        points = r.sweep("P3-p576r-density", "reservoir.params.heterogeneity_density_cv")
+        for cv in (0.1, 0.2, 0.3):
+            put(f"alternative_density_spread_{round(100 * cv)}", points.get(cv, []))
+        put("alternative_kinetic_cv_0", r.sweep("P3-p576r-heterogeneity",
+                                                "reservoir.params.param_heterogeneity_cv")
+            .get(0.0, []))
+    put("warmup_at_rest", r.sweep(f"P3-{d}-warmup-input", "reservoir.params.warmup_input")
+        .get("rest", []))
+    layout = r.sweep(f"P6-{d}-gaussian", "reservoir.params.interaction_diameters")
+    if layout:
+        means = [mean_sd(v)[0] for v in layout.values()]
+        one("gaussian_lowest", min(means))
+        one("gaussian_highest", max(means))
+    flows, densities, grid = f1_map(r) if d == "p576" else ([], [], np.zeros((0, 0)))
+    if grid.size:
+        one("map_best", np.nanmax(grid))
+        one("map_fastest_flow_best", np.nanmax(grid[:, flows.index(max(flows))]))
+    point = design_point(r, d)
+    if point is not None:
+        one("flow", point[0])
+        one("density", point[1])
+    if dynamics is not None and dynamics.is_file():
+        one("period", float(np.load(dynamics)["period"]))
     return out
 
 
-TEX_PREFIX = {"p1024": "Pten", "p1600": "Psixteen"}
+def tex_value(key: str, value: float) -> str:
+    """Shares in percent with one decimal (flat colonies) or none (gap closed); scores and
+    settings with three decimals."""
+    if key.startswith("flat_"):
+        return f"{value:.1f}"
+    if key.startswith(("gap_closed", "period")) or key.startswith("image_time_first") \
+            or key.startswith("image_time_last"):
+        return f"{value:.0f}"
+    return f"{value:.3f}"
 
 
 def tex_macros(values: dict, d: str) -> str:
-    """One ``\\newcommand`` per number, named after the design and the key: for p1024
-    ``\\PtenHeadline`` (the mean) and ``\\PtenHeadlineSd`` (the SD over seeds)."""
+    """One ``\\newcommand`` per number, named after the design and the key: for p576
+    ``\\PHeadline`` (the mean) and ``\\PHeadlineSd`` (the SD over seeds)."""
     def camel(key):
         digits = ("Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine")
         key = re.sub(r"\d", lambda m: f"_{digits[int(m[0])]}_", key)
         return "".join(part[:1].upper() + part[1:] for part in re.split(r"[_\-]+", key) if part)
 
     lines = [f"% Numbers of design {d}, from scripts/paper/paper_figures.py numbers"]
-
-    def emit(key, value):
-        lines.append(f"\\newcommand{{\\{TEX_PREFIX[d]}{camel(key)}}}{{{value}}}")
-
     for key, value in values.items():
-        if isinstance(value, dict) and "mean" in value:
-            emit(key, f"{value['mean']:.3f}")
-            emit(f"{key}_sd", f"{value['sd']:.3f}")
-        elif isinstance(value, float):
-            emit(key, f"{value:.3f}")
-        elif key == "ablations":
-            for name, pair in value.items():
-                emit(f"ablation_{name}", f"{pair['ablated']:.3f}")
+        name = f"\\{DESIGNS[d]}{camel(key)}"
+        if isinstance(value, dict):
+            lines.append(f"\\newcommand{{{name}}}{{{tex_value(key, value['mean'])}}}")
+            lines.append(f"\\newcommand{{{name}Sd}}{{{tex_value(key, value['sd'])}}}")
+        else:
+            lines.append(f"\\newcommand{{{name}}}{{{tex_value(key, value)}}}")
     return "\n".join(lines) + "\n"
 
 
 # ---------------------------------------------------------------------------------------
-# Figures
+# Drawing helpers
 # ---------------------------------------------------------------------------------------
 
-def dots(ax, y, values, colour, *, label=None, size=40, horizontal=True):
-    """The seeds as dots and their mean as a bar, at position ``y``."""
+def seed_dots(ax, y, values, colour, *, marker="o", label=None, size=50, half=0.3,
+              horizontal=True):
+    """The seeds as dots around position ``y`` and their mean as a short bar across them (one
+    value: a diamond); ``horizontal``: the scores along x."""
+    values = list(values)
     if not values:
         return
     m = float(np.mean(values))
-    jitter = np.linspace(-0.12, 0.12, len(values)) if len(values) > 1 else [0.0]
-    if horizontal:
-        ax.barh(y, m, height=0.6, color=colour, alpha=0.35, label=label)
-        ax.scatter(values, y + np.asarray(jitter), s=size, color=colour, zorder=3)
-    else:
-        ax.bar(y, m, width=0.6, color=colour, alpha=0.35, label=label)
-        ax.scatter(y + np.asarray(jitter), values, s=size, color=colour, zorder=3)
-
-
-def reference_line(ax, value, text, colour="#7f7f7f", style="--", vertical=True):
-    """A reference score as a line across the axes, named in the axes' legend."""
-    if value is None:
+    if len(values) == 1:
+        ax.scatter(*(([m], [y]) if horizontal else ([y], [m])), s=size * 1.6, color=colour,
+                   marker="D", zorder=3, label=label)
         return
-    draw = ax.axvline if vertical else ax.axhline
-    draw(value, color=colour, ls=style, lw=LW * 0.8, label=f"{text} ({value:.3f})")
-
-
-def figure_readouts(r: Results, designs: list[str]):
-    """Fig. 2: the array against the raw beat, per readout; the per-class F1 of ridge."""
-    fig, (ax, bx) = plt.subplots(1, 2, figsize=(14, 5.5), gridspec_kw={"width_ratios": [1.2, 1]})
-    groups = [("Ridge", "raw-ridge", "headline"), ("Forest", "raw-rf", "forest")]
-    width = 0.8 / (1 + len(designs))
-    for i, (_, raw, row) in enumerate(groups):
-        value = r.f1(f"P5-balanced-{raw}")
-        if value is not None:
-            ax.bar(i - 0.4 + width / 2, value, width=width, color=COLOURS["raw"],
-                   label="Raw beat" if i == 0 else None)
-        for j, d in enumerate(designs):
-            values = r.seeds(f"P5-balanced-{d}-{row}")
-            x = i - 0.4 + width * (j + 1.5)
-            if values:
-                ax.bar(x, np.mean(values), width=width, color=COLOURS[d], alpha=0.6,
-                       label=f"Array, {UNITS[d]:,} traps" if i == 0 else None)
-                ax.scatter(np.full(len(values), x), values, s=25, color="k", zorder=3)
-    svm = {d: r.f1(f"P4-{d}-c-svm") for d in designs}
-    for j, d in enumerate(designs):
-        if svm[d] is not None:
-            ax.bar(2 - 0.4 + width * (j + 1.5), svm[d], width=width, color=COLOURS[d], alpha=0.6,
-                   hatch="//")
-    reference_line(ax, r.f1("P5-balanced-raw-histgb"), "raw beat, HistGB", vertical=False)
-    ax.set_xticks(range(3), ["Ridge", "Random forest", "RBF SVM\n(2 images, 1 seed)"])
-    ax.set_ylim(0.6, 0.93)
-    ax.set_ylabel("Macro F1 (balanced, 5 folds)")
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=2, fontsize=12,
-              frameon=False)
-    ax.set_title("a", loc="left", fontweight="bold")
-
-    rows = [("Raw beat, ridge", "P5-balanced-raw-ridge", COLOURS["raw"]),
-            *[(f"Array ({UNITS[d]:,}), ridge", f"P5-balanced-{d}-headline-s{SEEDS[0]}",
-               COLOURS[d]) for d in designs],
-            ("Raw beat, HistGB", "P5-balanced-raw-histgb", "k")]
-    width = 0.8 / len(rows)
-    for i, (label, run, colour) in enumerate(rows):
-        f1 = r.per_class(run)
-        if f1 is not None:
-            bx.bar(np.arange(len(f1)) - 0.4 + width * (i + 0.5), f1, width=width, color=colour,
-                   alpha=0.75 if colour != "k" else 0.9, label=label)
-    bx.set_xticks(range(5), [c[:5] + "." if len(c) > 7 else c for c in CLASS_NAMES])
-    bx.set_ylim(0.4, 1.0)
-    bx.set_ylabel("F1 of the class (seed 6348)")
-    bx.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=2, fontsize=12,
-              frameon=False)
-    bx.set_title("b", loc="left", fontweight="bold")
-    fig.tight_layout()
-    return fig
-
-
-def figure_ladder(r: Results, d: str):
-    """Fig. 3: what each step toward a device costs, for ridge and the forest."""
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6.5), sharey=True)
-    noise = {sfx: r.sweep(f"P3-{d}-noise{sfx}", "features.measurement_noise",
-                          features__aggregation=agg)
-             for sfx, agg in (("", HEADLINE), ("-forest", FOREST))}
-    noref = {sfx: r.sweep(f"P3-{d}-calibration-noref{sfx}", "features.calibration_error",
-                          features__aggregation=agg)
-             for sfx, agg in (("", HEADLINE), ("-forest", FOREST))}
-    for ax, sfx, row, title in ((axes[0], "", "headline", "Ridge, 2 images"),
-                                (axes[1], "-forest", "forest", "Random forest, 4 images")):
-        steps = [
-            ("Ideal: LuxI and AHL,\nbeat average, no noise", r.seeds(f"P5-balanced-{d}-full{sfx}")),
-            ("LuxI images, no noise", noise[sfx].get(0.0, [])),
-            ("+ 1% noise (design)", r.seeds(f"P5-balanced-{d}-{row}")),
-            ("+ 2% noise", noise[sfx].get(0.02, [])),
-            ("+ 5% noise", noise[sfx].get(0.05, [])),
-            ("1% noise, 2% calibration\nerror, no reference", noref[sfx].get(0.02, [])),
-        ]
-        for i, (_, values) in enumerate(steps):
-            dots(ax, -i, values, COLOURS[d] if sfx == "" else COLOURS["forest"])
-        if sfx == "":
-            others = [("ESN, ideal", r.seeds("P5-balanced-esn"), COLOURS["esn"]),
-                      ("ESN, 2 images", r.seeds("P5-balanced-esn-image"), COLOURS["esn"]),
-                      ("Submitted model, 2 images", r.seeds("P5-balanced-abstract"),
-                       COLOURS["other"]),
-                      ("Uncoupled array, 2 images", r.seeds("P5-balanced-uncoupled"),
-                       COLOURS["other"])]
-            for k, (_, values, colour) in enumerate(others):
-                dots(ax, -(len(steps) + 0.5 + k), values, colour)
-            labels = [s[0] for s in steps] + [o[0] for o in others]
-            ax.set_yticks([-i for i in range(len(steps))] +
-                          [-(len(steps) + 0.5 + k) for k in range(len(others))], labels)
-        reference_line(ax, r.f1("P5-balanced-raw-ridge" if sfx == "" else "P5-balanced-raw-rf"),
-                       "raw beat" + (", ridge" if sfx == "" else ", forest"))
-        reference_line(ax, r.f1("P5-balanced-raw-histgb"), "raw beat, HistGB", colour="k",
-                       style=":")
-        ax.set_xlim(0.6, 0.93)
-        ax.set_xlabel("Macro F1")
-        ax.set_title(title)
-        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12), fontsize=12, frameon=False)
-    fig.tight_layout()
-    return fig
-
-
-def figure_controls(r: Results, d: str):
-    """Fig. 4: ablations and controls, ridge and forest."""
-    n = UNITS[d]
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
-    for ax, sfx, obs, title in ((axes[0], "", "c", "Ridge, 2 images"),
-                                (axes[1], "-forest", "e", "Random forest, 4 images")):
-        def ablated(stem, key, value, sfx=sfx):
-            return r.sweep(f"P6-{d}-ablation-{stem}{sfx}", key).get(value, [])
-        rf_rows = defaultdict(list)
-        for row in r.trials(f"P6-random-features{sfx}"):
-            rf_rows[(row["reservoir.params.units"], row["reservoir.params.activation"])].append(
-                row["f1"])
-        bank = r.sweep(f"P6-leaky-bank{sfx}", "reservoir.params.expansion")
-        rows = [
-            ("Array (design)", ablated("coupling", "reservoir.params.coupling", "diffusion"),
-             COLOURS[d]),
-            ("No AHL exchange", ablated("coupling", "reservoir.params.coupling", "none"),
-             COLOURS["other"]),
-            ("No delay (no oscillation)", ablated("delay", "reservoir.params.delay", 0),
-             COLOURS["other"]),
-            ("Beat samples shuffled", ablated("scramble", "task.scramble", True),
-             COLOURS["other"]),
-            ("Linear imitation of the array", r.seeds(f"P6-{d}-surrogate-{obs}", SEEDS[:3]),
-             COLOURS["esn"]),
-            (f"Random nonlinear features ({n:,})", rf_rows.get((n, "tanh"), []),
-             COLOURS["esn"]),
-            ("Random nonlinear features (8,000)", rf_rows.get((8000, "tanh"), []),
-             COLOURS["esn"]),
-            (f"Random weighted sums ({n:,})", rf_rows.get((n, "linear"), []),
-             COLOURS["esn"]),
-            ("Fading memories (24 timescales)", bank.get(None, []), COLOURS["esn"]),
-        ]
-        for i, (_, values, colour) in enumerate(rows):
-            dots(ax, -i, values, colour)
-        ax.set_yticks([-i for i in range(len(rows))], [row[0] for row in rows])
-        reference_line(ax, r.f1("P5-balanced-raw-ridge" if sfx == "" else "P5-balanced-raw-rf"),
-                       "raw beat" + (", ridge" if sfx == "" else ", forest"))
-        ax.axvline(0.2, color="#bbbbbb", lw=LW * 0.6, label="chance (0.2)")
-        ax.set_xlim(0.15, 0.95)
-        ax.set_xlabel("Macro F1")
-        ax.set_title(title)
-        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12), fontsize=12, frameon=False)
-    fig.tight_layout()
-    return fig
+    across = [y - half, y + half]
+    ax.plot(*(([m, m], across) if horizontal else (across, [m, m])), color=colour,
+            lw=LW * 1.4, solid_capstyle="butt", label=label)
+    jitter = y + np.linspace(-half * 0.55, half * 0.55, len(values))
+    ax.scatter(*((values, jitter) if horizontal else (jitter, values)), s=size, color=colour,
+               marker=marker, zorder=3, edgecolor="white", linewidth=0.6)
 
 
 def line(ax, points, colour, label, *, marker="o", style="-", band=True):
+    """Mean over seeds at each x, with a band of one SD."""
     x, m, s = ordered(points)
     if not x:
         return
@@ -405,137 +528,465 @@ def line(ax, points, colour, label, *, marker="o", style="-", band=True):
         ax.fill_between(x, np.subtract(m, s), np.add(m, s), color=colour, alpha=0.15, lw=0)
 
 
-def figure_constraints(r: Results, designs: list[str], d: str, flat_share: Path | None = None):
-    """Fig. 5: traps, measurement noise, calibration with and without the reference image,
-    and colony variability (with the share of colonies that do not oscillate, from
-    ``flat_share.py``'s CSV when given)."""
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10.5))
-    ax = axes[0, 0]
-    for e in designs:
-        line(ax, r.sweep(f"P6-{e}-units", "reservoir.params.units"), COLOURS[e],
-             f"Ridge, 2 images ({e})")
-        line(ax, r.sweep(f"P6-{e}-units-forest", "reservoir.params.units"), COLOURS[e],
-             f"Forest, 4 images ({e})", marker="s", style="--")
+def panel(ax, letter: str):
+    ax.set_title(letter, loc="left", fontweight="bold")
+
+
+def plain_log_ticks(axis, ticks=None):
+    """Numbers instead of powers of ten on a log axis (``ticks``: where)."""
+    if ticks is not None:
+        axis.set_ticks(ticks)
+        axis.set_minor_locator(matplotlib.ticker.NullLocator())
+    axis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
+
+
+def legend(ax, **kwargs):
+    kwargs.setdefault("fontsize", SMALL)
+    kwargs.setdefault("frameon", False)
+    ax.legend(**kwargs)
+
+
+def mark_design(ax, flows, densities, point):
+    """A star at the design's flow and density, on a grid drawn with ``imshow``."""
+    if point is None or not flows:
+        return
+    x = np.interp(point[0], flows, range(len(flows)))
+    y = np.interp(point[1], densities, range(len(densities)))
+    ax.plot(x, y, marker="*", ms=24, color="#d62728", markeredgecolor="white", mew=1.2,
+            ls="none", label="Design")
+
+
+def heatmap(ax, values, flows, densities, cmap, *, vmin=None, vmax=None, text=None):
+    image = ax.imshow(values, origin="lower", aspect="auto", cmap=cmap, vmin=vmin, vmax=vmax)
+    for i in range(values.shape[0]):
+        for j in range(values.shape[1]):
+            if text is not None and np.isfinite(values[i, j]):
+                light = image.norm(values[i, j]) > 0.55 if cmap == "Blues" else \
+                    image.norm(values[i, j]) < 0.55
+                ax.text(j, i, text(i, j), ha="center", va="center", fontsize=SMALL - 1,
+                        color="white" if light else "black")
+    ax.set_xticks(range(len(flows)), [f"{f:g}" for f in flows])
+    ax.set_yticks(range(len(densities)), [f"{x:g}" for x in densities])
+    ax.set_xlabel("AHL washout rate (flow)")
+    ax.set_ylabel("Cell density")
+    return image
+
+
+# ---------------------------------------------------------------------------------------
+# Figures
+# ---------------------------------------------------------------------------------------
+
+def figure_dynamics(r: Results, d: str, dynamics: Path | None, oscillation: Path | None):
+    """Fig. 2: the colonies before and during a beat; where they oscillate over flow and cell
+    density; macro F1 over the same grid."""
+    fig = plt.figure(figsize=(16, 12.5))
+    outer = fig.add_gridspec(2, 1, height_ratios=[1, 1.1], hspace=0.3)
+    top = outer[0].subgridspec(2, 1, height_ratios=[3, 1], hspace=0.08)
+    bottom = outer[1].subgridspec(1, 2, wspace=0.3)
+    ax, inducer = fig.add_subplot(top[0]), fig.add_subplot(top[1])
+    panel(ax, "a")
+    if dynamics is not None and dynamics.is_file():
+        data = np.load(dynamics)
+        colours = [OKABE_ITO[i] for i in (0, 2, 3, 5)]
+        for k in range(data["history"].shape[1]):
+            colour = colours[k % len(colours)]
+            ax.plot(data["t_history"], data["history"][:, k], color=colour, lw=THIN,
+                    alpha=0.8)
+            ax.plot(data["t_beat"], data["driven"][:, k], color=colour, lw=THIN, alpha=0.8,
+                    label="Single colonies" if k == 0 else None)
+        ax.plot(data["t_history"], data["history_mean"], color="k", lw=LW,
+                label="Mean of the 576 colonies")
+        ax.plot(data["t_beat"], data["driven_mean"], color="k", lw=LW)
+        ax.plot(data["t_beat"], data["rest_mean"], color="k", lw=THIN, ls="--",
+                label="Mean, without the beat")
+        for t, text in ((0, "reference\nimage"), (140, "image"), (187, "image")):
+            ax.axvline(t, color="#999999", ls=":", lw=THIN)
+            ax.text(t, 1.0, text, transform=blended_transform_factory(ax.transData,
+                                                                     ax.transAxes),
+                    ha="center", va="bottom", fontsize=SMALL - 1, color="#555555")
+        ax.text(0.01, 0.95, f"Period at rest {float(data['period']):.0f} min (Danino et al.: "
+                f"{DANINO_PERIODS[0]}–{DANINO_PERIODS[1]} min)", transform=ax.transAxes,
+                fontsize=SMALL, va="top")
+        name = CLASS_NAMES[int(data["beat_class"])]
+        inducer.plot(np.concatenate([data["t_history"], data["t_beat"]]),
+                     np.concatenate([np.zeros(len(data["t_history"])), data["inducer"]]),
+                     color=CLASS_COLOURS[name], lw=LW, label=f"Inducer: one {name.lower()} beat")
+        legend(inducer, loc="upper left")
+        legend(ax, loc="upper left", bbox_to_anchor=(0.0, 0.88), ncol=3)
+    ax.set_ylabel("LuxI (model units)")
+    ax.tick_params(labelbottom=False)
+    inducer.sharex(ax)
+    inducer.set_ylabel("Inducer")
+    inducer.set_xlabel("Time from the start of the beat (min)")
+
+    bx, cx = fig.add_subplot(bottom[0]), fig.add_subplot(bottom[1])
+    point = design_point(r, d)
+    flows, densities, share, period = oscillation_map(oscillation, d)
+    if flows:
+        image = heatmap(bx, share, flows, densities, "Blues", vmin=0, vmax=100,
+                        text=lambda i, j: f"{share[i, j]:.0f}%" + (
+                            f"\n{period[i, j]:.0f} min" if np.isfinite(period[i, j]) else ""))
+        fig.colorbar(image, ax=bx, label="Colonies oscillating (%)")
+        mark_design(bx, flows, densities, point)
+    panel(bx, "b")
+    flows, densities, grid = f1_map(r)
+    if flows:
+        image = heatmap(cx, grid, flows, densities, "viridis",
+                        vmin=max(0.75, float(np.nanmin(grid))), vmax=float(np.nanmax(grid)),
+                        text=lambda i, j: f"{grid[i, j]:.3f}".lstrip("0"))
+        fig.colorbar(image, ax=cx, label="Macro F1 (ridge, 2 images)")
+        mark_design(cx, flows, densities, point)
+    panel(cx, "c")
+    return fig
+
+
+def figure_performance(r: Results, d: str):
+    """Fig. 3: the array against the raw beat and the comparison models; each readout on the
+    array's images against the same readout on the raw beat; per-class F1."""
+    fig = plt.figure(figsize=(17, 11))
+    grid = fig.add_gridspec(2, 2, width_ratios=[1.05, 1], hspace=0.5, wspace=0.3)
+    ax, bx, cx = (fig.add_subplot(grid[:, 0]), fig.add_subplot(grid[0, 1]),
+                  fig.add_subplot(grid[1, 1]))
+    raw_rows = []
+    for key, label in READOUTS:
+        value = r.f1(RAW[key]) if key in ("ridge", "rf", "svm", "histgb") else None
+        if value is not None:
+            raw_rows.append((label.replace("\n", " "), [value], COLOURS["raw"]))
+    groups = [
+        ("Array, 576 traps", [
+            ("Ridge, 2 images (design)", r.seeds(f"P5-balanced-{d}-headline"), COLOURS["array"]),
+            ("RBF SVM, 2 images", readout(r, d, "c", "svm").values(), COLOURS["svm"]),
+            ("Random forest, 4 images", r.seeds(f"P5-balanced-{d}-forest"),
+             COLOURS["forest"])]),
+        ("Tuned at 576, read like the array (ridge)", [
+            (TUNED["uncoupled-576"], r.seeds("P5-balanced-uncoupled-576"),
+             COLOURS["isolated"]),
+            (TUNED["esn-image-576"], r.seeds("P5-balanced-esn-image-576"), COLOURS["digital"]),
+            ("Random tanh features", r.report(CONTROLS["random_features"]).values(),
+             COLOURS["digital"])]),
+        ("Ideal reading: clean states (ridge)", [
+            ("Array", r.seeds(f"P5-balanced-{d}-full"), COLOURS["ideal"]),
+            ("ESN, 576 units", r.seeds("P5-balanced-esn-576"), COLOURS["ideal"])]),
+        ("Raw beat", raw_rows),
+    ]
+    y, ticks, labels = 0.0, [], []
+    transform = blended_transform_factory(ax.transAxes, ax.transData)
+    for title, rows in groups:
+        ax.text(0.0, y + 0.1, title, transform=transform, fontsize=SMALL, fontstyle="italic",
+                color="#444444", va="bottom")
+        y -= 0.9
+        for label, values, colour in rows:
+            seed_dots(ax, y, values, colour)
+            ticks.append(y)
+            labels.append(label)
+            y -= 1.0
+        y -= 0.35
+    headline = r.seeds(f"P5-balanced-{d}-headline")
+    if headline:
+        ax.axvline(np.mean(headline), color=COLOURS["array"], ls=":", lw=THIN)
+    ax.set_yticks(ticks, labels)
+    ax.set_ylim(y + 0.6, 0.9)
+    ax.set_xlim(0.70, 0.92)
+    ax.set_xticks(np.arange(0.70, 0.91, 0.05))
+    ax.set_xlabel("Macro F1 (5 classes, 5 folds)")
+    panel(ax, "a")
+
+    for i, (key, _) in enumerate(READOUTS):
+        raw, values = r.f1(RAW[key]), list(readout(r, d, "c", key).values())
+        if raw is not None and values:
+            bx.annotate("", xy=(i, np.mean(values)), xytext=(i, raw),
+                        arrowprops={"arrowstyle": "-|>", "color": "#aaaaaa", "lw": THIN,
+                                    "shrinkA": 6, "shrinkB": 6})
+        if raw is not None:
+            bx.scatter([i], [raw], s=80, marker="D", color=COLOURS["raw"], zorder=3,
+                       label="Raw beat" if i == 0 else None)
+        if values:
+            jitter = np.linspace(-0.12, 0.12, len(values))
+            bx.scatter(i + jitter, values, s=30, color=COLOURS["array"], zorder=3,
+                       label="Array, 2 images (5 seeds)" if i == 0 else None)
+    bx.set_xticks(range(len(READOUTS)), [label for _, label in READOUTS], fontsize=SMALL)
+    bx.set_ylabel("Macro F1")
+    bx.set_ylim(0.70, 0.92)
+    legend(bx, loc="lower right")
+    panel(bx, "b")
+
+    rows = [("Raw beat, ridge", [RAW["ridge"]], COLOURS["raw"], "D"),
+            ("Array, ridge", [f"P5-balanced-{d}-headline-s{s}" for s in SEEDS],
+             COLOURS["array"], "o"),
+            ("Array, RBF SVM", [f"P4-{d}-c-svm"] + ([f"extra-576-readout-c-svm-s{s}"
+                                                    for s in SEEDS[1:]] if d == "p576" else []),
+             COLOURS["svm"], "o"),
+            ("Raw beat, HistGB", [RAW["histgb"]], "k", "D")]
+    width = 0.8 / len(rows)
+    for k, (label, runs, colour, marker) in enumerate(rows):
+        f1 = [v for v in (r.per_class(run) for run in runs) if v is not None]
+        if not f1:
+            continue
+        x = np.arange(len(CLASS_NAMES)) - 0.4 + width * (k + 0.5)
+        m = np.mean(f1, axis=0)
+        s = np.std(f1, axis=0, ddof=1) if len(f1) > 1 else np.zeros_like(m)
+        cx.errorbar(x, m, yerr=s, fmt=marker, color=colour, ms=8, lw=THIN, capsize=0,
+                    label=label)
+    cx.set_xticks(range(len(CLASS_NAMES)), [c[:5] + "." if len(c) > 7 else c
+                                             for c in CLASS_NAMES], fontsize=SMALL)
+    cx.set_ylabel("F1 of the class")
+    legend(cx, loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=2)
+    panel(cx, "c")
+    return fig
+
+
+def figure_mechanism(r: Results, d: str):
+    """Fig. 4: ablations and controls, ridge and forest; the share of traps induced with and
+    without AHL exchange."""
+    fig, (ax, bx) = plt.subplots(1, 2, figsize=(17, 7), gridspec_kw={"width_ratios": [1.45, 1],
+                                                                    "wspace": 0.45})
+    rows = [
+        ("Array (design)", ablation(r, d, "coupling", "diffusion"),
+         ablation(r, d, "coupling", "diffusion", True)),
+        ("No AHL exchange", ablation(r, d, "coupling", "none"),
+         ablation(r, d, "coupling", "none", True)),
+        ("No feedback delay\n(colonies do not oscillate)", ablation(r, d, "delay", 0),
+         ablation(r, d, "delay", 0, True)),
+        ("Beat samples shuffled", ablation(r, d, "scramble", True),
+         ablation(r, d, "scramble", True, True)),
+        ("Linear imitation of the array", r.seeds(f"P6-{d}-surrogate-c", SEEDS[:3]),
+         r.seeds(f"P6-{d}-surrogate-e", SEEDS[:3])),
+        ("Random tanh features", r.report(CONTROLS["random_features"]).values(),
+         untuned_control(r, "random_features", True)),
+        ("Fading memories\n(leaky integrators)", r.report(CONTROLS["fading_memories"]).values(),
+         untuned_control(r, "fading_memories", True)),
+    ]
+    for i, (_, ridge, forest) in enumerate(rows):
+        seed_dots(ax, -i + 0.18, ridge, COLOURS["array"], half=0.15,
+                  label="Ridge, 2 images" if i == 0 else None)
+        seed_dots(ax, -i - 0.18, forest, COLOURS["forest"], marker="s", half=0.15,
+                  label="Random forest, 4 images" if i == 0 else None)
+    ax.set_yticks([-i for i in range(len(rows))], [row[0] for row in rows])
+    for key, colour, text in (("ridge", COLOURS["array"], "Raw beat, ridge"),
+                              ("rf", COLOURS["forest"], "Raw beat, forest")):
+        value = r.f1(RAW[key])
+        if value is not None:
+            ax.axvline(value, color=colour, ls="--", lw=THIN, label=f"{text} ({value:.3f})")
+    ax.axvline(0.2, color="#bbbbbb", lw=THIN, label="Chance (0.2)")
+    ax.set_xlim(0.15, 0.95)
+    ax.set_xlabel("Macro F1")
+    legend(ax, loc="upper center", bbox_to_anchor=(0.45, -0.12), ncol=2)
+    panel(ax, "a")
+
+    table = r.grid("extra-576-connectivity", "reservoir.params.input_connectivity",
+                   "reservoir.params.coupling") if d == "p576" else {}
+    shares = sorted({k[0] for k in table})
+    for coupling, label, colour, style, marker in (
+            ("diffusion", "With AHL exchange", COLOURS["array"], "-", "o"),
+            ("none", "Isolated traps", COLOURS["isolated"], "--", "s")):
+        line(bx, {100 * s: list(table.get((s, coupling), {}).values()) for s in shares}, colour,
+             label, style=style, marker=marker)
+    for s in shares:
+        on, off = table.get((s, "diffusion"), {}), table.get((s, "none"), {})
+        gain = paired(on, off)
+        if gain:
+            middle = (np.mean(list(on.values())) + np.mean(list(off.values()))) / 2
+            bx.text(100 * s, middle, f"+{np.mean(gain):.3f}", ha="center", va="center",
+                    fontsize=SMALL, color=COLOURS["array"],
+                    bbox={"facecolor": "white", "edgecolor": "none", "pad": 1})
+    bx.set_xscale("log")
+    bx.set_xlim(8, 125)
+    bx.set_xticks([100 * s for s in shares], [f"{100 * s:g}" for s in shares])
+    bx.minorticks_off()
+    bx.set_xlabel("Traps that receive the inducer (%)")
+    bx.set_ylabel("Macro F1 (ridge, 2 images)")
+    legend(bx, loc="lower right")
+    panel(bx, "b")
+    return fig
+
+
+def figure_scaling(r: Results, d: str):
+    """Fig. 5: macro F1 against the number of traps; measurement noise and the number of
+    images; the time of the earlier image."""
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6), gridspec_kw={"width_ratios": [1.4, 1, 1],
+                                                                "wspace": 0.32})
+    ax = axes[0]
+    ax.axvspan(*BUILT, color="#dddddd", lw=0, label="Built arrays (416, 500 traps)")
+    ax.axvline(LARGEST, color="#999999", ls=":", lw=THIN, label="Largest built (12,224)")
+    line(ax, traps(r, d), COLOURS["array"], "Ridge, 2 images")
+    line(ax, traps(r, d, forest=True), COLOURS["forest"], "Forest, 4 images", marker="s",
+         style="--")
+    line(ax, ideal_traps(r, d), COLOURS["ideal"], "Ridge, clean states", marker="^", style=":",
+         band=False)
+    headline = r.seeds(f"P5-balanced-{d}-headline")
+    if headline:
+        ax.plot(576, np.mean(headline), marker="*", ms=24, color="#d62728",
+                markeredgecolor="white", mew=1.2, ls="none", label="Design (576)", zorder=4)
     ax.set_xscale("log")
+    plain_log_ticks(ax.xaxis)
     ax.set_xlabel("Traps in the array")
     ax.set_ylabel("Macro F1")
-    ax.legend(fontsize=11, frameon=False)
-    ax.set_title("a", loc="left", fontweight="bold")
+    legend(ax, loc="lower right")
+    panel(ax, "a")
 
-    ax = axes[0, 1]
-    for agg, label, colour in ((ONE, "1 image", OKABE_ITO[5]), (HEADLINE, "2 images", COLOURS[d]),
-                               (FOREST, "4 images", OKABE_ITO[4])):
-        line(ax, r.sweep(f"P3-{d}-noise", "features.measurement_noise",
-                         features__aggregation=agg), colour, f"Ridge, {label}")
-    line(ax, r.sweep(f"P3-{d}-noise-forest", "features.measurement_noise",
-                     features__aggregation=FOREST), COLOURS["forest"], "Forest, 4 images",
-         marker="s", style="--")
-    ax.set_xlabel("Measurement noise (SD, fraction of the signal)")
+    bx = axes[1]
+    for agg, label, colour, marker in ((ONE, "Ridge, 1 image", OKABE_ITO[5], "v"),
+                                       (HEADLINE, "Ridge, 2 images", COLOURS["array"], "o"),
+                                       (FOREST, "Ridge, 4 images", OKABE_ITO[3], "D")):
+        line(bx, scaled(r.sweep(f"P3-{d}-noise", "features.measurement_noise",
+                                features__aggregation=agg)), colour, label, marker=marker)
+    line(bx, scaled(r.sweep(f"P3-{d}-noise-forest", "features.measurement_noise",
+                            features__aggregation=FOREST)), COLOURS["forest"],
+         "Forest, 4 images", marker="s", style="--")
+    bx.axvline(1, color="#bbbbbb", ls=":", lw=THIN)
+    bx.set_xlabel("Measurement noise (% of the signal)")
+    bx.set_ylabel("Macro F1")
+    legend(bx, loc="lower left")
+    panel(bx, "b")
+
+    cx = axes[2]
+    times, final = image_times(r, d)
+    line(cx, times, COLOURS["array"], "Ridge, 2 images (the later at 187 min)")
+    if final:
+        cx.axhline(np.mean(final), color=OKABE_ITO[5], ls="--", lw=THIN,
+                   label=f"Ridge, the 187-min image alone ({np.mean(final):.3f})")
+    cx.axvline(140, color="#bbbbbb", ls=":", lw=THIN)
+    if times:
+        cx.set_xticks(sorted(times)[::2])
+    cx.set_xlabel("Time of the earlier image (min)")
+    cx.set_ylabel("Macro F1")
+    means = ([np.mean(final)] if final else []) + (ordered(times)[1] if times else [])
+    if means:
+        cx.set_ylim(min(means) - 0.01, max(means) + 0.015)
+    legend(cx, loc="upper left")
+    panel(cx, "c")
+    return fig
+
+
+def figure_robustness(r: Results, d: str, flat_share: Path | None):
+    """Fig. 6: calibration error with and without the reference image; variability of the
+    colonies' kinetics, with the share that do not oscillate; spread of cell density and
+    washout between traps (and the alternative design b32)."""
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6), gridspec_kw={"wspace": 0.58})
+    below = {"loc": "upper center", "bbox_to_anchor": (0.5, -0.2)}
+    ax = axes[0]
+    for study, label, colour, style, agg, marker in (
+            (f"P3-{d}-calibration", "Ridge, with reference", COLOURS["array"], "-", HEADLINE,
+             "o"),
+            (f"P3-{d}-calibration-noref", "Ridge, no reference", COLOURS["array"], ":",
+             HEADLINE, "o"),
+            (f"P3-{d}-calibration-forest", "Forest, with reference", COLOURS["forest"], "-",
+             FOREST, "s"),
+            (f"P3-{d}-calibration-noref-forest", "Forest, no reference", COLOURS["forest"], ":",
+             FOREST, "s")):
+        line(ax, scaled(r.sweep(study, "features.calibration_error", features__aggregation=agg)),
+             colour, label, style=style, marker=marker)
+    ax.set_xlabel("Calibration error (% SD of a trap's gain)")
     ax.set_ylabel("Macro F1")
-    ax.legend(fontsize=11, frameon=False)
-    ax.set_title("b", loc="left", fontweight="bold")
+    legend(ax, **below)
+    panel(ax, "a")
 
-    ax = axes[1, 0]
-    for study, label, colour, style in (
-            (f"P3-{d}-calibration", "Ridge, with reference", COLOURS[d], "-"),
-            (f"P3-{d}-calibration-noref", "Ridge, no reference", COLOURS[d], ":"),
-            (f"P3-{d}-calibration-forest", "Forest, with reference", COLOURS["forest"], "-"),
-            (f"P3-{d}-calibration-noref-forest", "Forest, no reference", COLOURS["forest"], ":")):
-        agg = FOREST if "forest" in study else HEADLINE
-        line(ax, r.sweep(study, "features.calibration_error", features__aggregation=agg), colour,
-             label, style=style, marker="s" if "forest" in study else "o")
-    ax.set_xlabel("Calibration error (SD of the per-trap gain)")
-    ax.set_ylabel("Macro F1")
-    ax.legend(fontsize=11, frameon=False)
-    ax.set_title("c", loc="left", fontweight="bold")
-
-    ax = axes[1, 1]
-    for sfx, label, colour, marker in (("", "Ridge, 2 images", COLOURS[d], "o"),
+    bx = axes[1]
+    for sfx, label, colour, marker in (("", "Ridge, 2 images", COLOURS["array"], "o"),
                                        ("-forest", "Forest, 4 images", COLOURS["forest"], "s")):
         points = r.sweep(f"P3-{d}-heterogeneity{sfx}", "reservoir.params.param_heterogeneity_cv")
         points.update(r.sweep(f"P3-{d}-heterogeneity-64{sfx}",
                               "reservoir.params.param_heterogeneity_cv"))
-        line(ax, points, colour, label, marker=marker)
-    ax.axvline(0.1, color="#bbbbbb", lw=LW * 0.6, ls="--")
-    ax.set_xlabel("Variability of the colonies' kinetics (CV)")
-    ax.set_ylabel("Macro F1")
-    ax.legend(fontsize=11, frameon=False, loc="lower left")
-    if flat_share is not None and flat_share.is_file():
-        shares = defaultdict(list)
-        for row in csv.DictReader(flat_share.open()):
-            if row["design"] == d:
-                shares[float(row["cv"])].append(100 * float(row["flat"]))
-        x, m, _ = ordered(shares)
-        twin = ax.twinx()
-        twin.plot(x, m, ":", marker="^", color="#555555", lw=LW, ms=7)
-        twin.set_ylabel("Colonies not oscillating (%, dotted)")
+        line(bx, scaled(points), colour, label, marker=marker)
+    bx.axvline(10, color="#bbbbbb", ls=":", lw=THIN)
+    bx.set_xlabel("Variability of the colonies' kinetics (CV, %)")
+    bx.set_ylabel("Macro F1")
+    shares = flat_shares(flat_share, d)
+    if shares:
+        x, m, _ = ordered(scaled(shares))
+        twin = bx.twinx()
+        twin.plot(x, m, ":", marker="^", color="#555555", lw=LW, ms=7,
+                  label="Colonies not oscillating")
+        twin.set_ylabel("Not oscillating (%)", color="#555555")
         twin.set_ylim(0, 100)
-    ax.set_title("d", loc="left", fontweight="bold")
-    fig.tight_layout()
+        handles = bx.get_legend_handles_labels()
+        extra = twin.get_legend_handles_labels()
+        bx.legend(handles[0] + extra[0], handles[1] + extra[1], fontsize=SMALL, frameon=False,
+                  **below)
+    else:
+        legend(bx, **below)
+    panel(bx, "b")
+
+    cx = axes[2]
+    for study, key, label, colour, style, marker in (
+            (f"P3-{d}-density", "density", "Cell density, design", COLOURS["array"], "-", "o"),
+            (f"P3-{d}-dilution", "dilution", "Washout, design", COLOURS["array"], ":", "D"),
+            ("P3-p576r-density" if d == "p576" else None, "density",
+             "Cell density, alternative b32", COLOURS["alternative"], "-", "s")):
+        if study is not None:
+            line(cx, scaled(r.sweep(study, f"reservoir.params.heterogeneity_{key}_cv")), colour,
+                 label, style=style, marker=marker)
+    cx.set_xlabel("Spread between traps (CV, %)")
+    cx.set_ylabel("Macro F1")
+    legend(cx, **below)
+    panel(cx, "c")
     return fig
 
 
-def figure_realism(r: Results, d: str):
-    """SI: the other realism settings, ridge on 2 images (and the forest where it ran)."""
-    panels = [("P3-{d}-density", "reservoir.params.heterogeneity_density_cv",
-               "Cell-density variability (CV)"),
-              ("P3-{d}-dilution", "reservoir.params.heterogeneity_dilution_cv",
-               "Dilution variability (CV)"),
-              ("P3-{d}-reset", "reservoir.params.reset_noise", "Imperfect reset (CV)"),
-              ("P3-{d}-warmup", "reservoir.params.warmup", "Settling time before a beat (min)"),
-              ("P3-{d}-image-time", "features.aggregation",
-               "Time of the earlier image (min; the later is at 187)"),
-              ("P3-{d}-input-levels", "reservoir.params.input_levels", "Input levels")]
-    fig, axes = plt.subplots(2, 3, figsize=(15, 9))
-    for ax, (study, x, label) in zip(axes.flat, panels, strict=True):
-        points = r.sweep(study.format(d=d), x)
-        if x == "features.aggregation":
-            points = {int(k.split(":")[1].split(",")[0]): v for k, v in points.items()
-                      if k.startswith("images_at")}
-        if x == "reservoir.params.input_levels":
-            labels = sorted((k for k in points), key=lambda k: (isinstance(k, str), k))
-            for i, k in enumerate(labels):
-                dots(ax, i, points[k], COLOURS[d], horizontal=False)
-            ax.set_xticks(range(len(labels)), [str(k) for k in labels])
-        else:
-            line(ax, points, COLOURS[d], "Ridge, 2 images")
-            if x == "reservoir.params.warmup":
-                line(ax, r.sweep(f"P3-{d}-warmup-forest", x), COLOURS["forest"],
-                     "Forest, 4 images", marker="s", style="--")
-                ax.legend(fontsize=11, frameon=False)
-        ax.set_xlabel(label)
+def figure_settings(r: Results, d: str):
+    """SI: the other settings of the array, ridge on 2 images unless stated."""
+    fig, axes = plt.subplots(2, 3, figsize=(18, 11), gridspec_kw={"hspace": 0.42,
+                                                                 "wspace": 0.32})
+
+    def categories(ax, points, order, labels, colour=COLOURS["array"]):
+        for i, key in enumerate(order):
+            seed_dots(ax, i, points.get(key, []), colour, horizontal=False)
+        ax.set_xticks(range(len(order)), labels)
+        ax.set_xlim(-0.6, len(order) - 0.4)
         ax.set_ylabel("Macro F1")
-    fig.tight_layout()
-    return fig
 
+    reset = r.sweep(f"P3-{d}-reset", "reservoir.params.reset_noise")
+    order = sorted(k for k in reset if k is not None)
+    categories(axes[0, 0], reset, order, [f"{100 * k:g}" for k in order])
+    axes[0, 0].set_xlabel("Imperfect reset (CV of the start state, %)")
+    panel(axes[0, 0], "a")
 
-def figure_refinement(r: Results):
-    """SI: the refinement grid, the gain of each variant over P1024 on each selection seed."""
-    rows = r.trials("P2-refine")
-    if not rows:
-        return None
-    keys = ("reservoir.params.input_scaling", "reservoir.params.diffusion_rate",
-            "reservoir.params.units", "features.aggregation")
-    base_key = (min(row[keys[0]] for row in rows), min(row[keys[1]] for row in rows), 1024,
-                HEADLINE)
-    by = defaultdict(dict)
-    for row in rows:
-        by[tuple(row[k] for k in keys)][row["reservoir.seed"]] = row["f1"]
-    base = by[base_key]
-    gains = {k: [by[k][s] - base[s] for s in sorted(base) if s in by[k]]
-             for k in by if k != base_key}
-    order = sorted(gains, key=lambda k: -np.mean(gains[k]))
-    fig, ax = plt.subplots(figsize=(12, 7))
-    for i, k in enumerate(order):
-        colour = COLOURS["p1600"] if k[2] == 1600 else COLOURS["p1024"]
-        dots(ax, -i, gains[k], colour)
-    ax.set_yticks([-i for i in range(len(order))],
-                  [f"gain x{k[0] / base_key[0]:.1f}, coupling {k[1]:.2f}, {k[2]:,} traps, "
-                   f"{1 if k[3] == ONE else 2 if k[3] == HEADLINE else 4} images" for k in order])
-    ax.axvline(0.005, color="k", ls="--", lw=LW * 0.8)
-    ax.axvline(0.0, color="#bbbbbb", lw=LW * 0.6)
-    ax.set_xlabel("Gain in macro F1 over P1024 (each dot a selection seed)")
-    fig.tight_layout()
+    ax = axes[0, 1]
+    line(ax, r.sweep(f"P3-{d}-warmup", "reservoir.params.warmup"), COLOURS["array"],
+         "Ridge, 2 images")
+    line(ax, r.sweep(f"P3-{d}-warmup-forest", "reservoir.params.warmup"), COLOURS["forest"],
+         "Forest, 4 images", marker="s", style="--")
+    ax.set_xlabel("Settling time before each beat (min)")
+    ax.set_ylabel("Macro F1")
+    legend(ax, loc="lower right")
+    panel(ax, "b")
+
+    rest = r.sweep(f"P3-{d}-warmup-input", "reservoir.params.warmup_input")
+    categories(axes[0, 2], rest, ["zero", "rest"], ["None (design)", "Resting level"])
+    axes[0, 2].set_xlabel("Inducer while settling")
+    panel(axes[0, 2], "c")
+
+    levels = r.sweep(f"P3-{d}-input-levels", "reservoir.params.input_levels")
+    order = sorted((k for k in levels), key=lambda k: (isinstance(k, str), k))
+    categories(axes[1, 0], levels, order, [str(k) for k in order])
+    axes[1, 0].set_xlabel("Inducer levels")
+    panel(axes[1, 0], "d")
+
+    ax = axes[1, 1]
+    line(ax, r.sweep(f"P6-{d}-gaussian", "reservoir.params.interaction_diameters"),
+         COLOURS["array"], "Gaussian layout")
+    headline = r.seeds(f"P5-balanced-{d}-headline")
+    if headline:
+        ax.axhline(np.mean(headline), color="#999999", ls="--", lw=THIN,
+                   label=f"Lattice (design, {np.mean(headline):.3f})")
+    ax.set_xlabel("Reach of the coupling (colony spacings)")
+    ax.set_ylabel("Macro F1")
+    legend(ax, loc="lower right")
+    panel(ax, "e")
+
+    ax = axes[1, 2]
+    for agg, label, colour, marker in ((ONE, "1 image", OKABE_ITO[5], "v"),
+                                       (HEADLINE, "2 images", COLOURS["array"], "o"),
+                                       (FOREST, "4 images", OKABE_ITO[3], "D")):
+        line(ax, r.sweep(f"P6-{d}-units-images", "reservoir.params.units",
+                         features__aggregation=agg), colour, f"Ridge, {label}", marker=marker)
+    sizes = sorted({row["reservoir.params.units"] for row in r.trials(f"P6-{d}-units-images")})
+    ax.set_xscale("log")
+    plain_log_ticks(ax.xaxis, sizes or None)
+    ax.set_xlabel("Traps in the array")
+    ax.set_ylabel("Macro F1 (3 seeds)")
+    legend(ax, loc="lower right")
+    panel(ax, "f")
     return fig
 
 
@@ -571,7 +1022,7 @@ def figure_images(design: Path, seed: int = SEEDS[0]):
         ax = axes[k, 0]
         ax.plot(np.arange(len(beat)), encoded_input(cfg, beat), color=OKABE_ITO[k], lw=LW)
         for t in times:
-            ax.axvline(t, color="#999999", lw=LW * 0.5, ls=":")
+            ax.axvline(t, color="#999999", lw=THIN, ls=":")
         ax.set_ylabel(name, color=OKABE_ITO[k])
         ax.set_xlim(0, len(beat))
         if k == 4:
@@ -594,11 +1045,68 @@ def figure_images(design: Path, seed: int = SEEDS[0]):
     return fig
 
 
+def simulate_dynamics(design: Path, seed: int = SEEDS[0], colonies: int = 4, before: int = 300,
+                      beat_class: int = 2) -> dict:
+    """The design's colonies before and during one beat (Fig. 2a): LuxI of a few colonies and
+    the mean of all over the last ``before`` minutes of the warm-up (stepped from the start
+    state as the node steps it), then during a typical beat of class ``beat_class`` (the pool
+    beat closest to its class's mean) as a run steps it, and over the same time without the
+    beat. The period at rest is the median over the colonies of their median LuxI peak
+    spacing in the last ``before`` minutes of the warm-up."""
+    from scipy.signal import find_peaks
+
+    from training.figures import VARIABLES, array_states, build, encoded_input, run_config
+    from training.run import load_task
+    from utils.preprocessing import standardize_data
+
+    cfg = run_config(design)
+    cfg["reservoir"]["seed"] = seed
+    lux = VARIABLES.index("I")
+    warmup = int(cfg["reservoir"]["params"]["warmup"])
+    X, Y, _ = load_task(cfg["task"])
+    X, _ = standardize_data(X, X[:1], scaler_type=str(cfg["task"]["scaler"]))
+    X = np.asarray(X, dtype=float).reshape(len(X), -1)
+    labels = np.argmax(np.asarray(Y).reshape(len(Y), -1), axis=1)
+    members = np.flatnonzero(labels == beat_class)
+    index = int(members[np.argmin(((X[members] - X[members].mean(axis=0)) ** 2).sum(1))])
+    beat = X[index].reshape(-1, 1)
+
+    free = build(cfg, warmup=0)
+    free.initialize(np.zeros((1, 1)))
+    history = np.array([free._step(free._warmup_drive)[:, lux] for _ in range(warmup)])
+    node = build(cfg)
+    node.initialize(np.zeros((1, 1)))
+    work = node.copy()
+    work.states = work._warmup_states.copy()
+    if getattr(work, "_warmup_ring", None) is not None:
+        work._ring, work._ring_pos = work._warmup_ring[0].copy(), work._warmup_ring[1]
+    start = np.asarray(node.start_state(input_dim=1)).reshape(-1, 4)[:, lux]
+    rest = np.array([work._step(work._warmup_drive)[:, lux] for _ in range(len(beat))])
+    driven = array_states(cfg, beat, index)[0][:, :, lux]
+    periods = []
+    for col in range(history.shape[1]):
+        x = history[-before:, col]
+        peaks, _ = find_peaks(x, prominence=0.3 * (x.max() - x.min()))
+        if len(peaks) >= 2:
+            periods.append(np.median(np.diff(peaks)))
+    pick = np.random.default_rng(seed).choice(history.shape[1], colonies, replace=False)
+    return {"t_history": np.arange(-before, 0), "history": history[-before:, pick],
+            "history_mean": history[-before:].mean(axis=1), "t_beat": np.arange(len(beat)),
+            "driven": driven[:, pick], "driven_mean": driven.mean(axis=1),
+            "rest": rest[:, pick], "rest_mean": rest.mean(axis=1),
+            "inducer": encoded_input(cfg, beat),
+            "period": float(np.median(periods)) if periods else float("nan"),
+            "beat_class": beat_class, "beat_index": index,
+            # how far the stepped warm-up ends from the node's start state (should be ~0)
+            "start_gap": float(np.max(np.abs(history[-1] - start)) / np.mean(np.abs(start)))}
+
+
 # ---------------------------------------------------------------------------------------
 # Tables
 # ---------------------------------------------------------------------------------------
 
 def fmt(values) -> str:
+    values = list(values) if values is not None and not isinstance(values, float) else values
     if values is None or (isinstance(values, list) and not values):
         return "–"
     if isinstance(values, float):
@@ -607,53 +1115,140 @@ def fmt(values) -> str:
     return f"{m:.3f} ± {s:.3f}" if len(values) > 1 else f"{m:.3f}"
 
 
+def fmt_diff(values) -> str:
+    values = list(values)
+    if not values:
+        return "–"
+    m, s = mean_sd(values)
+    return f"{m:+.3f} ± {s:.3f}" if len(values) > 1 else f"{m:+.3f}"
+
+
 def tables(r: Results, d: str) -> str:
-    out = [f"# SI tables, design {d}\n"]
-    out.append("## Ladder on the three tasks (macro F1; balanced: mean ± SD over 5 seeds; "
-               "unbalanced and binary: seed 6348)\n")
-    out.append("| Row | Balanced | Unbalanced | Binary |\n|---|---|---|---|")
-    for label, row in ((f"Array, ridge, 2 images ({d})", f"{d}-headline"),
-                       (f"Array, forest, 4 images ({d})", f"{d}-forest"),
-                       ("Array, ideal (LuxI and AHL, beat average), ridge", f"{d}-full"),
-                       ("Array, ideal (LuxI and AHL, beat average), forest",
-                        f"{d}-full-forest"),
-                       ("Submitted model, ridge", "abstract"), ("Uncoupled, ridge", "uncoupled"),
-                       ("ESN, ideal, ridge", "esn"), ("ESN, 2 images, ridge", "esn-image")):
+    headline = r.by_seed(f"P5-balanced-{d}-headline")
+    search = "2 × 150 TPE trials, 5 best on 5 selection seeds"
+    out = [f"# Tables, design {d}\n",
+           "## Table 2. Equal-budget comparison\n",
+           "Balanced 5-class task, macro F1 over 5 folds, mean ± SD over the reporting seeds "
+           "6348-6352 (raw beat: one run, the folds fixed). Last column: the array's ridge "
+           "minus the row, seed by seed (positive: the array is better).\n",
+           "| Model | Read by | Tuned | Macro F1 | Array minus row |", "|---|---|---|---|---|"]
+    rows = [
+        ("Array, 576 traps (design)", "Ridge, 2 images",
+         f"{search} (gain, coupling rate, flow, density)", headline),
+        ("Array, 576 traps", "RBF SVM, 2 images", "readout grid (C, gamma; 3 inner folds)",
+         readout(r, d, "c", "svm")),
+        ("Array, 576 traps", "Random forest, 4 images", "readout grid",
+         r.by_seed(f"P5-balanced-{d}-forest")),
+        ("Isolated traps (no AHL exchange)", "Ridge, 2 images",
+         f"{search} (gain, flow, density)", r.by_seed("P5-balanced-uncoupled-576")),
+        ("ESN, 576 units", "Ridge, 2 images", f"{search} (Phase 2 space)",
+         r.by_seed("P5-balanced-esn-image-576")),
+        ("ESN, 576 units", "Ridge, clean states", f"{search} (Phase 2 space)",
+         r.by_seed("P5-balanced-esn-576")),
+        ("Random tanh features, 576", "Ridge, 2 images", f"{search} (input scaling, bias)",
+         r.report(CONTROLS["random_features"])),
+        ("Fading memories (leaky integrators)", "Ridge, 2 images",
+         f"{search} (number, longest time constant, band-pass)",
+         r.report(CONTROLS["fading_memories"])),
+    ]
+    for model, read, tuned, values in rows:
+        out.append(f"| {model} | {read} | {tuned} | {fmt(values.values())} | "
+                   f"{'(reference)' if values is headline else fmt_diff(paired(headline, values))} |")
+    for key, label in READOUTS:
+        value = r.f1(RAW[key])
+        out.append(f"| Raw beat | {label.replace(chr(10), ' ')} | readout grid | {fmt(value)} | "
+                   f"{fmt_diff(paired(headline, value)) if value is not None else '–'} |")
+
+    out += ["\n## Table 3. Other tasks and held-out beats\n",
+            "Macro F1. Balanced: mean ± SD over 5 seeds; unbalanced and binary: seed 6348; "
+            "validation splits (803 beats of each of N, S, V, Q, never used for tuning): mean ± "
+            "SD over seeds 6348-6350 (comparison models: seed 6348).\n",
+            "| Model | Balanced (5 classes) | Unbalanced (5 classes) | Binary | Validation 1 | "
+            "Validation 2 |", "|---|---|---|---|---|---|"]
+    for label, row, val, seeds in (
+            ("Array, ridge, 2 images (design)", f"{d}-headline", f"{d}-c", SEEDS[:3]),
+            ("Array, forest, 4 images", f"{d}-forest", f"{d}-e", SEEDS[:3]),
+            (TUNED["uncoupled-576"], "uncoupled-576", "uncoupled-576", SEEDS[:1]),
+            (TUNED["esn-image-576"], "esn-image-576", "esn-image-576", SEEDS[:1]),
+            (TUNED["esn-576"], "esn-576", "esn-576", SEEDS[:1])):
         out.append(f"| {label} | {fmt(r.seeds(f'P5-balanced-{row}'))} | "
                    f"{fmt(r.f1(f'P5-unbalanced-{row}-s{SEEDS[0]}'))} | "
-                   f"{fmt(r.f1(f'P5-binary-{row}-s{SEEDS[0]}'))} |")
-    for label, key in (("Raw beat, ridge", "ridge"), ("Raw beat, forest", "rf"),
-                       ("Raw beat, HistGB", "histgb"), ("Raw beat, ridge (wide grid)", "ridge-wide"),
-                       ("Raw beat, HistGB (wide grid)", "histgb-wide")):
-        out.append(f"| {label} | " + " | ".join(fmt(r.f1(f"P5-{t}-raw-{key}"))
-                                                for t in ("balanced", "unbalanced", "binary"))
-                   + " |")
-    out.append("\n## Readouts refitted on the saved images (seed 6348)\n")
-    out.append("| Readout | 2 images | 4 images |\n|---|---|---|")
-    for key, label in (("ridge", "Ridge"), ("lr", "Logistic regression"), ("svm", "RBF SVM"),
-                       ("knn", "kNN"), ("rf", "Random forest"), ("histgb", "HistGB")):
-        out.append(f"| {label} | {fmt(r.f1(f'P4-{d}-c-{key}'))} | "
-                   f"{fmt(r.f1(f'P4-{d}-e-{key}'))} |")
-    out.append("\n## Held-out validation splits (4 classes: N, S, V, Q)\n")
-    out.append("| Model | Validation 1 | Validation 2 |\n|---|---|---|")
-    for label, key in ((f"Array, ridge, 2 images ({d})", f"{d}-c"),
-                       (f"Array, ridge, 1 image ({d})", f"{d}-a"),
-                       (f"Array, forest, 4 images ({d})", f"{d}-e"),
-                       ("Submitted model", "abstract"), ("Uncoupled", "uncoupled"),
-                       ("ESN, ideal", "esn"),
-                       ("ESN, 2 images", "esn-image")):
-        seeds = SEEDS[:3] if key.startswith(d) else SEEDS[:1]  # as the validation runs
-        out.append(f"| {label} | " + " | ".join(fmt(r.seeds(f"P3-{s}-{key}", seeds))
-                                                for s in ("validation-1", "validation-2")) + " |")
-    out.append("\n## Per-class F1 (seed 6348, all folds)\n")
-    out.append("| Run | " + " | ".join(CLASS_NAMES) + " |\n|---|" + "---|" * len(CLASS_NAMES))
-    for label, run in (("Raw beat, ridge", "P5-balanced-raw-ridge"),
-                       (f"Array, ridge ({d})", f"P5-balanced-{d}-headline-s{SEEDS[0]}"),
-                       (f"Array, forest ({d})", f"P5-balanced-{d}-forest-s{SEEDS[0]}"),
-                       ("Raw beat, HistGB", "P5-balanced-raw-histgb")):
-        f1 = r.per_class(run)
-        out.append(f"| {label} | " + (" | ".join(f"{v:.3f}" for v in f1) if f1 is not None
-                                      else " | ".join("–" for _ in CLASS_NAMES)) + " |")
+                   f"{fmt(r.f1(f'P5-binary-{row}-s{SEEDS[0]}'))} | "
+                   + " | ".join(fmt(r.seeds(f"P3-{s}-{val}", seeds))
+                                for s in ("validation-1", "validation-2")) + " |")
+    for key, label in (("ridge", "ridge"), ("rf", "random forest"), ("histgb", "HistGB")):
+        out.append(f"| Raw beat, {label} | " + " | ".join(
+            fmt(r.f1(f"P5-{t}-raw-{key}")) for t in ("balanced", "unbalanced", "binary"))
+            + " | – | – |")
+
+    out += ["\n## SI. Readouts refitted on the array's saved images (5 reporting seeds)\n",
+            "| Readout | Array, 2 images | Array, 4 images | Raw beat |", "|---|---|---|---|"]
+    for key, label in READOUTS:
+        out.append(f"| {label.replace(chr(10), ' ')} | {fmt(readout(r, d, 'c', key).values())} "
+                   f"| {fmt(readout(r, d, 'e', key).values())} | {fmt(r.f1(RAW[key]))} |")
+
+    out += ["\n## SI. Per-class F1, balanced task (pooled over the folds; mean ± SD over "
+            "seeds)\n", "| Run | " + " | ".join(CLASS_NAMES) + " |",
+            "|---|" + "---|" * len(CLASS_NAMES)]
+    for label, runs in (
+            ("Raw beat, ridge", [RAW["ridge"]]),
+            ("Array, ridge (design)", [f"P5-balanced-{d}-headline-s{s}" for s in SEEDS]),
+            ("Array, RBF SVM", [f"P4-{d}-c-svm"] + [f"extra-576-readout-c-svm-s{s}"
+                                                    for s in SEEDS[1:]]),
+            ("Array, forest, 4 images", [f"P5-balanced-{d}-forest-s{s}" for s in SEEDS]),
+            ("Raw beat, HistGB", [RAW["histgb"]])):
+        f1 = [v for v in (r.per_class(run) for run in runs) if v is not None]
+        out.append(f"| {label} | " + (" | ".join(fmt(list(np.asarray(f1)[:, c]))
+                                                 for c in range(len(CLASS_NAMES)))
+                                      if f1 else " | ".join("–" for _ in CLASS_NAMES)) + " |")
+
+    out += ["\n## SI. Comparison models: tuned at 576 and at their earlier sizes (ridge)\n",
+            "| Model | At 576, tuned at 576 | Earlier settings and size (28 Oct) |",
+            "|---|---|---|"]
+    for key, label in TUNED.items():
+        earlier = key.removesuffix("-576")
+        out.append(f"| {label} | {fmt(r.seeds(f'P5-balanced-{key}'))} | "
+                   f"{fmt(r.seeds(f'P5-balanced-{earlier}'))} |")
+    for name, study in CONTROLS.items():
+        out.append(f"| {name.replace('_', ' ').capitalize()} | "
+                   f"{fmt(r.report(study).values())} (tuned) | "
+                   f"{fmt(untuned_control(r, name))} (standard settings) |")
+
+    out.append("\n## SI. Robustness and settings (ridge on 2 images unless stated; mean ± SD "
+               "over the seeds)\n")
+    sweeps = [
+        (f"P3-{d}-noise", "features.measurement_noise", "Measurement noise",
+         {"features__aggregation": HEADLINE}),
+        (f"P3-{d}-noise", "features.measurement_noise", "Measurement noise, 1 image",
+         {"features__aggregation": ONE}),
+        (f"P3-{d}-noise", "features.measurement_noise", "Measurement noise, 4 images",
+         {"features__aggregation": FOREST}),
+        (f"P3-{d}-calibration", "features.calibration_error", "Calibration error, reference",
+         {"features__aggregation": HEADLINE}),
+        (f"P3-{d}-calibration-noref", "features.calibration_error",
+         "Calibration error, no reference", {"features__aggregation": HEADLINE}),
+        (f"P3-{d}-heterogeneity", "reservoir.params.param_heterogeneity_cv",
+         "Kinetic variability (CV)", {}),
+        (f"P3-{d}-heterogeneity-64", "reservoir.params.param_heterogeneity_cv",
+         "Kinetic variability (CV), 64 substeps", {}),
+        (f"P3-{d}-density", "reservoir.params.heterogeneity_density_cv", "Cell-density spread",
+         {}),
+        (f"P3-{d}-dilution", "reservoir.params.heterogeneity_dilution_cv", "Washout spread", {}),
+        (f"P3-{d}-reset", "reservoir.params.reset_noise", "Imperfect reset", {}),
+        (f"P3-{d}-warmup", "reservoir.params.warmup", "Settling time (min)", {}),
+        (f"P3-{d}-warmup-input", "reservoir.params.warmup_input", "Inducer while settling", {}),
+        (f"P3-{d}-input-levels", "reservoir.params.input_levels", "Inducer levels", {}),
+        (f"P3-{d}-image-time", "features.aggregation", "Images", {}),
+        (f"P6-{d}-gaussian", "reservoir.params.interaction_diameters",
+         "Gaussian layout (reach)", {}),
+    ]
+    for study, key, label, fixed in sweeps:
+        points = r.sweep(study, key, **fixed)
+        if points:
+            order = sorted(points, key=lambda k: (isinstance(k, str), str(k) if
+                                                  isinstance(k, str) else k))
+            out.append(f"- **{label}** (`{study}`): " + "; ".join(
+                f"{k}: {fmt(points[k])}" for k in order))
     return "\n".join(out) + "\n"
 
 
@@ -661,50 +1256,54 @@ def tables(r: Results, d: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("command", choices=("numbers", "figures", "tables", "images", "all"),
-                        help="images simulates five beats of the design; the others only read "
-                             "results.")
-    parser.add_argument("--design", choices=sorted(UNITS), default="p1024",
-                        help="The design the figures and numbers are for (default p1024).")
-    parser.add_argument("--compare", action="store_true",
-                        help="Draw both designs where a figure can show both.")
-    parser.add_argument("--preview", action="store_true",
-                        help="Read the names of the 28 Oct preview runs.")
+    parser.add_argument("command", choices=("numbers", "tables", "figures", "images",
+                                            "dynamics", "all"),
+                        help="images and dynamics simulate the design; the others only read "
+                             "results; all runs numbers, tables and figures.")
+    parser.add_argument("--design", choices=sorted(DESIGNS), default="p576",
+                        help="The design the figures and numbers are for (default p576).")
     parser.add_argument("--out", type=Path, help="Output folder (default "
                         "results/figures/paper/<design>).")
     parser.add_argument("--flat-share", type=Path,
-                        help="CSV of scripts/paper/flat_share.py for Fig. 5d.")
+                        help="CSV of scripts/paper/flat_share.py (Fig. 6b and the numbers).")
+    parser.add_argument("--oscillation", type=Path,
+                        help="CSV of scripts/paper/oscillation_map.py (Fig. 2b).")
     add_formats_option(parser)
     args = parser.parse_args(argv)
-    r = Results(preview=args.preview)
+    r = Results()
     d = args.design
     out = args.out or config.figures_dir(f"paper/{d}")
     out.mkdir(parents=True, exist_ok=True)
-    designs = sorted(UNITS) if args.compare else [d]
+    design = Path("experiments/v0.2/designs") / f"{d}.yaml"
+    dynamics = out / "dynamics.npz"
+    if args.command == "dynamics":
+        data = simulate_dynamics(design)
+        np.savez(dynamics, **data)
+        print(f"{dynamics}: period at rest {data['period']:.1f} min; the stepped warm-up ends "
+              f"{data['start_gap']:.2e} (relative) from the start state")
     if args.command in ("numbers", "all"):
-        values = numbers(r, d)
+        values = numbers(r, d, args.flat_share, dynamics)
         (out / "numbers.json").write_text(json.dumps(values, indent=1))
         (out / "numbers.tex").write_text(tex_macros(values, d))
         print(json.dumps(values, indent=1))
     if args.command in ("tables", "all"):
         text = tables(r, d)
-        (out / "si_tables.md").write_text(text)
+        (out / "tables.md").write_text(text)
         print(text)
     if args.command in ("figures", "all"):
         with plt.style.context(STYLE):
-            drawn = {"fig2_readouts": figure_readouts(r, designs),
-                     "fig3_ladder": figure_ladder(r, d),
-                     "fig4_controls": figure_controls(r, d),
-                     "fig5_constraints": figure_constraints(r, designs, d, args.flat_share),
-                     "si_realism": figure_realism(r, d),
-                     "si_refinement": figure_refinement(r)}
+            drawn = {"fig2_dynamics": figure_dynamics(r, d, dynamics, args.oscillation),
+                     "fig3_performance": figure_performance(r, d),
+                     "fig4_mechanism": figure_mechanism(r, d),
+                     "fig5_scaling": figure_scaling(r, d),
+                     "fig6_robustness": figure_robustness(r, d, args.flat_share),
+                     "si_settings": figure_settings(r, d)}
             for name, fig in drawn.items():
-                if fig is not None:
-                    for path in save_figure(fig, name, folder=out, formats=args.formats):
-                        print(path)
+                for path in save_figure(fig, name, folder=out, formats=args.formats):
+                    print(path)
     if args.command == "images":
         with plt.style.context(STYLE):
-            fig = figure_images(Path("experiments/v0.2/designs") / f"{d}.yaml")
+            fig = figure_images(design)
             for path in save_figure(fig, "fig1_images", folder=out, formats=args.formats):
                 print(path)
     if r.missing:
