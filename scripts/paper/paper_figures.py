@@ -495,10 +495,59 @@ def fmt_diff(values) -> str:
     return f"{m:+.3f} ± {s:.3f}" if len(values) > 1 else f"{m:+.3f}"
 
 
+def table1(r: Results, d: str) -> list[str]:
+    """Table 1: the colony kinetics and the design's settings, with their basis. Values come
+    from the code (``DEFAULT_DDE_PARAMS``) and the config of the design's headline run."""
+    from bioreservoir.dde import DEFAULT_DDE_PARAMS
+
+    cfg = r.settings(f"P5-balanced-{d}-headline-s{SEEDS[0]}") or {}
+    params, features = cfg.get("reservoir", {}).get("params", {}), cfg.get("features", {})
+    if not params:
+        return []
+    roles = {"D": "AHL exchange across the cell membrane", "d0": "carrying capacity",
+             "gammaA": "AiiA degradation", "gammaI": "LuxI degradation",
+             "gammaH": "AHL degradation", "delay": "feedback delay (min)"}
+    out = ["## Table 1. Parameters of the design and their basis (draft)\n",
+           "| Parameter | Value | Basis |", "|---|---|---|"]
+    for key, value in DEFAULT_DDE_PARAMS.items():
+        if key in ("mu", "d"):
+            continue
+        name = f"`{key}`" + (f", {roles[key]}" if key in roles else "")
+        out.append(f"| {name} | {value:g} | Danino et al. 2010, unchanged |")
+    images = features.get("aggregation", "").split(":", 1)[-1].replace(",", " and ")
+    side = int(round(np.sqrt(params["units"])))
+    out += [
+        f"| Traps | {params['units']:,} ({side} × {side}) | Of the order of built trap arrays "
+        f"(416 and 500 traps; Prindle et al. 2012) |",
+        f"| AHL washout by the flow, µ | {params['washout_rate']:.3f} | Tuned; flow sets µ "
+        f"(Danino et al. 2010, who use {DEFAULT_DDE_PARAMS['mu']:g}) |",
+        f"| Cell density, d | {params['cell_density']:.3f} | Tuned, below the carrying capacity "
+        f"{DEFAULT_DDE_PARAMS['d0']:g} (Danino et al. 2010 use {DEFAULT_DDE_PARAMS['d']:g}) |",
+        f"| AHL exchange between neighbouring traps (rate per min) | "
+        f"{params['diffusion_rate']:.2f} | Tuned; an idealisation of diffusive exchange (in "
+        f"Prindle et al. 2012, AHL did not couple traps at their high flow) |",
+        f"| Input gain | {params['input_scaling']:.3f} | Tuned |",
+        f"| Kinetic variability between colonies (CV) | "
+        f"{100 * params['param_heterogeneity_cv']:g}% | Assumed; below the single-cell CV of "
+        f"15% used by Mondragón-Palomino et al. 2011 |",
+        "| Inducer | the same level to every trap, one per minute | Computational abstraction; "
+        "periodic forcing has been shown (Bennett et al. 2008; Mondragón-Palomino et al. "
+        "2011) |",
+        f"| Warm-up before each beat | {params['warmup']} min, no inducer | Design decision |",
+        f"| Images | reference at 0 min; {images} min | Assumed; Danino et al. and Prindle et "
+        f"al. imaged every 2–5 min |",
+        f"| Measurement noise | {100 * features.get('measurement_noise', 0):g}% per image | "
+        f"Assumed |",
+        f"| Solver | RK4, {params['rk4_substeps']} substeps per min | Numerical (convergence "
+        f"check in the SI) |",
+    ]
+    return out + [""]
+
+
 def tables(r: Results, d: str) -> str:
     headline = r.by_seed(f"P5-balanced-{d}-headline")
     search = "2 × 150 TPE trials, 5 best on 5 selection seeds"
-    out = [f"# Tables, design {d}\n",
+    out = [f"# Tables, design {d}\n", *table1(r, d),
            "## Table 2. Equal-budget comparison\n",
            "Balanced 5-class task, macro F1 over 5 folds, mean ± SD over the reporting seeds "
            "6348-6352 (raw beat: one run, the folds fixed). Last column: the array's ridge "
