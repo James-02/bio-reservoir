@@ -736,8 +736,8 @@ def figure_settings(r: Results, d: str):
     levels = r.sweep(f"P3-{d}-input-levels", "reservoir.params.input_levels")
     order = sorted(levels, key=lambda k: (isinstance(k, str), k))
     categories(axes[3], levels, order, [str(k) if k != "continuous" else "Cont." for k in order],
-               "continuous")
-    axes[3].set_xlabel("Inducer levels")
+               1)
+    axes[3].set_xlabel("Inducer strengths")
 
     layout = r.sweep(f"P6-{d}-gaussian", "reservoir.params.interaction_diameters")
     order = sorted(layout)
