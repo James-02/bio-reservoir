@@ -504,38 +504,55 @@ def table1(r: Results, d: str) -> list[str]:
     params, features = cfg.get("reservoir", {}).get("params", {}), cfg.get("features", {})
     if not params:
         return []
-    roles = {"D": "AHL exchange across the cell membrane", "d0": "carrying capacity",
-             "gammaA": "AiiA degradation", "gammaI": "LuxI degradation",
-             "gammaH": "AHL degradation", "delay": "feedback delay (min)"}
+    roles = {"CA": ("C_A", "maximal production of AiiA"),
+             "CI": ("C_I", "maximal production of LuxI"),
+             "del_": ("δ", "leakiness of the lux promoter"),
+             "alpha": ("α", "activation of the lux promoter by AHL"),
+             "k": ("k", "saturation of AHL synthesis by LuxI"),
+             "k1": ("k₁", "saturation of promoter activation"),
+             "b": ("b", "AHL synthesis by LuxI"),
+             "gammaA": ("γ_A", "enzymatic degradation of AiiA"),
+             "gammaI": ("γ_I", "enzymatic degradation of LuxI"),
+             "gammaH": ("γ_H", "degradation of AHL by AiiA"),
+             "f": ("f", "saturation of protein degradation"),
+             "g": ("g", "saturation of AHL degradation"),
+             "d0": ("d₀", "cell density at which protein synthesis stops"),
+             "D": ("D", "diffusion of AHL through the cell membrane"),
+             "delay": ("τ", "delay of protein production (min)")}
     out = ["## Table 1. Parameters of the design and their basis (draft)\n",
            "| Parameter | Value | Basis |", "|---|---|---|"]
     for key, value in DEFAULT_DDE_PARAMS.items():
         if key in ("mu", "d"):
             continue
-        name = f"`{key}`" + (f", {roles[key]}" if key in roles else "")
-        out.append(f"| {name} | {value:g} | Danino et al. 2010, unchanged |")
+        symbol, role = roles.get(key, (key, ""))
+        out.append(f"| {symbol}, {role} | {value:g} | Danino et al. 2010 (SI), scaled "
+                   f"parameters, unchanged |")
     images = features.get("aggregation", "").split(":", 1)[-1].replace(",", " and ")
     side = int(round(np.sqrt(params["units"])))
     out += [
         f"| Traps | {params['units']:,} ({side} × {side}) | Of the order of built trap arrays "
         f"(416 and 500 traps; Prindle et al. 2012) |",
-        f"| AHL washout by the flow, µ | {params['washout_rate']:.3f} | Tuned; flow sets µ "
-        f"(Danino et al. 2010, who use {DEFAULT_DDE_PARAMS['mu']:g}) |",
-        f"| Cell density, d | {params['cell_density']:.3f} | Tuned, below the carrying capacity "
-        f"{DEFAULT_DDE_PARAMS['d0']:g} (Danino et al. 2010 use {DEFAULT_DDE_PARAMS['d']:g}) |",
+        f"| µ, dilution of external AHL by the flow | {params['washout_rate']:.3f} | Tuned; "
+        f"Danino et al. varied it with the flow rate (our reference value "
+        f"{DEFAULT_DDE_PARAMS['mu']:g}) |",
+        f"| d, cell density | {params['cell_density']:.3f} | Tuned below d₀ = "
+        f"{DEFAULT_DDE_PARAMS['d0']:g}; Danino et al. varied it (our reference value "
+        f"{DEFAULT_DDE_PARAMS['d']:g}) |",
         f"| AHL exchange between neighbouring traps (rate per min) | "
-        f"{params['diffusion_rate']:.2f} | Tuned; an idealisation of diffusive exchange (in "
-        f"Prindle et al. 2012, AHL did not couple traps at their high flow) |",
+        f"{params['diffusion_rate']:.2f} | Tuned; the discrete diffusion of external AHL "
+        f"between neighbours of Danino et al.'s spatial model, on a 2D lattice (in Prindle et "
+        f"al. 2012, AHL did not couple traps at their high flow) |",
         f"| Input gain | {params['input_scaling']:.3f} | Tuned |",
         f"| Kinetic variability between colonies (CV) | "
-        f"{100 * params['param_heterogeneity_cv']:g}% | Assumed; below the single-cell CV of "
-        f"15% used by Mondragón-Palomino et al. 2011 |",
+        f"{100 * params['param_heterogeneity_cv']:g}% | Assumed; as the 10% parameter spread "
+        f"Danino et al. simulated, below the single-cell 15% of Mondragón-Palomino et al. "
+        f"2011 |",
         "| Inducer | the same level to every trap, one per minute | Computational abstraction; "
         "periodic forcing has been shown (Bennett et al. 2008; Mondragón-Palomino et al. "
         "2011) |",
         f"| Warm-up before each beat | {params['warmup']} min, no inducer | Design decision |",
-        f"| Images | reference at 0 min; {images} min | Assumed; Danino et al. and Prindle et "
-        f"al. imaged every 2–5 min |",
+        f"| Images | reference at 0 min; {images} min | Assumed; Danino et al. imaged every "
+        f"2–4.5 min, less often at high magnification to avoid photobleaching |",
         f"| Measurement noise | {100 * features.get('measurement_noise', 0):g}% per image | "
         f"Assumed |",
         f"| Solver | RK4, {params['rk4_substeps']} substeps per min | Numerical (convergence "
