@@ -134,14 +134,6 @@ def plain_log_ticks(axis, ticks=None):
     axis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
 
 
-def placeholder(ax, text: str):
-    ax.add_patch(Rectangle((0.02, 0.02), 0.96, 0.96, transform=ax.transAxes, fill=False,
-                           ls="--", lw=1.5, ec="#999999"))
-    ax.text(0.5, 0.5, text, transform=ax.transAxes, ha="center", va="center",
-            fontsize=SMALL + 2, color="#666666")
-    ax.axis("off")
-
-
 def load(path: Path | None) -> dict | None:
     if path is None or not path.is_file():
         return None
@@ -199,20 +191,30 @@ def saved_features(d: str, seed: int = SEEDS[0], fold: int | None = None):
 # One beat through the design
 # ---------------------------------------------------------------------------------------
 
+def correctly_classified(run: str) -> set[int]:
+    """Pool indices of the beats that a run classified correctly in its held-out folds."""
+    found = set()
+    for path in sorted((config.runs_dir() / run).glob("fold-*.npz")):
+        with np.load(path, allow_pickle=True) as z:
+            n = len(z["test_index"])
+            true = np.argmax(z["Y_test"].reshape(n, -1), axis=1)
+            predicted = np.argmax(z["Y_pred"].reshape(n, -1), axis=1)
+            found.update(int(i) for i in z["test_index"][true == predicted])
+    return found
+
+
 def simulate(design: Path, seed: int = SEEDS[0], beat_class: int = 0, before: int = 300) -> dict:
-    """One typical beat of class ``beat_class`` (the pool beat closest to its class's mean)
+    """One typical beat of class ``beat_class`` (of the beats the headline run classified
+    correctly, the one closest to its class's mean)
     through the design, as a run steps it: one colony alone at 0.1, 1 and 10 times the
-    design's input gain (Fig. 1B); every trap's LuxI (Fig. 2B, 2C); the inducer flux into
-    the cells and the AHL exchange between traps (Fig. 2A); and the period at rest, from the
-    last ``before`` minutes of the warm-up."""
+    design's input gain (Fig. 1B); every trap's LuxI during the beat and without it
+    (Fig. 2A-C); and the period at rest, from the last ``before`` minutes of the warm-up."""
     from scipy.signal import find_peaks
 
-    from bioreservoir.dde import DEFAULT_DDE_PARAMS
     from training.figures import (
         array_states,
         build,
         colony_states,
-        coupling,
         encoded_input,
         run_config,
     )
@@ -226,20 +228,24 @@ def simulate(design: Path, seed: int = SEEDS[0], beat_class: int = 0, before: in
     X = np.asarray(X, dtype=float).reshape(len(X), -1)
     labels = np.argmax(np.asarray(Y).reshape(len(Y), -1), axis=1)
     members = np.flatnonzero(labels == beat_class)
+    correct = correctly_classified(f"P5-balanced-{design.stem}-headline-s{seed}")
+    if correct:
+        members = np.array([m for m in members if m in correct])
     index = int(members[np.argmin(((X[members] - X[members].mean(axis=0)) ** 2).sum(1))])
     beat = X[index].reshape(-1, 1)
     gain = float(cfg["reservoir"]["params"]["input_scaling"])
     scales = [0.1 * gain, gain, 10 * gain]
     warm, rest, driven = colony_states(cfg, beat, index, scales)
-    states, terms = array_states(cfg, beat, index)
-    node = build(cfg)
-    start = np.asarray(node.start_state(input_dim=1)).reshape(-1, 4)
-    _, weights = coupling(cfg)
-    G = weights.toarray()
-    he = states[:, :, VARIABLES.index("He")]
-    exchange = he @ G.T - he * G.sum(axis=1)  # sum_j G_ij (He_j - He_i), each trap
-    flux = DEFAULT_DDE_PARAMS["D"] * node.cell_coupling * node.dde_scaling * terms[:, 0]
     lux = VARIABLES.index("I")
+    states = array_states(cfg, beat, index)[0]
+    node = build(cfg)
+    node.initialize(np.zeros((1, 1)))
+    start = np.asarray(node.start_state(input_dim=1)).reshape(-1, 4)
+    work = node.copy()  # the array without the beat: the warm-up continued
+    work.states = work._warmup_states.copy()
+    if getattr(work, "_warmup_ring", None) is not None:
+        work._ring, work._ring_pos = work._warmup_ring[0].copy(), work._warmup_ring[1]
+    still = np.array([work._step(work._warmup_drive)[:, lux] for _ in range(len(beat))])
     free = build(cfg, warmup=0)
     free.initialize(np.zeros((1, 1)))
     history = np.array([free._step(free._warmup_drive)[:, lux]
@@ -253,8 +259,7 @@ def simulate(design: Path, seed: int = SEEDS[0], beat_class: int = 0, before: in
             "colony_driven": np.stack([driven[s] for s in scales]),
             "colony_scales": np.array(scales), "gain": gain,
             "inducer": encoded_input(cfg, beat), "luxi": states[:, :, lux],
-            "start_luxi": start[:, lux], "inducer_flux": flux,
-            "exchange": np.mean(np.abs(exchange), axis=1),
+            "start_luxi": start[:, lux], "still_luxi": still,
             "side": int(round(np.sqrt(states.shape[1]))), "beat_class": beat_class,
             "beat_index": index, "period": float(np.median(periods)) if periods else np.nan}
 
@@ -294,11 +299,12 @@ def colony_panel(axes, sim: dict):
     ax.set_xlabel("Time (min)")
 
 
-def draw_chip(ax):
+def draw_chip(ax, readout: dict | None = None):
     """A sketch of the chip: inlets and mixer, the channel, 6 x 6 of the 24 x 24 traps with
-    AHL exchange between neighbours, and the camera."""
-    ax.set_xlim(0, 16)
-    ax.set_ylim(-0.3, 7.2)
+    AHL exchange between neighbours, and the readout: the camera, the two images, the ridge
+    readout and its score for each class (``readout``: from :func:`beat_readout`)."""
+    ax.set_xlim(0, 19.5)
+    ax.set_ylim(-0.4, 7.2)
     ax.set_aspect("equal")
     ax.axis("off")
     water, inducer, edge = "#d8ecf7", "#fbe3c4", "#2b7a3d"
@@ -337,21 +343,122 @@ def draw_chip(ax):
                 arrowprops={"arrowstyle": "-", "color": "#d55e00", "lw": 1.4})
     ax.annotate("Colony (GFP\nreporter of LuxI)", xy=(xs[0] - 0.2, ys[0]), xytext=(0.2, 0.7),
                 fontsize=SMALL, arrowprops={"arrowstyle": "-", "color": edge, "lw": 1.4})
-    ax.add_patch(Rectangle((13.0, 2.7), 1.6, 1.1, fc="#555555", ec="black", lw=1.5))
-    ax.add_patch(Polygon([[13.25, 2.7], [14.35, 2.7], [14.05, 2.15], [13.55, 2.15]],
+    ax.add_patch(Rectangle((15.4, 6.4), 1.6, 0.75, fc="#555555", ec="black", lw=1.5))
+    ax.add_patch(Polygon([[15.65, 6.4], [16.75, 6.4], [16.45, 5.95], [15.95, 5.95]],
                          fc="#999999", ec="black", lw=1.5))
-    ax.annotate("", xy=(13.0, 3.1), xytext=(10.9, 2.4),
+    ax.text(17.2, 6.75, "Camera", va="center", fontsize=SMALL)
+    ax.annotate("", xy=(15.5, 6.4), xytext=(10.9, 4.3),
                 arrowprops={"arrowstyle": "-|>", "color": edge, "lw": 2.5, "ls": "--"})
-    ax.text(13.8, 4.0, "Camera", ha="center", fontsize=SMALL)
+    flow = {"arrowstyle": "-|>", "color": "#555555", "lw": 2.0}
+    for x, minute in ((14.9, 140), (17.5, 187)):
+        ax.annotate("", xy=(x, 5.4), xytext=(16.2, 5.9), arrowprops=flow)
+        ax.annotate("", xy=(16.2, 2.45), xytext=(x, 3.0), arrowprops=flow)
+        image_ax = ax.inset_axes([x - 0.9, 3.05, 1.8, 1.8], transform=ax.transData)
+        image_ax.set_xticks([])
+        image_ax.set_yticks([])
+        image_ax.set_title(f"{minute} min", fontsize=SMALL)
+        if readout is not None:
+            image = readout["images"][(140, 187).index(minute)]
+            span = np.percentile(np.abs(readout["images"]), 98)
+            image_ax.imshow(image, cmap="RdBu_r", vmin=-span, vmax=span,
+                            interpolation="nearest")
+    ax.add_patch(plt.Circle((16.2, 2.0), 0.45, fc="#eeeeee", ec="black", lw=1.5))
+    ax.text(16.2, 2.0, "Ridge", ha="center", va="center", fontsize=SMALL - 1)
+    ax.annotate("", xy=(16.2, 1.25), xytext=(16.2, 1.55), arrowprops=flow)
+    scores_ax = ax.inset_axes([15.0, -0.35, 2.6, 1.55], transform=ax.transData)
+    if readout is not None:
+        scores = readout["scores"]
+        names = [{"Unknown": "Q"}.get(name, name[0]) for name in CLASS_NAMES]
+        colours = [CLASS_COLOURS[name] if k == int(np.argmax(scores)) else "#cccccc"
+                   for k, name in enumerate(CLASS_NAMES)]
+        scores_ax.barh(range(len(scores)), scores, color=colours)
+        scores_ax.set_yticks(range(len(scores)), names, fontsize=SMALL)
+        scores_ax.invert_yaxis()
+        scores_ax.axvline(0, color="black", lw=1.0)
+    scores_ax.set_xticks([])
+    scores_ax.spines[["top", "right", "bottom"]].set_visible(False)
 
 
-def figure_design(sim: dict | None):
-    """Fig. 1: the colony circuit (placeholder), one colony during a beat, and the chip."""
+def draw_circuit(ax):
+    """One colony: AHL inside the cells (Hi) activates the lux promoter after a delay, which
+    makes LuxI (AHL synthase), AiiA (degrades AHL) and the GFP reporter (not modelled); AHL
+    crosses the membrane to the trap's medium (He), where the inducer adds to it."""
+    from matplotlib.patches import Ellipse
+
+    ax.set_xlim(-0.2, 10.2)
+    ax.set_ylim(0, 8.6)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.add_patch(plt.Circle((6.3, 4.0), 3.6, fill=False, ec="black", lw=2))
+    ax.text(6.3, 7.85, "Colony", ha="center", fontsize=SMALL + 2)
+    nodes = {"He": ((1.1, 4.0), "#c5ecc8", "AHL\n(He)"), "Hi": ((4.0, 4.0), "#9fd8f5", "AHL\n(Hi)"),
+             "I": ((8.0, 6.1), "#f6c26b", "LuxI"), "G": ((8.4, 4.0), "#ffffff", "GFP"),
+             "A": ((8.0, 1.9), "#e5a4dc", "AiiA")}
+    for key, (centre, colour, text) in nodes.items():
+        ax.add_patch(Ellipse(centre, 1.5, 1.2 if key in ("I", "G", "A") else 1.8, fc=colour,
+                             ec="#2b7a3d" if key == "G" else "black",
+                             ls="--" if key == "G" else "-", lw=1.5))
+        ax.text(*centre, text, ha="center", va="center", fontsize=SMALL)
+    ax.add_patch(FancyBboxPatch((5.55, 3.6), 0.9, 0.8, boxstyle="round,pad=0.05",
+                                fc="#dddddd", ec="black", lw=1.2))
+    ax.text(6.0, 4.0, "P$_{lux}$", ha="center", va="center", fontsize=SMALL)
+
+    def arrow(start, end, colour, style="-|>", ls="-", rad=0.0, text=None, offset=(0, 0)):
+        ax.annotate("", xy=end, xytext=start,
+                    arrowprops={"arrowstyle": style, "color": colour, "lw": 2.2, "ls": ls,
+                                "connectionstyle": f"arc3,rad={rad}", "shrinkA": 2,
+                                "shrinkB": 2})
+        if text:
+            ax.text((start[0] + end[0]) / 2 + offset[0], (start[1] + end[1]) / 2 + offset[1],
+                    text, ha="center", va="center", fontsize=SMALL)
+
+    arrow((4.75, 4.0), (5.5, 4.0), "#009E73", ls=":", text="τ", offset=(0, 0.35))
+    for target in ((7.3, 5.75), (7.62, 4.0), (7.3, 2.25)):
+        arrow((6.5, 4.0), target, "#555555")
+    arrow((7.2, 6.4), (4.4, 4.85), "#009E73", rad=0.25)
+    arrow((7.2, 1.6), (4.4, 3.15), "#d62728", style="-[", rad=-0.25)
+    arrow((1.85, 4.3), (3.25, 4.3), "#1f77b4")
+    arrow((3.25, 3.7), (1.85, 3.7), "#1f77b4", text="D", offset=(0, -0.35))
+    ax.add_patch(FancyBboxPatch((0.15, 6.6), 1.9, 0.8, boxstyle="round,pad=0.05", fc="#fbe3c4",
+                                ec="black", lw=1.2))
+    ax.text(1.1, 7.0, "Inducer", ha="center", va="center", fontsize=SMALL)
+    arrow((1.6, 6.55), (2.5, 4.45), "#E69F00", ls="--")
+
+
+def beat_readout(d: str, sim: dict, seed: int = SEEDS[0]) -> dict | None:
+    """The simulated beat as the readout received it in the headline run (its two images,
+    with noise, over the reference) and the ridge's score for each class: ridge refitted with
+    the run's penalty on the training beats of the fold that held the beat out."""
+    from sklearn.linear_model import RidgeClassifier
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    index = int(sim["beat_index"])
+    for path in sorted((config.runs_dir() / f"P5-balanced-{d}-headline-s{seed}")
+                       .glob("fold-*.npz")):
+        with np.load(path, allow_pickle=True) as z:
+            held_out = list(z["test_index"])
+            if index not in held_out:
+                continue
+            train = z["train_states"].reshape(len(z["train_states"]), -1)
+            row = z["test_states"].reshape(len(z["test_states"]), -1)[held_out.index(index)]
+            labels = np.argmax(z["Y_train"].reshape(len(train), -1), axis=1)
+            alpha = float(z["model_hypers"].item()["selected_readout_params"]["alpha"])
+        readout = make_pipeline(StandardScaler(), RidgeClassifier(alpha=alpha))
+        readout.fit(train, labels)
+        side = int(round(np.sqrt(len(row) // 2)))
+        return {"images": np.log2(np.clip(row, 1e-9, None)).reshape(2, side, side),
+                "scores": readout.decision_function(row[None])[0]}
+    return None
+
+
+def figure_design(sim: dict | None, d: str):
+    """Fig. 1: the colony circuit, one colony during a beat, and the chip with its readout."""
     fig = plt.figure(figsize=(16, 13.5))
     outer = fig.add_gridspec(2, 1, height_ratios=[6.4, 5.6], hspace=0.12)
     top = outer[0].subgridspec(1, 2, width_ratios=[1, 1.5], wspace=0.25)
     ax = fig.add_subplot(top[0])
-    placeholder(ax, "Colony circuit\n(v0.1 panel)")
+    draw_circuit(ax)
     panel(ax, "A")
     rows = top[1].subgridspec(5, 1, height_ratios=[2.2, 2.2, 2.2, 2.2, 1.6], hspace=0.12)
     axes = [fig.add_subplot(rows[i]) for i in range(5)]
@@ -361,7 +468,7 @@ def figure_design(sim: dict | None):
         colony_panel(axes, sim)
     panel(axes[0], "B")
     ax = fig.add_subplot(outer[1])
-    draw_chip(ax)
+    draw_chip(ax, beat_readout(d, sim) if sim is not None else None)
     panel(ax, "C")
     return fig
 
@@ -380,11 +487,12 @@ def figure_dynamics(sim: dict | None, r: Results, d: str, oscillation: Path | No
                   fig.add_subplot(outer[1, 1]))
     if sim is not None:
         t = np.arange(len(sim["inducer"]))
-        ax.plot(t, sim["inducer_flux"], color="#E69F00", lw=LW, label="Inducer")
-        ax.plot(t, sim["exchange"], color="#56B4E9", lw=LW, ls="--", label="AHL exchange")
-        ax.set_yscale("log")
-        ax.set_ylabel("Flux per trap (min$^{-1}$)")
-        ax.legend(loc="center right", fontsize=SMALL)
+        for values, label, style in ((sim["luxi"], "Beat", DESIGN),
+                                     (sim["still_luxi"], "No beat", FIRST)):
+            ax.plot(t, values.mean(axis=1), color=style["color"], ls=style["ls"], lw=LW,
+                    label=label)
+        ax.set_ylabel("Mean LuxI")
+        ax.legend(loc="upper right", fontsize=SMALL)
         ax.tick_params(labelbottom=False)
         ax_u.plot(t, sim["inducer"], **ECG)
         luxi = sim["luxi"]
@@ -805,7 +913,7 @@ def main(argv: list[str] | None = None) -> int:
     r = Results()
     sim = load(simulated)
     with plt.style.context(STYLE):
-        drawn = {"fig1_design": figure_design(sim),
+        drawn = {"fig1_design": figure_design(sim, d),
                  "fig2_dynamics": figure_dynamics(sim, r, d, args.oscillation),
                  "fig3_classification": figure_classification(r, d),
                  "fig4_requirements": figure_requirements(r, d, args.flat_share),
