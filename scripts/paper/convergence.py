@@ -3,7 +3,7 @@
 A. One colony with the design's flow and cell density (no variability), driven from its
    basal state by a constant inducer for 200 min: the largest error in LuxI over the run,
    relative to its range, against a method-of-steps reference (SciPy DOP853, tolerance
-   1e-12), for the delay read at every substep (v0.2) and held over each minute (v0.1).
+   1e-12).
 B. The design itself (576 traps, coupled, kinetic variability, warm-up) and one beat: the
    error of what the readout receives, each trap's LuxI at 140 and 187 min over its
    reference image, against the same run at 128 substeps; the measurement noise (1%) for
@@ -31,7 +31,7 @@ from scipy.integrate import solve_ivp  # noqa: E402
 from utils.visualisation import OKABE_ITO, STYLE, add_formats_option, save_figure  # noqa: E402
 
 SUBSTEPS = (8, 16, 32, 64, 128, 256)  # fewer than 8 are unstable at the design's density
-ARRAY_SUBSTEPS, ARRAY_REFERENCE = (16, 32, 64), 128  # the coupled array needs at least 16
+ARRAY_SUBSTEPS, ARRAY_REFERENCE = (16, 32, 64, 128), 256  # the coupled array needs >= 16
 PRODUCTION = 32
 STEPS, INDUCER, DELAY = 200, 0.02, 10.0
 LW, THIN, SMALL = 3.2, 2.7, 13
@@ -84,19 +84,17 @@ def colony_errors(flow: float, density: float) -> list[dict]:
     p = get_dde_params(delay=DELAY, mu=flow, d=density)
     inputs = np.full(STEPS, INDUCER)
     rows, expected = [], None
-    for scheme in ("substep", "frozen"):
-        for substeps in SUBSTEPS:
-            node = BioReservoir(units=1, warmup=0, rk4_substeps=substeps, seed=3, input_dim=1,
-                                output_variables="He", parallel=False, cell_coupling=1.0,
-                                delay_scheme=scheme,
-                                dde_kwargs={"delay": DELAY, "mu": flow, "d": density})
-            y0, history = node.states[-1, 0].copy(), node.states[:, 0, 2].copy()
-            luxi = np.array([node._step(np.full(1, u))[0, 1] for u in inputs])
-            if expected is None:
-                expected = reference(y0, history, inputs, p)
-            error = np.abs(luxi - expected).max() / np.ptp(expected)
-            rows.append({"part": "colony", "scheme": scheme, "substeps": substeps,
-                         "error": error, "error_max": error})
+    for substeps in SUBSTEPS:
+        node = BioReservoir(units=1, warmup=0, rk4_substeps=substeps, seed=3, input_dim=1,
+                            output_variables="He", parallel=False, cell_coupling=1.0,
+                            dde_kwargs={"delay": DELAY, "mu": flow, "d": density})
+        y0, history = node.states[-1, 0].copy(), node.states[:, 0, 2].copy()
+        luxi = np.array([node._step(np.full(1, u))[0, 1] for u in inputs])
+        if expected is None:
+            expected = reference(y0, history, inputs, p)
+        error = np.abs(luxi - expected).max() / np.ptp(expected)
+        rows.append({"part": "colony", "substeps": substeps, "error": error,
+                     "error_max": error})
     return rows
 
 
@@ -125,24 +123,21 @@ def array_errors(design: Path) -> list[dict]:
     rows = []
     for substeps in ARRAY_SUBSTEPS:
         error = np.abs(ratios(substeps) / expected - 1.0)
-        rows.append({"part": "array", "scheme": "substep", "substeps": substeps,
-                     "error": float(np.median(error)), "error_max": float(error.max())})
+        rows.append({"part": "array", "substeps": substeps,
+                     "error": float(np.median(error)),
+                     "error_max": float(np.percentile(error, 90))})
     return rows
 
 
 def figure(rows: list[dict]):
     fig, axes = plt.subplots(1, 2, figsize=(15, 6), gridspec_kw={"wspace": 0.3})
     ax = axes[0]
-    for scheme, label, colour, marker, style in (
-            ("substep", "Delay read at every substep (v0.2)", OKABE_ITO[0], "o", "-"),
-            ("frozen", "Delay held over each minute (v0.1)", OKABE_ITO[4], "s", "--")):
-        part = [r for r in rows if r["part"] == "colony" and r["scheme"] == scheme]
-        ax.loglog([r["substeps"] for r in part], [r["error"] for r in part], marker=marker,
-                  ls=style, color=colour, lw=LW, ms=8, label=label)
-    part = [r for r in rows if r["part"] == "colony" and r["scheme"] == "substep"]
+    part = [r for r in rows if r["part"] == "colony"]
+    n = np.array([r["substeps"] for r in part], dtype=float)
+    ax.loglog(n, [r["error"] for r in part], marker="o", color=OKABE_ITO[0], lw=LW, ms=8,
+              label="Solver")
     if part:
-        n = np.array([r["substeps"] for r in part], dtype=float)
-        ax.loglog(n, part[0]["error"] * (n[0] / n) ** 2, color="#999999", ls=":", lw=THIN,
+        ax.loglog(n, part[-1]["error"] * (n[-1] / n) ** 2, color="#999999", ls=":", lw=THIN,
                   label="Second order")
     ax.set_xlabel("Substeps per minute")
     ax.set_ylabel("Error in LuxI (fraction of its range)")
@@ -151,9 +146,9 @@ def figure(rows: list[dict]):
     ax = axes[1]
     part = [r for r in rows if r["part"] == "array"]
     ax.loglog([r["substeps"] for r in part], [r["error"] for r in part], marker="o",
-              color=OKABE_ITO[0], lw=LW, ms=8, label="Median over traps")
+              color=OKABE_ITO[0], lw=LW, ms=8, label="Median trap")
     ax.loglog([r["substeps"] for r in part], [r["error_max"] for r in part], marker="D",
-              ls=":", color=OKABE_ITO[3], lw=LW, ms=8, label="Largest")
+              ls=":", color=OKABE_ITO[3], lw=LW, ms=8, label="90th percentile")
     ax.axhline(0.01, color="black", ls="--", lw=THIN, label="Measurement noise (1%)")
     ax.set_xlabel("Substeps per minute")
     ax.set_ylabel("Relative error of the image ratios")
@@ -187,7 +182,7 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(rows)
     for row in rows:
-        print(f"{row['part']:7} {row['scheme']:8} {row['substeps']:4d}  {row['error']:.2e}  "
+        print(f"{row['part']:7} {row['substeps']:4d}  {row['error']:.2e}  "
               f"(largest {row['error_max']:.2e})")
     with plt.style.context(STYLE):
         for path in save_figure(figure(rows), "si_convergence", folder=args.out,
