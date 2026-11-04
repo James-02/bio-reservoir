@@ -60,6 +60,19 @@ TUNED = {"uncoupled-576": "Isolated traps (no AHL exchange)",
 #: Controls tuned like the models (two TPE studies), their best point on the reporting seeds.
 CONTROLS = {"random_features": "extra-576-random-features-report",
             "fading_memories": "extra-576-leaky-bank-report"}
+#: The runs on the sealed test split (experiments/v0.2-final-test, run once), by key.
+FINAL_TEST = {"headline": "p576-headline", "forest": "p576-forest", "ideal": "p576-full",
+              **{key: key for key in TUNED},
+              **{f"raw-{key}": f"raw-{key}" for key in ("ridge", "rf", "histgb")}}
+
+
+def test_split(r: Results, key: str) -> tuple[float, float, float] | None:
+    """Macro F1 on the test split and its bootstrap 95% CI."""
+    metrics = r.metrics(f"final-test-{FINAL_TEST[key]}")
+    if metrics is None:
+        return None
+    s = metrics["summary"]
+    return float(s["f1"]), float(s["f1_macro_ci95_low"]), float(s["f1_macro_ci95_high"])
 
 
 class Results:
@@ -353,8 +366,8 @@ def numbers(r: Results, d: str, flat_share: Path | None = None,
         put("svm_minus_raw_histgb", paired(svm, raw["histgb"]))
         put("svm_minus_headline", paired(svm, headline))
     for task in ("unbalanced", "binary"):
-        for row in ("headline", "forest"):
-            one(f"{task}_{row}", r.f1(f"P5-{task}-{d}-{row}-s{SEEDS[0]}"))
+        put(f"{task}_headline", r.seeds(f"P5-{task}-{d}-headline"))
+        one(f"{task}_forest", r.f1(f"P5-{task}-{d}-forest-s{SEEDS[0]}"))
         for key in ("ridge", "rf", "histgb"):
             one(f"{task}_raw_{key}", r.f1(f"P5-{task}-raw-{key}"))
         for key in TUNED:
@@ -364,6 +377,13 @@ def numbers(r: Results, d: str, flat_share: Path | None = None,
         put(f"{tag}_headline", r.seeds(f"P3-{split}-{d}-c", SEEDS[:3]))
         put(f"{tag}_forest", r.seeds(f"P3-{split}-{d}-e", SEEDS[:3]))
         put(f"{tag}_one_image", r.seeds(f"P3-{split}-{d}-a", SEEDS[:3]))
+    for key in FINAL_TEST if d == "p576" else ():
+        test = test_split(r, key)
+        if test is not None:
+            tag = f"test_{key.replace('-', '_')}"
+            one(tag, test[0])
+            one(f"{tag}_low", test[1])
+            one(f"{tag}_high", test[2])
     for stem, on, off in (("coupling", "diffusion", "none"), ("delay", 10, 0),
                           ("scramble", False, True)):
         for forest_ in (False, True):
@@ -596,25 +616,34 @@ def tables(r: Results, d: str) -> str:
                    f"{fmt_diff(paired(headline, value)) if value is not None else '–'} |")
 
     out += ["\n## Table 3. Other tasks and held-out beats (ridge on two images)\n",
-            "Macro F1. Balanced: mean ± SD over 5 seeds; unbalanced and binary: seed 6348; "
-            "validation splits (803 beats of each of N, S, V, Q, never used for tuning): mean ± "
-            "SD over seeds 6348-6350 (comparison models: seed 6348).\n",
+            "Macro F1. Balanced: mean ± SD over 5 seeds; unbalanced and binary: array over 5 "
+            "seeds, comparison models seed 6348; validation splits (803 beats of each of N, S, "
+            "V, Q, never used for tuning): mean ± SD over seeds 6348-6350 (comparison models: "
+            "seed 6348); test split (370 beats of each of N, S, V, Q, evaluated once after the "
+            "design was frozen; seed 6348, fitted on the balanced pool): F1 (bootstrap 95% CI).\n",
             "| Model | Balanced (5 classes) | Unbalanced (5 classes) | Binary | Validation 1 | "
-            "Validation 2 |", "|---|---|---|---|---|---|"]
-    for label, row, val, seeds in (
-            ("Array (design)", f"{d}-headline", f"{d}-c", SEEDS[:3]),
-            (TUNED["uncoupled-576"], "uncoupled-576", "uncoupled-576", SEEDS[:1]),
-            (TUNED["esn-image-576"], "esn-image-576", "esn-image-576", SEEDS[:1]),
-            (TUNED["esn-576"], "esn-576", "esn-576", SEEDS[:1])):
+            "Validation 2 | Test |", "|---|---|---|---|---|---|---|"]
+
+    def fmt_test(key):
+        test = test_split(r, key) if d == "p576" else None
+        return "–" if test is None else f"{test[0]:.3f} ({test[1]:.3f}–{test[2]:.3f})"
+
+    for label, row, val, seeds, test in (
+            ("Array (design)", f"{d}-headline", f"{d}-c", SEEDS[:3], "headline"),
+            (TUNED["uncoupled-576"], "uncoupled-576", "uncoupled-576", SEEDS[:1],
+             "uncoupled-576"),
+            (TUNED["esn-image-576"], "esn-image-576", "esn-image-576", SEEDS[:1],
+             "esn-image-576"),
+            (TUNED["esn-576"], "esn-576", "esn-576", SEEDS[:1], "esn-576")):
         out.append(f"| {label} | {fmt(r.seeds(f'P5-balanced-{row}'))} | "
-                   f"{fmt(r.f1(f'P5-unbalanced-{row}-s{SEEDS[0]}'))} | "
-                   f"{fmt(r.f1(f'P5-binary-{row}-s{SEEDS[0]}'))} | "
-                   + " | ".join(fmt(r.seeds(f"P3-{s}-{val}", seeds))
-                                for s in ("validation-1", "validation-2")) + " |")
+                   + " | ".join(fmt(r.seeds(f"P5-{t}-{row}")) for t in ("unbalanced", "binary"))
+                   + " | " + " | ".join(fmt(r.seeds(f"P3-{s}-{val}", seeds))
+                                        for s in ("validation-1", "validation-2"))
+                   + f" | {fmt_test(test)} |")
     for key, label in (("ridge", "ridge"), ("histgb", "HistGB")):
         out.append(f"| Raw beat, {label} | " + " | ".join(
             fmt(r.f1(f"P5-{t}-raw-{key}")) for t in ("balanced", "unbalanced", "binary"))
-            + " | – | – |")
+            + f" | – | – | {fmt_test(f'raw-{key}')} |")
 
     out += ["\n## Table 4. Ablations and controls (balanced task, mean ± SD over seeds)\n",
             "Ridge on two images; the last column reads the same features with a random "
