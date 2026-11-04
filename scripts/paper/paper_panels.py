@@ -380,49 +380,66 @@ def draw_chip(ax, readout: dict | None = None):
 
 
 def draw_circuit(ax):
-    """One colony: AHL inside the cells (Hi) activates the lux promoter after a delay, which
+    """One colony: AHL inside the cells (Hi) activates the lux promoter after a delay τ, which
     makes LuxI (AHL synthase), AiiA (degrades AHL) and the GFP reporter (not modelled); AHL
-    crosses the membrane to the trap's medium (He), where the inducer adds to it."""
+    crosses the cell membranes (rate D) to the trap's medium (He), where the inducer adds to
+    it."""
     from matplotlib.patches import Ellipse
 
-    ax.set_xlim(-0.2, 10.2)
-    ax.set_ylim(0, 8.6)
+    ax.set_xlim(-0.3, 11.4)
+    ax.set_ylim(-0.4, 9.0)
     ax.set_aspect("equal")
+    ax.set_anchor("N")
     ax.axis("off")
-    ax.add_patch(plt.Circle((6.3, 4.0), 3.6, fill=False, ec="black", lw=2))
-    ax.text(6.3, 7.85, "Colony", ha="center", fontsize=SMALL + 2)
-    nodes = {"He": ((1.1, 4.0), "#c5ecc8", "AHL\n(He)"), "Hi": ((4.0, 4.0), "#9fd8f5", "AHL\n(Hi)"),
-             "I": ((8.0, 6.1), "#f6c26b", "LuxI"), "G": ((8.4, 4.0), "#ffffff", "GFP"),
-             "A": ((8.0, 1.9), "#e5a4dc", "AiiA")}
+    ax.add_patch(plt.Circle((7.0, 4.2), 4.15, fill=False, ec="black", lw=2))
+    ax.text(7.0, 8.5, "Colony", ha="center", va="bottom", fontsize=SMALL + 2)
+    nodes = {"He": ((0.75, 4.2), "#c5ecc8", "AHL\n(He)"), "Hi": ((4.25, 4.2), "#9fd8f5", "AHL\n(Hi)"),
+             "I": ((9.5, 6.3), "#f6c26b", "LuxI"), "G": ((10.0, 4.2), "#ffffff", "GFP"),
+             "A": ((9.5, 2.1), "#e5a4dc", "AiiA")}
     for key, (centre, colour, text) in nodes.items():
-        ax.add_patch(Ellipse(centre, 1.5, 1.2 if key in ("I", "G", "A") else 1.8, fc=colour,
+        small = key in ("I", "G", "A")
+        ax.add_patch(Ellipse(centre, 1.3 if small else 1.5, 1.0 if small else 1.8, fc=colour,
                              ec="#2b7a3d" if key == "G" else "black",
                              ls="--" if key == "G" else "-", lw=1.5))
         ax.text(*centre, text, ha="center", va="center", fontsize=SMALL)
-    ax.add_patch(FancyBboxPatch((5.55, 3.6), 0.9, 0.8, boxstyle="round,pad=0.05",
+    ax.text(0.75, 2.65, "Trap\nmedium", ha="center", va="center", fontsize=SMALL)
+    ax.add_patch(FancyBboxPatch((6.75, 3.8), 0.9, 0.8, boxstyle="round,pad=0.05",
                                 fc="#dddddd", ec="black", lw=1.2))
-    ax.text(6.0, 4.0, "P$_{lux}$", ha="center", va="center", fontsize=SMALL)
+    ax.text(7.2, 4.2, "P$_{lux}$", ha="center", va="center", fontsize=SMALL)
 
-    def arrow(start, end, colour, style="-|>", ls="-", rad=0.0, text=None, offset=(0, 0)):
+    def arrow(start, end, colour, style="-|>", ls="-", rad=0.0, text=None, offset=0.0):
+        """An arrow, and a label beside the middle of its arc (matplotlib's arc3 is a
+        quadratic Bezier curve), turned to follow it; a negative offset puts it on the
+        right of the arrow's direction."""
         ax.annotate("", xy=end, xytext=start,
                     arrowprops={"arrowstyle": style, "color": colour, "lw": 2.2, "ls": ls,
                                 "connectionstyle": f"arc3,rad={rad}", "shrinkA": 2,
                                 "shrinkB": 2})
         if text:
-            ax.text((start[0] + end[0]) / 2 + offset[0], (start[1] + end[1]) / 2 + offset[1],
-                    text, ha="center", va="center", fontsize=SMALL)
+            dx, dy = end[0] - start[0], end[1] - start[1]
+            length = np.hypot(dx, dy)
+            x = (start[0] + end[0] + rad * dy) / 2 - offset * dy / length
+            y = (start[1] + end[1] - rad * dx) / 2 + offset * dx / length
+            angle = np.degrees(np.arctan2(dy, dx))
+            angle = angle - 180 if angle > 90 else angle + 180 if angle < -90 else angle
+            ax.text(x, y, text, ha="center", va="center", rotation=angle,
+                    rotation_mode="anchor", fontsize=SMALL)
 
-    arrow((4.75, 4.0), (5.5, 4.0), "#009E73", ls=":", text="τ", offset=(0, 0.35))
-    for target in ((7.3, 5.75), (7.62, 4.0), (7.3, 2.25)):
-        arrow((6.5, 4.0), target, "#555555")
-    arrow((7.2, 6.4), (4.4, 4.85), "#009E73", rad=0.25)
-    arrow((7.2, 1.6), (4.4, 3.15), "#d62728", style="-[", rad=-0.25)
-    arrow((1.85, 4.3), (3.25, 4.3), "#1f77b4")
-    arrow((3.25, 3.7), (1.85, 3.7), "#1f77b4", text="D", offset=(0, -0.35))
-    ax.add_patch(FancyBboxPatch((0.15, 6.6), 1.9, 0.8, boxstyle="round,pad=0.05", fc="#fbe3c4",
+    arrow((5.05, 4.2), (6.7, 4.2), "#009E73", ls=":", text="Delayed\n(τ)", offset=0.58)
+    for target in ((9.04, 5.95), (9.33, 4.2), (9.04, 2.45)):
+        arrow((7.7, 4.2), target, "#555555")
+    ax.text(8.75, 5.2, "Promotes", ha="left", va="center", fontsize=SMALL)
+    arrow((8.83, 6.3), (4.51, 5.05), "#009E73", rad=0.25, text="Synthesizes", offset=-0.4)
+    arrow((8.83, 2.1), (4.51, 3.35), "#d62728", style="-[", rad=-0.25, text="Degrades",
+          offset=0.4)
+    arrow((1.55, 4.55), (3.45, 4.55), "#1f77b4")
+    arrow((3.45, 3.85), (1.55, 3.85), "#1f77b4")
+    ax.text(2.15, 4.9, "Influx", ha="center", va="center", fontsize=SMALL)
+    ax.text(2.15, 3.5, "Efflux", ha="center", va="center", fontsize=SMALL)
+    ax.add_patch(FancyBboxPatch((-0.15, 6.6), 1.8, 0.8, boxstyle="round,pad=0.05", fc="#fbe3c4",
                                 ec="black", lw=1.2))
-    ax.text(1.1, 7.0, "Inducer", ha="center", va="center", fontsize=SMALL)
-    arrow((1.6, 6.55), (2.5, 4.45), "#E69F00", ls="--")
+    ax.text(0.75, 7.0, "Inducer", ha="center", va="center", fontsize=SMALL)
+    arrow((0.75, 6.55), (0.75, 5.15), "#E69F00", ls="--")
 
 
 def beat_readout(d: str, sim: dict, seed: int = SEEDS[0]) -> dict | None:
@@ -456,7 +473,7 @@ def figure_design(sim: dict | None, d: str):
     """Fig. 1: the colony circuit, one colony during a beat, and the chip with its readout."""
     fig = plt.figure(figsize=(16, 13.5))
     outer = fig.add_gridspec(2, 1, height_ratios=[6.4, 5.6], hspace=0.12)
-    top = outer[0].subgridspec(1, 2, width_ratios=[1, 1.5], wspace=0.25)
+    top = outer[0].subgridspec(1, 2, width_ratios=[1.25, 1.5], wspace=0.2)
     ax = fig.add_subplot(top[0])
     draw_circuit(ax)
     panel(ax, "A")
