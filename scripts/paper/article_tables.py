@@ -70,7 +70,7 @@ def tasks_table(r: Results, d: str) -> str:
                  "read like the array or from its clean states (Table~\\ref{tab:mechanism}). "
                  "--, not run.",
                  "@{}lcccccc@{}", ["Model", "Balanced", "Unbalanced", "Binary", "Validation 1",
-                                   "Validation 2", "Test"], rows, "footnotesize")
+                                   "Validation 2", "Test"], rows, "footnotesize", colsep="3pt")
 
 
 def mechanism_table(r: Results, d: str) -> str:
