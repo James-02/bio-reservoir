@@ -232,7 +232,7 @@ def robustness_tables(r: Results, d: str) -> str:
     for group, studies in sweeps(r, d).items():
         blocks = [line for title, points, label in studies
                   for line in sweep_block(title, points, label)]
-        out += [r"\begin{table}[H]", r"    \centering", r"    \footnotesize",
+        out += [r"\begin{table}[H]", r"    \raggedright", r"    \footnotesize",
                 f"    \\caption{{{captions[group]}}}",
                 f"    \\label{{tab:si-robustness-{group}}}", *blocks, r"\end{table}", ""]
     return "\n".join(out)
