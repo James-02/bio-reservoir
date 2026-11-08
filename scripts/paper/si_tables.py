@@ -1,9 +1,10 @@
 """The additional results of the Supporting Information as LaTeX tables, from the runs.
 
-Writes ``si_tables.tex`` (one ``table`` environment per table, labels ``tab:si-*``) for the
-SI to ``\\input``: every metric on the three tasks, the headline by seed and fold, per-class
-F1, every readout on two and four images, the array size, and the robustness and
-heterogeneity studies with the colonies that stop oscillating.
+Writes one file per subsection of the SI's Additional Results, following the stages of the
+design studies (one ``table`` environment per table, labels ``tab:si-*``):
+``si_evaluation.tex`` (every metric, seeds and folds, per-class F1), ``si_readouts.tex``,
+``si_comparisons.tex`` (comparisons by seed, ablations and controls), ``si_array.tex``
+(array size, imaging, start and inducer, layout) and ``si_heterogeneity.tex``.
 
     python scripts/paper/si_tables.py --out <folder> --flat-share <flat_share.csv>
 """
@@ -16,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 from paper_figures import (
+    CONTROLS,
     FOREST,
     HEADLINE,
     ONE,
@@ -27,8 +29,10 @@ from paper_figures import (
     ideal_traps,
     image_times,
     mean_sd,
+    paired,
     readout,
     traps,
+    untuned_control,
 )
 
 from utils import config
@@ -293,6 +297,66 @@ def traps_table(r: Results, d: str) -> str:
                                 "Ideal reading"], rows)
 
 
+def comparisons_table(r: Results, d: str) -> str:
+    headline = r.by_seed(f"P5-balanced-{d}-headline")
+    rows = [["Array (design)"] + [f"{headline[s]:.3f}" for s in SEEDS] + ["--"], ["MIDRULE"]]
+    for label, values in (
+            ("Isolated traps", r.by_seed("P5-balanced-uncoupled-576")),
+            ("ESN, read like the array", r.by_seed("P5-balanced-esn-image-576")),
+            ("ESN, clean states", r.by_seed("P5-balanced-esn-576")),
+            ("Random tanh features", r.report(CONTROLS["random_features"])),
+            ("Leaky integrators", r.report(CONTROLS["fading_memories"]))):
+        rows.append([label] + [f"{values[s]:.3f}" if s in values else "--" for s in SEEDS]
+                    + [pm(paired(headline, values))])
+    return table("tab:si-comparisons",
+                 "The design and the comparisons by reservoir seed, each tuned with the same "
+                 "budget (Table~\\ref{tab:selection}) and read by ridge (balanced task, macro "
+                 "F1). The last column is the design minus the comparison, seed by seed (mean "
+                 "$\\pm$ SD; positive: the design is better). The leaky integrators have no "
+                 "random parts, so their score does not change with the seed.",
+                 "@{}lcccccc@{}", ["Model"] + [str(s) for s in SEEDS] + ["Design minus"],
+                 rows, "footnotesize")
+
+
+def ablations_table(r: Results, d: str) -> str:
+    def grid(stem, forest):
+        key = {"coupling": "reservoir.params.coupling", "delay": "reservoir.params.delay",
+               "scramble": "task.scramble"}[stem]
+        return {k[0]: v for k, v in
+                r.grid(f"P6-{d}-ablation-{stem}{'-forest' if forest else ''}", key).items()}
+
+    def cells(intact, changed):
+        return [pm(list(changed.values())), pm(paired(intact, changed))]
+
+    ridge, forest = r.by_seed(f"P5-balanced-{d}-headline"), r.by_seed(f"P5-balanced-{d}-forest")
+    rows = [["Array (design)", pm(list(ridge.values())), "--", pm(list(forest.values())), "--"],
+            ["MIDRULE"]]
+    for label, stem, on, off in (("No AHL exchange", "coupling", "diffusion", "none"),
+                                 ("No feedback delay", "delay", 10, 0),
+                                 ("Beat samples shuffled", "scramble", False, True)):
+        a, b = grid(stem, False), grid(stem, True)
+        rows.append([label] + cells(a.get(on, {}), a.get(off, {}))
+                    + cells(b.get(on, {}), b.get(off, {})))
+    rows.append(["Linear imitation$^{a}$"] + cells(ridge, r.by_seed(f"P6-{d}-surrogate-c"))
+                + cells(forest, r.by_seed(f"P6-{d}-surrogate-e")))
+    rows.append(["MIDRULE"])
+    for label, name in (("Random tanh features$^{b}$", "random_features"),
+                        ("Leaky integrators$^{b}$", "fading_memories")):
+        rows.append([label, pm(untuned_control(r, name)), "--",
+                     pm(untuned_control(r, name, True)), "--"])
+    rows.append(["Raw beat", pm(r.f1(RAW["ridge"])), "--", pm(r.f1(RAW["rf"])), "--"])
+    return table("tab:si-ablations",
+                 "Ablations and controls, read by ridge on two images and by the random forest "
+                 "on four (balanced task, macro F1, mean $\\pm$ SD over the reporting seeds). "
+                 "Each ablation changes the design without retuning it; the loss is the "
+                 "design minus the ablation, seed by seed. $^{a}$A ridge regression from the "
+                 "beat to the array's features, on three of the seeds. $^{b}$At standard "
+                 "settings (576 units; 24 time constants), untuned, so that both readouts "
+                 "read the same features.",
+                 "@{}lcccc@{}", ["Array or control", "Ridge", "Ridge loss", "Forest",
+                                 "Forest loss"], rows, "footnotesize")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--design", default="p576", help="The design (default p576).")
@@ -303,12 +367,16 @@ def main(argv: list[str] | None = None) -> int:
     r, d = Results(), args.design
     out = args.out or config.figures_dir(f"paper/{d}")
     out.mkdir(parents=True, exist_ok=True)
-    text = "\n".join(["% Additional results, from scripts/paper/si_tables.py",
-                      metrics_table(r, d), folds_table(r, d), per_class_table(r, d),
-                      readouts_table(r, d), traps_table(r, d), imaging_tables(r, d),
-                      start_tables(r, d), heterogeneity_tables(r, d, args.flat_share)])
-    (out / "si_tables.tex").write_text(text)
-    print(out / "si_tables.tex")
+    files = {
+        "si_evaluation.tex": [metrics_table(r, d), folds_table(r, d), per_class_table(r, d)],
+        "si_readouts.tex": [readouts_table(r, d)],
+        "si_comparisons.tex": [comparisons_table(r, d), ablations_table(r, d)],
+        "si_array.tex": [traps_table(r, d), imaging_tables(r, d), start_tables(r, d)],
+        "si_heterogeneity.tex": [heterogeneity_tables(r, d, args.flat_share)],
+    }
+    for name, tables in files.items():
+        (out / name).write_text("\n".join(["% From scripts/paper/si_tables.py", *tables]))
+        print(out / name)
     if r.missing:
         print(f"Not found ({len(r.missing)}): " + ", ".join(sorted(r.missing)[:30]),
               file=sys.stderr)
