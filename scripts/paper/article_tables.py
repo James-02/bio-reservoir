@@ -35,8 +35,7 @@ def readouts_table(r: Results, d: str) -> str:
 def tasks_table(r: Results, d: str) -> str:
     def test(key):
         found = test_split(r, key)
-        return "--" if found is None else \
-            f"\\shortstack{{{found[0]:.3f}\\\\{{\\scriptsize {found[1]:.3f}--{found[2]:.3f}}}}}"
+        return "--" if found is None else f"{found[0]:.3f}"
 
     rows = []
     for label, run, split, seeds, key in (
@@ -60,8 +59,10 @@ def tasks_table(r: Results, d: str) -> str:
                  "Unbalanced and binary tasks: five seeds for the array, one (6348) for the "
                  "comparisons. Validation splits (803 beats of each of four classes, N, S, V "
                  "and Q): three seeds for the array, one for the comparisons. Test split (370 "
-                 "beats of each of the same four classes, scored once): one seed, with the "
-                 "bootstrap 95\\% confidence interval below. On the held-out splits the readout "
+                 "beats of each of the same four classes): one seed, scored once; the bootstrap "
+                 "95\\% confidence intervals, about $\\pm$0.015, are in "
+                 "Table~\\ref{S-tab:si-heldout}. The raw beat has no reservoir seed, so its "
+                 "scores have no SD. On the held-out splits the readout "
                  "is trained on the whole balanced pool, the macro F1 averages the four "
                  "classes present, and a beat predicted as F counts as an error "
                  "(Table~\\ref{S-tab:dataset}). Isolated traps: the array without AHL "
@@ -69,7 +70,7 @@ def tasks_table(r: Results, d: str) -> str:
                  "read like the array or from its clean states (Table~\\ref{tab:mechanism}). "
                  "--, not run.",
                  "@{}lcccccc@{}", ["Model", "Balanced", "Unbalanced", "Binary", "Validation 1",
-                                   "Validation 2", "Test"], rows, "footnotesize", colsep="2pt")
+                                   "Validation 2", "Test"], rows, "footnotesize")
 
 
 def mechanism_table(r: Results, d: str) -> str:

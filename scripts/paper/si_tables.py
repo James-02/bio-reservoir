@@ -31,6 +31,7 @@ from paper_figures import (
     image_times,
     mean_sd,
     readout,
+    test_split,
     traps,
     untuned_control,
 )
@@ -153,6 +154,36 @@ def per_class_table(r: Results, d: str) -> str:
                  "design.",
                  "@{}lccccc@{}", ["Readout", r"\multicolumn{5}{c}{F1-score of each class}"],
                  rows, "footnotesize")
+
+
+def heldout_table(r: Results, d: str) -> str:
+    rows = []
+    for label, split_run, seeds, key in (
+            ("Array, ridge (design)", f"{d}-c", SEEDS[:3], "headline"),
+            ("Array, forest on four images", f"{d}-e", SEEDS[:3], "forest"),
+            ("Array, ideal reading", f"{d}-full", SEEDS[:3], "ideal"),
+            ("Isolated traps", "uncoupled-576", SEEDS[:1], "uncoupled-576"),
+            ("ESN, read like the array", "esn-image-576", SEEDS[:1], "esn-image-576"),
+            ("ESN, clean states", "esn-576", SEEDS[:1], "esn-576"),
+            ("Raw beat, ridge", None, (), "raw-ridge"),
+            ("Raw beat, forest", None, (), "raw-rf"),
+            ("Raw beat, HistGB", None, (), "raw-histgb")):
+        found = test_split(r, key)
+        rows.append([label] + [pm(r.seeds(f"P3-{s}-{split_run}", seeds)) if split_run else "--"
+                               for s in ("validation-1", "validation-2")]
+                    + ([f"{found[0]:.3f}", f"{found[1]:.3f}--{found[2]:.3f}"] if found
+                       else ["--", "--"]))
+        if label.startswith("Array, ideal") or label.startswith("ESN, clean"):
+            rows.append(["MIDRULE"])
+    return table("tab:si-heldout",
+                 "Held-out splits (four classes, N, S, V and Q; the readout trained on the "
+                 "whole balanced pool): macro F1 on the two validation splits (mean $\\pm$ SD "
+                 "over three reservoir seeds for the array, one seed for the comparisons) and "
+                 "on the sealed test split (one seed, scored once), with its bootstrap 95\\% "
+                 "confidence interval (2,000 resamples of the 1,480 beats). The raw-beat "
+                 "readouts were not run on the validation splits.",
+                 "@{}lcccc@{}", ["Model", "Validation 1", "Validation 2", "Test",
+                                 "Test, 95\\% CI"], rows, "footnotesize")
 
 
 def readouts_table(r: Results, d: str) -> str:
@@ -368,7 +399,8 @@ def main(argv: list[str] | None = None) -> int:
     out = args.out or config.figures_dir(f"paper/{d}")
     out.mkdir(parents=True, exist_ok=True)
     files = {
-        "si_evaluation.tex": [metrics_table(r, d), folds_table(r, d), per_class_table(r, d)],
+        "si_evaluation.tex": [metrics_table(r, d), folds_table(r, d), per_class_table(r, d),
+                              heldout_table(r, d)],
         "si_readouts.tex": [readouts_table(r, d)],
         "si_comparisons.tex": [comparisons_table(r, d), ablations_table(r, d)],
         "si_array.tex": [traps_table(r, d), imaging_tables(r, d), start_tables(r, d)],
