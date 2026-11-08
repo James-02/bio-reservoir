@@ -275,7 +275,7 @@ def colony_panel(axes, sim: dict):
     w, gain = len(warm), float(sim["gain"])
     t = np.arange(-w, len(rest))
     rows = [("No inducer", rest)] + [
-        (f"Gain {s:.2g}" + (" (design)" if np.isclose(s, gain) else ""), states)
+        ("Design gain" if np.isclose(s, gain) else f"{s / gain:g}× gain", states)
         for s, states in zip(sim["colony_scales"], sim["colony_driven"], strict=True)]
     for ax, (text, states) in zip(axes[:-1], rows, strict=True):
         for var in ("I", "A"):
@@ -553,8 +553,8 @@ def figure_dynamics(sim: dict | None, r: Results, d: str, oscillation: Path | No
         for i in range(grid.shape[0]):
             for j in range(grid.shape[1]):
                 dark = image.norm(grid[i, j]) < 0.55
-                dx.text(j, i, f"{grid[i, j]:.3f}".lstrip("0"), ha="center", va="center",
-                        fontsize=SMALL - 1, color="white" if dark else "black")
+                dx.text(j, i, f"{grid[i, j]:.3f}", ha="center", va="center",
+                        fontsize=SMALL - 2, color="white" if dark else "black")
         fig.colorbar(image, ax=dx, label="Macro F1")
         handles = []
         o_flows, o_densities, share, _ = oscillation_map(oscillation, d)
@@ -681,7 +681,8 @@ def figure_requirements(r: Results, d: str, flat_share: Path | None):
     table = r.grid("extra-576-connectivity", "reservoir.params.input_connectivity",
                    "reservoir.params.coupling") if d == "p576" else {}
     shares = sorted({k[0] for k in table})
-    for coupling, label, style in (("diffusion", "Coupled", DESIGN), ("none", "Isolated", FIRST)):
+    for coupling, label, style in (("diffusion", "Exchange", DESIGN),
+                                   ("none", "No exchange", FIRST)):
         points = {100 * s: list(table.get((s, coupling), {}).values()) for s in shares}
         line(ax, points, style, label)
         if coupling == "diffusion":
@@ -720,7 +721,7 @@ def figure_requirements(r: Results, d: str, flat_share: Path | None):
         ax.patch.set_visible(False)
     line(ax, points, DESIGN)
     star(ax, points, 10.0)
-    ax.set_xlabel("Kinetic variability (CV, %)")
+    ax.set_xlabel("Kinetic variation (CV, %)")
 
     ax = axes[1, 2]
     for study, key, label, style in (
@@ -729,7 +730,7 @@ def figure_requirements(r: Results, d: str, flat_share: Path | None):
         spread = scaled(r.sweep(study, f"reservoir.params.heterogeneity_{key}_cv"))
         line(ax, spread, style, label)
     star(ax, spread, 0.0)
-    ax.set_xlabel("Spread between traps (CV, %)")
+    ax.set_xlabel("Variation between traps (CV, %)")
     ax.legend(loc="lower left", fontsize=SMALL)
 
     for ax, letter in zip(axes.flat, "ABCDEF", strict=True):
@@ -784,7 +785,7 @@ def figure_class_images(r: Results, d: str):
         if k < len(CLASS_NAMES) - 1:
             ax.tick_params(labelbottom=False)
         else:
-            ax.set_xlabel("Time on the chip (min)")
+            ax.set_xlabel("Time (min)")
         if k == len(CLASS_NAMES) // 2:
             ax.set_ylabel("ECG (z-score)")
         for g, (values, column) in enumerate(((average, 1), (deviation, 4))):
@@ -881,7 +882,7 @@ def figure_settings(r: Results, d: str):
     headline = r.seeds(f"P5-balanced-{d}-headline")
     if headline:
         axes[4].axhline(np.mean(headline), color="#999999", ls="--", lw=THIN)
-    axes[4].set_xlabel("Gaussian reach (traps)")
+    axes[4].set_xlabel("Exchange range (traps)")
 
     ax = axes[5]
     sizes = sorted({row["reservoir.params.units"] for row in r.trials(f"P6-{d}-units-images")})

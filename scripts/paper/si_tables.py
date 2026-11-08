@@ -236,9 +236,9 @@ def start_tables(r: Results, d: str) -> str:
               "Figure~\\ref{fig:settings}D).",
               "@{}lc@{}", ["Levels", "Macro F1"], level_rows),
         table("tab:si-induced",
-              "Share of traps that receive the inducer, with the exchange of AHL and in "
-              f"isolated traps at the design's settings ({SWEEP}).",
-              "@{}ccc@{}", ["Traps induced (\\%)", "Exchange", "Isolated traps"],
+              "Share of traps that receive the inducer, with the exchange of AHL and "
+              f"without it, at the design's other settings ({SWEEP}).",
+              "@{}ccc@{}", ["Traps induced (\\%)", "Exchange", "No exchange"],
               induced_rows),
         table("tab:si-layout",
               "Random layout of the traps, with an exchange that decays with distance, against "
@@ -292,8 +292,8 @@ def traps_table(r: Results, d: str) -> str:
     return table("tab:si-traps",
                  "Macro F1 against the number of traps (balanced task; mean $\\pm$ SD over the "
                  "reporting seeds): ridge on two images (the design), the random forest on "
-                 "four images, and ridge on the ideal reading (the mean of the full observed "
-                 "state over the beat, without noise). Figure~\\ref{fig:settings}F compares "
+                 "four images, and ridge on the ideal reading (the mean of each colony's LuxI "
+                 "and external AHL over the beat, without noise). Figure~\\ref{fig:settings}F compares "
                  "one, two and four images up to 2,500 traps; Table~\\ref{tab:runtime} gives "
                  "the cost of the larger arrays.",
                  "@{}rccc@{}", ["Traps $N$", "Ridge, 2 images", "Forest, 4 images",

@@ -25,7 +25,9 @@ def readouts_table(r: Results, d: str) -> str:
     return table("tab:readouts",
                  "Each readout on the array's two images and on the 187 samples of the raw "
                  "beat (balanced task; macro F1, mean $\\pm$ SD over the reporting seeds; the "
-                 "raw beat has no reservoir seed). Ridge is the design's readout. Settings in "
+                 "raw beat has no reservoir seed). Ridge is the design's readout. kNN, "
+                 "$k$-nearest neighbors; HistGB, histogram-based gradient boosting; RBF SVM, "
+                 "support vector machine with a radial basis function kernel. Settings in "
                  "Table~\\ref{S-tab:readouts}; four images in Table~\\ref{S-tab:si-readouts}.",
                  "@{}lcc@{}", ["Readout", "Array, 2 images", "Raw beat"], rows)
 
@@ -53,13 +55,19 @@ def tasks_table(r: Results, d: str) -> str:
                                for task in ("balanced", "unbalanced", "binary")]
                     + ["--", "--", test(f"raw-{key}")])
     return table("tab:tasks",
-                 "The three tasks and the held-out splits, read by ridge (macro F1). Tasks: "
-                 "mean $\\pm$ SD over the reporting seeds for the array, one seed (6348) for "
-                 "the comparisons on the unbalanced and binary tasks. Validation splits "
-                 "(four classes, 803 beats of each): three seeds for the array, one for the "
-                 "comparisons. Test split (four classes, 370 beats of each, scored once): one "
-                 "seed, with the bootstrap 95\\% confidence interval. Every held-out score is "
-                 "from a readout trained on the whole balanced pool (Table~\\ref{S-tab:dataset}).",
+                 "The three tasks and the held-out splits, read by ridge (macro F1). Balanced "
+                 "task: mean $\\pm$ SD over the five reporting seeds for every model. "
+                 "Unbalanced and binary tasks: five seeds for the array, one (6348) for the "
+                 "comparisons. Validation splits (803 beats of each of four classes, N, S, V "
+                 "and Q): three seeds for the array, one for the comparisons. Test split (370 "
+                 "beats of each of the same four classes, scored once): one seed, with the "
+                 "bootstrap 95\\% confidence interval below. On the held-out splits the readout "
+                 "is trained on the whole balanced pool, the macro F1 averages the four "
+                 "classes present, and a beat predicted as F counts as an error "
+                 "(Table~\\ref{S-tab:dataset}). Isolated traps: the array without AHL "
+                 "exchange, tuned with the same budget; ESN: an echo state network of 576 units "
+                 "read like the array or from its clean states (Table~\\ref{tab:mechanism}). "
+                 "--, not run.",
                  "@{}lcccccc@{}", ["Model", "Balanced", "Unbalanced", "Binary", "Validation 1",
                                    "Validation 2", "Test"], rows, "footnotesize", colsep="2pt")
 
@@ -72,12 +80,14 @@ def mechanism_table(r: Results, d: str) -> str:
         return pm(list(study.get((value,), {}).values()))
 
     rows = [["Array (design)", pm(r.seeds(f"P5-balanced-{d}-headline")),
-             pm(r.seeds(f"P5-balanced-{d}-forest"))], ["MIDRULE"],
+             pm(r.seeds(f"P5-balanced-{d}-forest"))],
+            ["Array, ideal reading$^{a}$", pm(r.seeds(f"P5-balanced-{d}-full")),
+             pm(r.seeds(f"P5-balanced-{d}-full-forest"))], ["MIDRULE"],
             [r"\multicolumn{3}{@{}l}{\textit{Tuned with the same budget}}"]]
     for label, values in (
             ("Isolated traps", r.seeds("P5-balanced-uncoupled-576")),
             ("ESN, read like the array", r.seeds("P5-balanced-esn-image-576")),
-            ("ESN, clean states", r.seeds("P5-balanced-esn-576")),
+            ("ESN, clean states$^{b}$", r.seeds("P5-balanced-esn-576")),
             ("Random tanh features", list(r.report(CONTROLS["random_features"]).values())),
             ("Leaky integrators", list(r.report(CONTROLS["fading_memories"]).values()))):
         rows.append([label, pm(values), "--"])
@@ -87,17 +97,20 @@ def mechanism_table(r: Results, d: str) -> str:
                                ("No feedback delay", "delay", 0),
                                ("Beat samples shuffled", "scramble", True)):
         rows.append([label, ablation(stem, value, False), ablation(stem, value, True)])
-    rows.append(["Linear imitation$^{a}$", pm(r.seeds(f"P6-{d}-surrogate-c", SEEDS[:3])),
+    rows.append(["Linear imitation$^{c}$", pm(r.seeds(f"P6-{d}-surrogate-c", SEEDS[:3])),
                  pm(r.seeds(f"P6-{d}-surrogate-e", SEEDS[:3]))])
-    rows += [["MIDRULE"], ["Raw beat", pm(r.f1(RAW["ridge"])), pm(r.f1(RAW["rf"]))]]
+    rows += [["MIDRULE"], ["Raw beat$^{d}$", pm(r.f1(RAW["ridge"])), pm(r.f1(RAW["rf"]))]]
     return table("tab:mechanism",
                  "What the colonies contribute (balanced task; macro F1, mean $\\pm$ SD over "
                  "the reporting seeds), read by ridge on two images and by the random forest "
-                 "on four. The comparisons were tuned for ridge (Table~\\ref{S-tab:selection}); "
-                 "by seed in Table~\\ref{S-tab:si-comparisons}, and the controls under both "
-                 "readouts in Table~\\ref{S-tab:si-ablations}. $^{a}$A ridge regression from "
-                 "the beat to the array's features, on three of the seeds.",
-                 "@{}lcc@{}", ["Model", "Ridge, 2 images", "Random forest, 4 images"], rows)
+                 "on four, unless noted. The comparisons were tuned for ridge "
+                 "(Table~\\ref{S-tab:selection}); by seed in Table~\\ref{S-tab:si-comparisons}, "
+                 "and the controls under both readouts in Table~\\ref{S-tab:si-ablations}. "
+                 "$^{a}$The mean of each colony's LuxI and external AHL over the beat, "
+                 "without noise. $^{b}$The mean of the network's noise-free states over the "
+                 "beat. $^{c}$A ridge regression from the beat to the array's features, on "
+                 "three of the seeds. $^{d}$The 187 samples of the beat. --, not run.",
+                 "@{}lcc@{}", ["Model", "Ridge", "Random forest"], rows)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -322,11 +322,11 @@ def numbers(r: Results, d: str, flat_share: Path | None = None,
         values = list(values)
         if values:
             m, s = mean_sd(values)
-            out[key] = {"mean": round(m, 4), "sd": round(s, 4), "n": len(values)}
+            out[key] = {"mean": round(m, 8), "sd": round(s, 8), "n": len(values)}
 
     def one(key, value):
         if value is not None and np.isfinite(value):
-            out[key] = round(float(value), 4)
+            out[key] = round(float(value), 8)
 
     headline = r.by_seed(f"P5-balanced-{d}-headline")
     put("headline", headline.values())
