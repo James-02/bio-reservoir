@@ -13,7 +13,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from paper_figures import CONTROLS, RAW, READOUTS, SEEDS, Results, readout, test_split
+from paper_figures import CONTROLS, RAW, READOUTS, Results, readout, test_split
 from si_tables import pm, table
 
 from utils import config
@@ -38,31 +38,29 @@ def tasks_table(r: Results, d: str) -> str:
         return "--" if found is None else f"{found[0]:.3f}"
 
     rows = []
-    for label, run, split, seeds, key in (
-            ("Array (design)", f"{d}-headline", f"{d}-c", SEEDS[:3], "headline"),
-            ("Isolated traps", "uncoupled-576", "uncoupled-576", SEEDS[:1], "uncoupled-576"),
-            ("ESN, read like the array", "esn-image-576", "esn-image-576", SEEDS[:1],
-             "esn-image-576"),
-            ("ESN, clean states", "esn-576", "esn-576", SEEDS[:1], "esn-576")):
+    for label, run, key in (
+            ("Array (design)", f"{d}-headline", "headline"),
+            ("Isolated traps", "uncoupled-576", "uncoupled-576"),
+            ("ESN, read like the array", "esn-image-576", "esn-image-576"),
+            ("ESN, clean states", "esn-576", "esn-576")):
+        split = f"{d}-c" if key == "headline" else run
         rows.append([label, pm(r.seeds(f"P5-balanced-{run}"))]
                     + [pm(r.seeds(f"P5-{task}-{run}")) for task in ("unbalanced", "binary")]
-                    + [pm(r.seeds(f"P3-{s}-{split}", seeds))
-                       for s in ("validation-1", "validation-2")] + [test(key)])
+                    + [pm(r.seeds(f"P3-{s}-{split}")) for s in ("validation-1", "validation-2")]
+                    + [test(key)])
     rows.append(["MIDRULE"])
     for key, label in (("ridge", "Raw beat, ridge"), ("histgb", "Raw beat, HistGB")):
         rows.append([label] + [pm(r.f1(f"P5-{task}-raw-{key}"))
                                for task in ("balanced", "unbalanced", "binary")]
                     + ["--", "--", test(f"raw-{key}")])
     return table("tab:tasks",
-                 "The three tasks and the held-out splits, read by ridge (macro F1). Balanced "
-                 "task: mean $\\pm$ SD over the five reporting seeds for every model. "
-                 "Unbalanced and binary tasks: five seeds for the array, one (6348) for the "
-                 "comparisons. Validation splits (803 beats of each of four classes, N, S, V "
-                 "and Q): three seeds for the array, one for the comparisons. Test split (370 "
-                 "beats of each of the same four classes): one seed, scored once; the bootstrap "
-                 "95\\% confidence intervals, about $\\pm$0.015, are in "
-                 "Table~\\ref{S-tab:si-heldout}. The raw beat has no reservoir seed, so its "
-                 "scores have no SD. On the held-out splits the readout "
+                 "The three tasks and the held-out splits, read by ridge (macro F1, mean "
+                 "$\\pm$ SD over the five reporting seeds). Validation splits: 803 beats of "
+                 "each of four classes, N, S, V and Q. Test split: 370 beats of each of the "
+                 "same four classes, one seed, scored once; the bootstrap 95\\% confidence "
+                 "intervals, about $\\pm$0.015, are in Table~\\ref{S-tab:si-heldout}. The raw "
+                 "beat has no reservoir seed, so its scores have no SD. On the held-out splits "
+                 "the readout "
                  "is trained on the whole balanced pool, the macro F1 averages the four "
                  "classes present, and a beat predicted as F counts as an error "
                  "(Table~\\ref{S-tab:dataset}). Isolated traps: the array without AHL "
@@ -85,32 +83,40 @@ def mechanism_table(r: Results, d: str) -> str:
             ["Array, ideal reading$^{a}$", pm(r.seeds(f"P5-balanced-{d}-full")),
              pm(r.seeds(f"P5-balanced-{d}-full-forest"))], ["MIDRULE"],
             [r"\multicolumn{3}{@{}l}{\textit{Tuned with the same budget}}"]]
-    for label, values in (
-            ("Isolated traps", r.seeds("P5-balanced-uncoupled-576")),
-            ("ESN, read like the array", r.seeds("P5-balanced-esn-image-576")),
-            ("ESN, clean states$^{b}$", r.seeds("P5-balanced-esn-576")),
-            ("Random tanh features", list(r.report(CONTROLS["random_features"]).values())),
-            ("Leaky integrators", list(r.report(CONTROLS["fading_memories"]).values()))):
-        rows.append([label, pm(values), "--"])
+    forest = {"random_features": "extra-576-random-features-report-forest",
+              "fading_memories": "extra-576-leaky-bank-report-forest"}
+    for label, values, forest_values in (
+            ("Isolated traps", r.seeds("P5-balanced-uncoupled-576"),
+             r.seeds("P5-balanced-uncoupled-576-forest")),
+            ("ESN, read like the array", r.seeds("P5-balanced-esn-image-576"),
+             r.seeds("P5-balanced-esn-image-576-forest")),
+            ("ESN, clean states$^{b}$", r.seeds("P5-balanced-esn-576"),
+             r.seeds("P5-balanced-esn-576-forest")),
+            ("Random tanh features", list(r.report(CONTROLS["random_features"]).values()),
+             list(r.report(forest["random_features"]).values())),
+            ("Leaky integrators", list(r.report(CONTROLS["fading_memories"]).values()),
+             list(r.report(forest["fading_memories"]).values()))):
+        rows.append([label, pm(values), pm(forest_values)])
     rows += [["MIDRULE"], [r"\multicolumn{3}{@{}l}{\textit{Ablations of the design, not "
                            r"retuned}}"]]
     for label, stem, value in (("No AHL exchange", "coupling", "none"),
                                ("No feedback delay", "delay", 0),
                                ("Beat samples shuffled", "scramble", True)):
         rows.append([label, ablation(stem, value, False), ablation(stem, value, True)])
-    rows.append(["Linear imitation$^{c}$", pm(r.seeds(f"P6-{d}-surrogate-c", SEEDS[:3])),
-                 pm(r.seeds(f"P6-{d}-surrogate-e", SEEDS[:3]))])
+    rows.append(["Linear imitation$^{c}$", pm(r.seeds(f"P6-{d}-surrogate-c")),
+                 pm(r.seeds(f"P6-{d}-surrogate-e"))])
     rows += [["MIDRULE"], ["Raw beat$^{d}$", pm(r.f1(RAW["ridge"])), pm(r.f1(RAW["rf"]))]]
     return table("tab:mechanism",
                  "What the colonies contribute (balanced task; macro F1, mean $\\pm$ SD over "
                  "the reporting seeds), read by ridge on two images and by the random forest "
                  "on four, unless noted. The comparisons were tuned for ridge "
-                 "(Table~\\ref{S-tab:selection}); by seed in Table~\\ref{S-tab:si-comparisons}, "
-                 "and the controls under both readouts in Table~\\ref{S-tab:si-ablations}. "
+                 "(Table~\\ref{S-tab:selection}) and read by the forest at the same settings; "
+                 "by seed in Table~\\ref{S-tab:si-comparisons}, and the untuned controls in "
+                 "Table~\\ref{S-tab:si-ablations}. "
                  "$^{a}$The mean of each colony's LuxI and external AHL over the beat, "
                  "without noise. $^{b}$The mean of the network's noise-free states over the "
-                 "beat. $^{c}$A ridge regression from the beat to the array's features, on "
-                 "three of the seeds. $^{d}$The 187 samples of the beat. --, not run.",
+                 "beat. $^{c}$A ridge regression from the beat to the array's features. "
+                 "$^{d}$The 187 samples of the beat.",
                  "@{}lcc@{}", ["Model", "Ridge", "Random forest"], rows)
 
 

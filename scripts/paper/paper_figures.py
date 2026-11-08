@@ -371,12 +371,14 @@ def numbers(r: Results, d: str, flat_share: Path | None = None,
         for key in ("ridge", "rf", "histgb"):
             one(f"{task}_raw_{key}", r.f1(f"P5-{task}-raw-{key}"))
         for key in TUNED:
-            one(f"{task}_{key.replace('-', '_')}", r.f1(f"P5-{task}-{key}-s{SEEDS[0]}"))
+            put(f"{task}_{key.replace('-', '_')}", r.seeds(f"P5-{task}-{key}"))
     for split in ("validation-1", "validation-2"):
         tag = split.replace("-", "_")
-        put(f"{tag}_headline", r.seeds(f"P3-{split}-{d}-c", SEEDS[:3]))
-        put(f"{tag}_forest", r.seeds(f"P3-{split}-{d}-e", SEEDS[:3]))
-        put(f"{tag}_one_image", r.seeds(f"P3-{split}-{d}-a", SEEDS[:3]))
+        put(f"{tag}_headline", r.seeds(f"P3-{split}-{d}-c"))
+        put(f"{tag}_forest", r.seeds(f"P3-{split}-{d}-e"))
+        put(f"{tag}_one_image", r.seeds(f"P3-{split}-{d}-a"))
+        for key in TUNED:
+            put(f"{tag}_{key.replace('-', '_')}", r.seeds(f"P3-{split}-{key}"))
     for key in FINAL_TEST if d == "p576" else ():
         test = test_split(r, key)
         if test is not None:
@@ -390,8 +392,8 @@ def numbers(r: Results, d: str, flat_share: Path | None = None,
             tag = f"ablation_{stem}{'_forest' if forest_ else ''}"
             put(f"{tag}_intact", ablation(r, d, stem, on, forest_))
             put(tag, ablation(r, d, stem, off, forest_))
-    put("imitation", r.seeds(f"P6-{d}-surrogate-c", SEEDS[:3]))
-    put("imitation_forest", r.seeds(f"P6-{d}-surrogate-e", SEEDS[:3]))
+    put("imitation", r.seeds(f"P6-{d}-surrogate-c"))
+    put("imitation_forest", r.seeds(f"P6-{d}-surrogate-e"))
     connectivity = r.grid("extra-576-connectivity", "reservoir.params.input_connectivity",
                           "reservoir.params.coupling") if d == "p576" else {}
     for share in sorted({k[0] for k in connectivity}):

@@ -159,12 +159,12 @@ def per_class_table(r: Results, d: str) -> str:
 def heldout_table(r: Results, d: str) -> str:
     rows = []
     for label, split_run, seeds, key in (
-            ("Array, ridge (design)", f"{d}-c", SEEDS[:3], "headline"),
-            ("Array, forest on four images", f"{d}-e", SEEDS[:3], "forest"),
-            ("Array, ideal reading", f"{d}-full", SEEDS[:3], "ideal"),
-            ("Isolated traps", "uncoupled-576", SEEDS[:1], "uncoupled-576"),
-            ("ESN, read like the array", "esn-image-576", SEEDS[:1], "esn-image-576"),
-            ("ESN, clean states", "esn-576", SEEDS[:1], "esn-576"),
+            ("Array, ridge (design)", f"{d}-c", SEEDS, "headline"),
+            ("Array, forest on four images", f"{d}-e", SEEDS, "forest"),
+            ("Array, ideal reading", f"{d}-full", SEEDS, "ideal"),
+            ("Isolated traps", "uncoupled-576", SEEDS, "uncoupled-576"),
+            ("ESN, read like the array", "esn-image-576", SEEDS, "esn-image-576"),
+            ("ESN, clean states", "esn-576", SEEDS, "esn-576"),
             ("Raw beat, ridge", None, (), "raw-ridge"),
             ("Raw beat, forest", None, (), "raw-rf"),
             ("Raw beat, HistGB", None, (), "raw-histgb")):
@@ -370,8 +370,8 @@ def ablations_table(r: Results, d: str) -> str:
                                ("No feedback delay", "delay", 0),
                                ("Beat samples shuffled", "scramble", True)):
         rows.append([label, score(stem, False, value), score(stem, True, value)])
-    rows.append(["Linear imitation$^{a}$", pm(r.seeds(f"P6-{d}-surrogate-c", SEEDS[:3])),
-                 pm(r.seeds(f"P6-{d}-surrogate-e", SEEDS[:3]))])
+    rows.append(["Linear imitation$^{a}$", pm(r.seeds(f"P6-{d}-surrogate-c")),
+                 pm(r.seeds(f"P6-{d}-surrogate-e"))])
     rows.append(["MIDRULE"])
     for label, name in (("Random tanh features$^{b}$", "random_features"),
                         ("Leaky integrators$^{b}$", "fading_memories")):
@@ -381,7 +381,7 @@ def ablations_table(r: Results, d: str) -> str:
                  "Ablations and controls, read by ridge on two images and by the random forest "
                  "on four (balanced task; macro F1, mean $\\pm$ SD over the reporting seeds). "
                  "Each ablation changes the design without retuning it. $^{a}$A ridge "
-                 "regression from the beat to the array's features, on three of the seeds. "
+                 "regression from the beat to the array's features. "
                  "$^{b}$At standard settings (576 units; 24 time constants), untuned, so that "
                  "both readouts read the same features.",
                  "@{}lcc@{}", ["Array or control", "Ridge, 2 images", "Random forest, 4 images"],
