@@ -2,8 +2,8 @@
 
 Writes ``si_tables.tex`` (one ``table`` environment per table, labels ``tab:si-*``) for the
 SI to ``\\input``: every metric on the three tasks, the headline by seed and fold, per-class
-F1, every readout on two and four images, the robustness and heterogeneity studies, the
-array size and the share of colonies that do not oscillate.
+F1, every readout on two and four images, the array size, and the robustness and
+heterogeneity studies with the colonies that stop oscillating.
 
     python scripts/paper/si_tables.py --out <folder> --flat-share <flat_share.csv>
 """
@@ -16,13 +16,16 @@ from pathlib import Path
 
 import numpy as np
 from paper_figures import (
+    FOREST,
     HEADLINE,
+    ONE,
     RAW,
     READOUTS,
     SEEDS,
     Results,
     flat_shares,
     ideal_traps,
+    image_times,
     mean_sd,
     readout,
     traps,
@@ -47,19 +50,26 @@ def pm(values) -> str:
     return f"${m:.3f} \\pm {s:.3f}$" if len(values) > 1 else f"{m:.3f}"
 
 
+def tabular(spec: str, header: list[str], rows: list[list[str]]) -> list[str]:
+    lines = [f"\\begin{{tabular}}{{{spec}}}", r"    \toprule",
+             "    " + " & ".join(header) + r" \\", r"    \midrule"]
+    for row in rows:
+        lines.append(r"    \midrule" if row == ["MIDRULE"] else "    " + " & ".join(row) + r" \\")
+    return lines + [r"    \bottomrule", r"\end{tabular}"]
+
+
 def table(label: str, caption: str, spec: str, header: list[str], rows: list[list[str]],
           size: str = "small", colsep: str | None = None) -> str:
     lines = [r"\begin{table}[H]", r"    \centering", f"    \\{size}"]
     if colsep:
         lines.append(f"    \\setlength{{\\tabcolsep}}{{{colsep}}}")
-    lines += [f"    \\caption{{{caption}}}", f"    \\label{{{label}}}",
-              f"    \\begin{{tabular}}{{{spec}}}", r"        \toprule",
-              "        " + " & ".join(header) + r" \\", r"        \midrule"]
-    for row in rows:
-        lines.append(r"        \midrule" if row == ["MIDRULE"] else
-                     "        " + " & ".join(row) + r" \\")
-    lines += [r"        \bottomrule", r"    \end{tabular}", r"\end{table}", ""]
-    return "\n".join(lines)
+    lines += [f"    \\caption{{{caption}}}", f"    \\label{{{label}}}"]
+    lines += ["    " + line for line in tabular(spec, header, rows)]
+    return "\n".join(lines + [r"\end{table}", ""])
+
+
+def numeric(points: dict) -> list:
+    return sorted(k for k in points if k is not None and not isinstance(k, str))
 
 
 def metrics_table(r: Results, d: str) -> str:
@@ -132,7 +142,9 @@ def per_class_table(r: Results, d: str) -> str:
     return table("tab:si-per-class",
                  "F1-score of each class, from the confusion matrix pooled over the folds; for "
                  "the array, the mean $\\pm$ SD over the reporting seeds. N: Normal; S: "
-                 "Supraventricular ectopic; V: Ventricular ectopic; F: Fusion; Q: Unknown.",
+                 "Supraventricular ectopic; V: Ventricular ectopic; F: Fusion; Q: Unknown. "
+                 "Figure~\\ref{fig:confusion-tasks} shows the confusion matrices of the "
+                 "design.",
                  "@{}lccccc@{}", ["Readout", "", "", "", "", ""], rows, "footnotesize")
 
 
@@ -149,93 +161,121 @@ def readouts_table(r: Results, d: str) -> str:
                  rows)
 
 
-def sweeps(r: Results, d: str) -> dict[str, list[tuple[str, dict, callable]]]:
-    """The robustness and heterogeneity studies in three groups: title, scores by value,
-    value label."""
-    def pct(v):
-        return f"{100 * v:g}"
+SWEEP = ("balanced task, ridge on two images; macro F1, mean $\\pm$ SD over the reporting "
+         "seeds")
 
-    def image(v):
-        return "187 only" if v == "final" else str(v).split(":")[1].split(",")[0]
 
-    imaging = []
-    for agg, name in (("final", "one image"), (HEADLINE, "two images"),
-                      ("images:4", "four images")):
-        imaging.append((f"Measurement noise (\\%), {name}",
-                        r.sweep(f"P3-{d}-noise", "features.measurement_noise",
-                                features__aggregation=agg), pct))
-    imaging += [
-        ("Calibration error (\\%), with the reference",
-         r.sweep(f"P3-{d}-calibration", "features.calibration_error",
-                 features__aggregation=HEADLINE), pct),
-        ("Calibration error (\\%), without the reference",
-         r.sweep(f"P3-{d}-calibration-noref", "features.calibration_error",
-                 features__aggregation=HEADLINE), pct),
-        ("Earlier image (min; later at 187\\,min)",
-         r.sweep(f"P3-{d}-image-time", "features.aggregation"), image),
-    ]
-    start = [
-        ("Reset error (CV)", r.sweep(f"P3-{d}-reset", "reservoir.params.reset_noise"),
-         lambda v: f"{v:g}"),
-        ("Warm-up (min)", r.sweep(f"P3-{d}-warmup", "reservoir.params.warmup"), str),
-        ("Inducer during warm-up", r.sweep(f"P3-{d}-warmup-input",
-                                           "reservoir.params.warmup_input"),
-         lambda v: {"zero": "None", "rest": "Rest"}.get(v, v)),
-        ("Inducer strengths between traps (levels)",
-         r.sweep(f"P3-{d}-input-levels", "reservoir.params.input_levels"),
-         lambda v: "Cont." if v == "continuous" else str(v)),
-        ("Random layout, exchange range (spacings)",
-         r.sweep(f"P6-{d}-gaussian", "reservoir.params.interaction_diameters"),
-         lambda v: f"{v:g}"),
-    ]
+def imaging_tables(r: Results, d: str) -> str:
+    noise = [r.sweep(f"P3-{d}-noise", "features.measurement_noise", features__aggregation=agg)
+             for agg in (ONE, HEADLINE, FOREST)]
+    levels = sorted(set().union(*(numeric(p) for p in noise)))
+    noise_rows = [[f"{100 * v:g}"] + [pm(p.get(v)) for p in noise] for v in levels]
+    times, final = image_times(r, d)
+    time_rows = [[str(t), pm(times[t])] for t in sorted(times)]
+    time_rows += [["MIDRULE"], ["187 only", pm(final)]]
+    calibration = [r.sweep(f"P3-{d}-calibration{sfx}", "features.calibration_error",
+                           features__aggregation=HEADLINE) for sfx in ("", "-noref")]
+    errors = sorted(set().union(*(numeric(p) for p in calibration)))
+    calibration_rows = [[f"{100 * v:g}"] + [pm(p.get(v)) for p in calibration] for v in errors]
+    return "\n".join([
+        table("tab:si-noise",
+              "Measurement noise of each image, read by ridge from one image (187\\,min), "
+              "two (the design) or four (balanced task; macro F1, mean $\\pm$ SD over the "
+              "reporting seeds).",
+              "@{}cccc@{}", ["Noise (\\%)", "One image", "Two images", "Four images"],
+              noise_rows),
+        table("tab:si-image-time",
+              f"Time of the earlier image, with the later at 187\\,min, and the image at "
+              f"187\\,min alone ({SWEEP}; Figure~\\ref{{fig:settings}}G).",
+              "@{}lc@{}", ["Earlier image (min)", "Macro F1"], time_rows),
+        table("tab:si-calibration",
+              "Calibration error: each trap's gain in the test beats multiplied by "
+              "$1 + c\\,\\varepsilon$, unknown to the readout, with and without the "
+              f"reference image ({SWEEP}).",
+              "@{}ccc@{}", ["$c$ (\\%)", "Reference", "No reference"], calibration_rows),
+    ])
+
+
+def start_tables(r: Results, d: str) -> str:
+    reset = r.sweep(f"P3-{d}-reset", "reservoir.params.reset_noise")
+    warmup = r.sweep(f"P3-{d}-warmup", "reservoir.params.warmup")
+    rest = r.sweep(f"P3-{d}-warmup-input", "reservoir.params.warmup_input").get("rest")
+    warmup_rows = [[f"{v:,}", pm(warmup[v])] for v in numeric(warmup)]
+    warmup_rows += [["MIDRULE"], ["900, inducer at rest", pm(rest)]]
+    levels = r.sweep(f"P3-{d}-input-levels", "reservoir.params.input_levels")
+    level_rows = [["1 (equal)" if v == 1 else str(v), pm(levels[v])] for v in numeric(levels)]
+    level_rows += [["Continuous", pm(levels.get("continuous"))]]
+    induced = r.grid("extra-576-connectivity", "reservoir.params.input_connectivity",
+                     "reservoir.params.coupling") if d == "p576" else {}
+    shares = sorted({k[0] for k in induced})
+    induced_rows = [[f"{100 * s:g}"] + [pm(list(induced.get((s, c), {}).values()))
+                                        for c in ("diffusion", "none")] for s in shares]
+    layout = r.sweep(f"P6-{d}-gaussian", "reservoir.params.interaction_diameters")
+    layout_rows = [[f"{v:g}", pm(layout[v])] for v in numeric(layout)]
+    layout_rows += [["MIDRULE"], ["Grid (design)", pm(r.seeds(f"P5-balanced-{d}-headline"))]]
+    return "\n".join([
+        table("tab:si-reset",
+              "Reset error: the starting state of every beat perturbed with this coefficient "
+              f"of variation ({SWEEP}; Figure~\\ref{{fig:settings}}A).",
+              "@{}cc@{}", ["Reset error (CV)", "Macro F1"],
+              [[f"{v:g}", pm(reset[v])] for v in numeric(reset)]),
+        table("tab:si-warmup",
+              "Length of the warm-up, without inducer, and the design's warm-up at the "
+              f"resting inducer level ({SWEEP}; Figure~\\ref{{fig:settings}}B,C).",
+              "@{}lc@{}", ["Warm-up (min)", "Macro F1"], warmup_rows),
+        table("tab:si-levels",
+              "Inducer strengths between traps: each trap's input gain scaled to one of 2, 3 "
+              f"or 5 levels, or to a continuous range ({SWEEP}; "
+              "Figure~\\ref{fig:settings}D).",
+              "@{}lc@{}", ["Levels", "Macro F1"], level_rows),
+        table("tab:si-induced",
+              "Share of traps that receive the inducer, with the exchange of AHL and in "
+              f"isolated traps at the design's settings ({SWEEP}).",
+              "@{}ccc@{}", ["Traps induced (\\%)", "Exchange", "Isolated traps"],
+              induced_rows),
+        table("tab:si-layout",
+              "Random layout of the traps, with an exchange that decays with distance, against "
+              f"its range in trap spacings, and the grid of the design ({SWEEP}; "
+              "Figure~\\ref{fig:settings}E).",
+              "@{}lc@{}", ["Exchange range", "Macro F1"], layout_rows),
+    ])
+
+
+def heterogeneity_tables(r: Results, d: str, flat_path: Path | None) -> str:
     kinetic = r.sweep(f"P3-{d}-heterogeneity", "reservoir.params.param_heterogeneity_cv")
     kinetic.update(r.sweep(f"P3-{d}-heterogeneity-64", "reservoir.params.param_heterogeneity_cv"))
-    heterogeneity = [
-        ("Kinetic variation (CV)", kinetic, lambda v: f"{v:.2g}"),
-        ("Cell density between traps (CV)",
-         r.sweep(f"P3-{d}-density", "reservoir.params.heterogeneity_density_cv"),
-         lambda v: f"{v:g}"),
-        ("Washout between traps (CV)",
-         r.sweep(f"P3-{d}-dilution", "reservoir.params.heterogeneity_dilution_cv"),
-         lambda v: f"{v:g}"),
-    ]
-    return {"imaging": imaging, "start": start, "heterogeneity": heterogeneity}
+    flat = {round(cv, 4): v for cv, v in flat_shares(flat_path, d).items()}
 
+    def colonies(cv):
+        counts = [round(576 * share / 100) for share in flat.get(round(cv, 4), [])]
+        if not counts:
+            return "--"
+        if not any(counts):
+            return "0"
+        mean = np.mean(counts)
+        return f"{mean:.1f} ({min(counts)}--{max(counts)})" if mean < 10 else \
+            f"{mean:.0f} ({min(counts)}--{max(counts)})"
 
-def sweep_block(title: str, points: dict, label) -> list[str]:
-    keys = sorted((k for k in points if k is not None),
-                  key=lambda k: (isinstance(k, str) and k != "final", str(k) if
-                                 isinstance(k, str) else k))
-    if not keys:
-        return []
-    means = [mean_sd(points[k]) for k in keys]
-    n = len(keys)
-    return [
-        r"\begin{tabular}{@{}l" + "c" * n + "@{}}",
-        rf"\multicolumn{{{n + 1}}}{{@{{}}l}}{{\textit{{{title}}}}} \\",
-        "Value & " + " & ".join(label(k) for k in keys) + r" \\",
-        "Macro F1 & " + " & ".join(f"{m:.3f}" for m, _ in means) + r" \\",
-        "SD & " + " & ".join(f"{s:.3f}" for _, s in means) + r" \\",
-        r"\end{tabular}", r"\par\medskip", ""]
-
-
-def robustness_tables(r: Results, d: str) -> str:
-    captions = {
-        "imaging": "Macro F1 against how the array is imaged (balanced task, ridge on two "
-                   "images unless stated; mean and SD over the reporting seeds).",
-        "start": "Macro F1 against how each beat starts, the inducer strengths and the "
-                 "layout of the traps (balanced task, ridge on two images; mean and SD over "
-                 "the reporting seeds).",
-        "heterogeneity": "Macro F1 against the variation between colonies (balanced task, "
-                         "ridge on two images; mean and SD over the reporting seeds)."}
-    out = []
-    for group, studies in sweeps(r, d).items():
-        blocks = [line for title, points, label in studies
-                  for line in sweep_block(title, points, label)]
-        out += [r"\begin{table}[H]", r"    \raggedright", r"    \footnotesize",
-                f"    \\caption{{{captions[group]}}}",
-                f"    \\label{{tab:si-robustness-{group}}}", *blocks, r"\end{table}", ""]
-    return "\n".join(out)
+    kinetic_rows = [[f"{v:.2g}", pm(kinetic[v]), colonies(v)] for v in numeric(kinetic)]
+    spreads = [r.sweep(f"P3-{d}-{key}", f"reservoir.params.heterogeneity_{key}_cv")
+               for key in ("density", "dilution")]
+    cvs = sorted(set().union(*(numeric(p) for p in spreads)))
+    spread_rows = [[f"{v:g}"] + [pm(p.get(v)) for p in spreads] for v in cvs]
+    return "\n".join([
+        table("tab:si-kinetic",
+              "Kinetic variation between colonies: macro F1 (balanced task, ridge on two "
+              "images; mean $\\pm$ SD over the reporting seeds) and the colonies, of 576, that "
+              "no longer oscillate after the warm-up without inducer (mean and range over the "
+              "seeds; a colony is flat when its LuxI varies by less than a factor of 1.5 over "
+              "200\\,min). From a CV of 0.3, the array is integrated with 64 steps per minute.",
+              "@{}ccc@{}", ["Kinetic variation (CV)", "Macro F1", "Flat colonies (of 576)"],
+              kinetic_rows),
+        table("tab:si-trap-variation",
+              "Variation of the cell density and of the washout from trap to trap, each "
+              f"drawn once per array ({SWEEP}).",
+              "@{}ccc@{}", ["Variation between traps (CV)", "Cell density", "Washout"],
+              spread_rows),
+    ])
 
 
 def traps_table(r: Results, d: str) -> str:
@@ -246,20 +286,11 @@ def traps_table(r: Results, d: str) -> str:
                  "Macro F1 against the number of traps (balanced task; mean $\\pm$ SD over the "
                  "reporting seeds): ridge on two images (the design), the random forest on "
                  "four images, and ridge on the ideal reading (the mean of the full observed "
-                 "state over the beat, without noise).",
+                 "state over the beat, without noise). Figure~\\ref{fig:settings}F compares "
+                 "one, two and four images up to 2,500 traps; Table~\\ref{tab:runtime} gives "
+                 "the cost of the larger arrays.",
                  "@{}rccc@{}", ["Traps $N$", "Ridge, 2 images", "Forest, 4 images",
                                 "Ideal reading"], rows)
-
-
-def flat_table(path: Path | None, d: str) -> str:
-    rows = [[f"{cv:g}", f"${np.mean(v):.1f} \\pm {np.std(v, ddof=1):.1f}$"]
-            for cv, v in sorted(flat_shares(path, d).items())]
-    return table("tab:si-flat",
-                 "Share of colonies that do not oscillate (\\%) against the kinetic variation, "
-                 "after the warm-up and without inducer (mean $\\pm$ SD over the reporting "
-                 "seeds; a colony is flat when its LuxI varies by less than a factor of 1.5 "
-                 "over 200\\,min).",
-                 "@{}cc@{}", ["Kinetic variation (CV)", "Flat colonies (\\%)"], rows)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -274,8 +305,8 @@ def main(argv: list[str] | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     text = "\n".join(["% Additional results, from scripts/paper/si_tables.py",
                       metrics_table(r, d), folds_table(r, d), per_class_table(r, d),
-                      readouts_table(r, d), traps_table(r, d), robustness_tables(r, d),
-                      flat_table(args.flat_share, d)])
+                      readouts_table(r, d), traps_table(r, d), imaging_tables(r, d),
+                      start_tables(r, d), heterogeneity_tables(r, d, args.flat_share)])
     (out / "si_tables.tex").write_text(text)
     print(out / "si_tables.tex")
     if r.missing:
