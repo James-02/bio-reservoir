@@ -384,7 +384,7 @@ def draw_circuit(ax):
     makes LuxI (AHL synthase), AiiA (degrades AHL) and the GFP reporter (not modelled); AHL
     crosses the cell membranes (rate D) to the trap's medium (He), where the inducer adds to
     it."""
-    from matplotlib.patches import Ellipse
+    from matplotlib.patches import Arc, Ellipse
 
     ax.set_xlim(-0.3, 11.4)
     ax.set_ylim(-0.4, 9.0)
@@ -425,13 +425,24 @@ def draw_circuit(ax):
             ax.text(x, y, text, ha="center", va="center", rotation=angle,
                     rotation_mode="anchor", fontsize=SMALL)
 
+    def bracket(key, angle, colour, span=56.0, gap=0.16):
+        """An inhibition bracket: an arc around node ``key``, centred at ``angle`` (degrees);
+        returns the point on it where the inhibiting arrow ends."""
+        centre = nodes[key][0]
+        a, b = 0.75 + gap, 0.9 + gap
+        ax.add_patch(Arc(centre, 2 * a, 2 * b, theta1=angle - span / 2,
+                         theta2=angle + span / 2, color=colour, lw=3.0))
+        phi = np.radians(angle)
+        r = a * b / np.hypot(b * np.cos(phi), a * np.sin(phi))
+        return centre[0] + r * np.cos(phi), centre[1] + r * np.sin(phi)
+
     arrow((5.05, 4.2), (6.7, 4.2), "#009E73", ls=":", text="Delayed\n(τ)", offset=0.58)
     for target in ((9.04, 5.95), (9.33, 4.2), (9.04, 2.45)):
         arrow((7.7, 4.2), target, "#555555")
     ax.text(8.75, 5.2, "Promotes", ha="left", va="center", fontsize=SMALL)
     arrow((8.83, 6.3), (4.51, 5.05), "#009E73", rad=0.25, text="Synthesizes", offset=-0.4)
-    arrow((8.83, 2.1), (4.51, 3.35), "#d62728", style="-[", rad=-0.25, text="Degrades",
-          offset=0.4)
+    arrow((8.83, 2.1), bracket("Hi", -60.0, "#d62728"), "#d62728", style="-", rad=-0.25,
+          text="Degrades", offset=0.4)
     arrow((1.55, 4.55), (3.45, 4.55), "#1f77b4")
     arrow((3.45, 3.85), (1.55, 3.85), "#1f77b4")
     ax.text(2.15, 4.9, "Influx", ha="center", va="center", fontsize=SMALL)
