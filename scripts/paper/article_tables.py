@@ -33,7 +33,8 @@ def readouts_table(r: Results, d: str) -> str:
 def tasks_table(r: Results, d: str) -> str:
     def test(key):
         found = test_split(r, key)
-        return "--" if found is None else f"{found[0]:.3f} ({found[1]:.3f}--{found[2]:.3f})"
+        return "--" if found is None else \
+            f"\\shortstack{{{found[0]:.3f}\\\\{{\\scriptsize {found[1]:.3f}--{found[2]:.3f}}}}}"
 
     rows = []
     for label, run, split, seeds, key in (
@@ -60,7 +61,7 @@ def tasks_table(r: Results, d: str) -> str:
                  "seed, with the bootstrap 95\\% confidence interval. Every held-out score is "
                  "from a readout trained on the whole balanced pool (Table~\\ref{S-tab:dataset}).",
                  "@{}lcccccc@{}", ["Model", "Balanced", "Unbalanced", "Binary", "Validation 1",
-                                   "Validation 2", "Test"], rows, "footnotesize", colsep="3pt")
+                                   "Validation 2", "Test"], rows, "footnotesize", colsep="2pt")
 
 
 def mechanism_table(r: Results, d: str) -> str:
