@@ -178,7 +178,7 @@ def heldout_table(r: Results, d: str) -> str:
     return table("tab:si-heldout",
                  "Held-out splits (four classes, N, S, V and Q; the readout trained on the "
                  "whole balanced pool): macro F1 on the two validation splits (mean $\\pm$ SD "
-                 "over three reservoir seeds for the array, one seed for the comparisons) and "
+                 "over the five reporting seeds) and "
                  "on the sealed test split (one seed, scored once), with its bootstrap 95\\% "
                  "confidence interval (2,000 resamples of the 1,480 beats). The raw-beat "
                  "readouts were not run on the validation splits.",
