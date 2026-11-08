@@ -6,7 +6,8 @@ design studies (one ``table`` environment per table, labels ``tab:si-*``):
 ``si_comparisons.tex`` (comparisons by seed, ablations and controls), ``si_array.tex``
 (array size, imaging, start and inducer, layout) and ``si_heterogeneity.tex``.
 
-    python scripts/paper/si_tables.py --out <folder> --flat-share <flat_share.csv>
+    python scripts/paper/si_tables.py --out <report>/tables/supplementary \
+        --flat-share <flat_share.csv>
 """
 
 from __future__ import annotations
@@ -29,7 +30,6 @@ from paper_figures import (
     ideal_traps,
     image_times,
     mean_sd,
-    paired,
     readout,
     traps,
     untuned_control,
@@ -54,8 +54,10 @@ def pm(values) -> str:
     return f"${m:.3f} \\pm {s:.3f}$" if len(values) > 1 else f"{m:.3f}"
 
 
-def tabular(spec: str, header: list[str], rows: list[list[str]]) -> list[str]:
-    lines = [f"\\begin{{tabular}}{{{spec}}}", r"    \toprule",
+def tabular(spec: str, header: list[str], rows: list[list[str]],
+            top: list[str] = ()) -> list[str]:
+    """``top``: header lines above the column names, e.g. a spanning label and its rule."""
+    lines = [f"\\begin{{tabular}}{{{spec}}}", r"    \toprule", *("    " + t for t in top),
              "    " + " & ".join(header) + r" \\", r"    \midrule"]
     for row in rows:
         lines.append(r"    \midrule" if row == ["MIDRULE"] else "    " + " & ".join(row) + r" \\")
@@ -63,12 +65,12 @@ def tabular(spec: str, header: list[str], rows: list[list[str]]) -> list[str]:
 
 
 def table(label: str, caption: str, spec: str, header: list[str], rows: list[list[str]],
-          size: str = "small", colsep: str | None = None) -> str:
+          size: str = "small", colsep: str | None = None, top: list[str] = ()) -> str:
     lines = [r"\begin{table}[H]", r"    \centering", f"    \\{size}"]
     if colsep:
         lines.append(f"    \\setlength{{\\tabcolsep}}{{{colsep}}}")
     lines += [f"    \\caption{{{caption}}}", f"    \\label{{{label}}}"]
-    lines += ["    " + line for line in tabular(spec, header, rows)]
+    lines += ["    " + line for line in tabular(spec, header, rows, top)]
     return "\n".join(lines + [r"\end{table}", ""])
 
 
@@ -149,7 +151,8 @@ def per_class_table(r: Results, d: str) -> str:
                  "Supraventricular ectopic; V: Ventricular ectopic; F: Fusion; Q: Unknown. "
                  "Figure~\\ref{fig:confusion-tasks} shows the confusion matrices of the "
                  "design.",
-                 "@{}lccccc@{}", ["Readout", "", "", "", "", ""], rows, "footnotesize")
+                 "@{}lccccc@{}", ["Readout", r"\multicolumn{5}{c}{F1-score of each class}"],
+                 rows, "footnotesize")
 
 
 def readouts_table(r: Results, d: str) -> str:
@@ -298,63 +301,60 @@ def traps_table(r: Results, d: str) -> str:
 
 
 def comparisons_table(r: Results, d: str) -> str:
-    headline = r.by_seed(f"P5-balanced-{d}-headline")
-    rows = [["Array (design)"] + [f"{headline[s]:.3f}" for s in SEEDS] + ["--"], ["MIDRULE"]]
+    rows = []
     for label, values in (
+            ("Array (design)", r.by_seed(f"P5-balanced-{d}-headline")),
             ("Isolated traps", r.by_seed("P5-balanced-uncoupled-576")),
             ("ESN, read like the array", r.by_seed("P5-balanced-esn-image-576")),
             ("ESN, clean states", r.by_seed("P5-balanced-esn-576")),
             ("Random tanh features", r.report(CONTROLS["random_features"])),
             ("Leaky integrators", r.report(CONTROLS["fading_memories"]))):
         rows.append([label] + [f"{values[s]:.3f}" if s in values else "--" for s in SEEDS]
-                    + [pm(paired(headline, values))])
+                    + [pm(list(values.values()))])
+        if len(rows) == 1:
+            rows.append(["MIDRULE"])
     return table("tab:si-comparisons",
-                 "The design and the comparisons by reservoir seed, each tuned with the same "
-                 "budget (Table~\\ref{tab:selection}) and read by ridge (balanced task, macro "
-                 "F1). The last column is the design minus the comparison, seed by seed (mean "
-                 "$\\pm$ SD; positive: the design is better). The leaky integrators have no "
-                 "random parts, so their score does not change with the seed.",
-                 "@{}lcccccc@{}", ["Model"] + [str(s) for s in SEEDS] + ["Design minus"],
-                 rows, "footnotesize")
+                 "Macro F1 of the design and of each comparison on each reservoir seed "
+                 "(balanced task; each model tuned with the same budget, "
+                 "Table~\\ref{tab:selection}, and read by ridge). The folds are the same for "
+                 "every model, so the models can be compared seed by seed. The leaky "
+                 "integrators have no random parts, so their score does not change with the "
+                 "seed.",
+                 "@{}lcccccc@{}", ["Model"] + [str(s) for s in SEEDS] + ["Mean $\\pm$ SD"],
+                 rows, "footnotesize",
+                 top=[r"& \multicolumn{5}{c}{Reservoir seed} & \\", r"\cmidrule(lr){2-6}"])
 
 
 def ablations_table(r: Results, d: str) -> str:
-    def grid(stem, forest):
+    def score(stem, forest, value):
         key = {"coupling": "reservoir.params.coupling", "delay": "reservoir.params.delay",
                "scramble": "task.scramble"}[stem]
-        return {k[0]: v for k, v in
-                r.grid(f"P6-{d}-ablation-{stem}{'-forest' if forest else ''}", key).items()}
-
-    def cells(intact, changed):
-        return [pm(list(changed.values())), pm(paired(intact, changed))]
+        study = r.grid(f"P6-{d}-ablation-{stem}{'-forest' if forest else ''}", key)
+        return pm(list(study.get((value,), {}).values()))
 
     ridge, forest = r.by_seed(f"P5-balanced-{d}-headline"), r.by_seed(f"P5-balanced-{d}-forest")
-    rows = [["Array (design)", pm(list(ridge.values())), "--", pm(list(forest.values())), "--"],
+    rows = [["Array (design)", pm(list(ridge.values())), pm(list(forest.values()))],
             ["MIDRULE"]]
-    for label, stem, on, off in (("No AHL exchange", "coupling", "diffusion", "none"),
-                                 ("No feedback delay", "delay", 10, 0),
-                                 ("Beat samples shuffled", "scramble", False, True)):
-        a, b = grid(stem, False), grid(stem, True)
-        rows.append([label] + cells(a.get(on, {}), a.get(off, {}))
-                    + cells(b.get(on, {}), b.get(off, {})))
-    rows.append(["Linear imitation$^{a}$"] + cells(ridge, r.by_seed(f"P6-{d}-surrogate-c"))
-                + cells(forest, r.by_seed(f"P6-{d}-surrogate-e")))
+    for label, stem, value in (("No AHL exchange", "coupling", "none"),
+                               ("No feedback delay", "delay", 0),
+                               ("Beat samples shuffled", "scramble", True)):
+        rows.append([label, score(stem, False, value), score(stem, True, value)])
+    rows.append(["Linear imitation$^{a}$", pm(r.seeds(f"P6-{d}-surrogate-c", SEEDS[:3])),
+                 pm(r.seeds(f"P6-{d}-surrogate-e", SEEDS[:3]))])
     rows.append(["MIDRULE"])
     for label, name in (("Random tanh features$^{b}$", "random_features"),
                         ("Leaky integrators$^{b}$", "fading_memories")):
-        rows.append([label, pm(untuned_control(r, name)), "--",
-                     pm(untuned_control(r, name, True)), "--"])
-    rows.append(["Raw beat", pm(r.f1(RAW["ridge"])), "--", pm(r.f1(RAW["rf"])), "--"])
+        rows.append([label, pm(untuned_control(r, name)), pm(untuned_control(r, name, True))])
+    rows.append(["Raw beat", pm(r.f1(RAW["ridge"])), pm(r.f1(RAW["rf"]))])
     return table("tab:si-ablations",
                  "Ablations and controls, read by ridge on two images and by the random forest "
-                 "on four (balanced task, macro F1, mean $\\pm$ SD over the reporting seeds). "
-                 "Each ablation changes the design without retuning it; the loss is the "
-                 "design minus the ablation, seed by seed. $^{a}$A ridge regression from the "
-                 "beat to the array's features, on three of the seeds. $^{b}$At standard "
-                 "settings (576 units; 24 time constants), untuned, so that both readouts "
-                 "read the same features.",
-                 "@{}lcccc@{}", ["Array or control", "Ridge", "Ridge loss", "Forest",
-                                 "Forest loss"], rows, "footnotesize")
+                 "on four (balanced task; macro F1, mean $\\pm$ SD over the reporting seeds). "
+                 "Each ablation changes the design without retuning it. $^{a}$A ridge "
+                 "regression from the beat to the array's features, on three of the seeds. "
+                 "$^{b}$At standard settings (576 units; 24 time constants), untuned, so that "
+                 "both readouts read the same features.",
+                 "@{}lcc@{}", ["Array or control", "Ridge, 2 images", "Random forest, 4 images"],
+                 rows)
 
 
 def main(argv: list[str] | None = None) -> int:
