@@ -180,8 +180,8 @@ def heldout_table(r: Results, d: str) -> str:
                  "whole balanced pool): macro F1 on the two validation splits (mean $\\pm$ SD "
                  "over the five reporting seeds) and "
                  "on the sealed test split (one seed, scored once), with its bootstrap 95\\% "
-                 "confidence interval (2,000 resamples of the 1,480 beats). The raw-beat "
-                 "readouts were not run on the validation splits.",
+                 "confidence interval (2,000 resamples of the 1,480 beats). The ideal reading "
+                 "and the raw-beat readouts were not run on the validation splits (--).",
                  "@{}lcccc@{}", ["Model", "Validation 1", "Validation 2", "Test",
                                  "Test, 95\\% CI"], rows, "footnotesize")
 
