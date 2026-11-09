@@ -816,8 +816,8 @@ def figure_confusion_tasks(r: Results, d: str):
     image = None
     for i, (title, runs) in enumerate((
             ("Balanced", [f"P5-balanced-{d}-headline-s{s}" for s in SEEDS]),
-            ("Unbalanced", [f"P5-unbalanced-{d}-headline-s{SEEDS[0]}"]),
-            ("Binary", [f"P5-binary-{d}-headline-s{SEEDS[0]}"]))):
+            ("Unbalanced", [f"P5-unbalanced-{d}-headline-s{s}" for s in SEEDS]),
+            ("Binary", [f"P5-binary-{d}-headline-s{s}" for s in SEEDS]))):
         ax = fig.add_subplot(grid[i])
         matrices = [m for m in (r.confusion(run) for run in runs) if m is not None]
         if matrices:
