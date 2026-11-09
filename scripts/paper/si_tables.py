@@ -226,8 +226,8 @@ def imaging_tables(r: Results, d: str) -> str:
               "@{}cccc@{}", ["Noise (\\%)", "One image", "Two images", "Four images"],
               noise_rows),
         table("tab:si-image-time",
-              f"Time of the earlier image, with the later at 187\\,min, and the image at "
-              f"187\\,min alone ({SWEEP}; Figure~\\ref{{fig:settings}}G).",
+              f"Time of the earlier image, with the later at 187\\,min, and in the last row "
+              f"one image at 187\\,min alone ({SWEEP}; Figure~\\ref{{fig:settings}}G).",
               "@{}lc@{}", ["Earlier image (min)", "Macro F1"], time_rows),
         table("tab:si-calibration",
               "Calibration error: each trap's gain in the test beats multiplied by "
@@ -355,7 +355,8 @@ def start_table(low: Path, ahl: Path) -> str:
                  "low random concentrations of the design (low start) and every colony's "
                  f"internal and external AHL at {float(level):g} (AHL start). Top, the colonies "
                  "that oscillate after the warm-up (mean over the reporting seeds; a colony "
-                 "oscillates when its LuxI varies at least 1.5-fold over 200\\,min); bottom, "
+                 "oscillates when its LuxI varies at least 1.5-fold over the last 200 of "
+                 "300\\,min after the warm-up); bottom, "
                  "the median period of the oscillating colonies from the AHL start (--, no "
                  "colony oscillates). The map of Figure~2D and the design search use the low "
                  "start.",
