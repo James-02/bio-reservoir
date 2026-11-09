@@ -7,8 +7,14 @@ the warm-up drive for 300 steps, as ``flat_share.py`` does. A colony oscillates 
 trace over the last 200 steps has max / min of at least 1.5; its period is the median spacing
 of its LuxI peaks (one step is one minute).
 
+With ``--start-ahl H``, every colony starts the warm-up with its internal and external AHL
+at ``H`` (the whole delay history) instead of the low random concentrations of the design,
+to test whether the colonies' oscillation depends on where they start (Table S of the start).
+
     python scripts/paper/oscillation_map.py results/figures/paper/oscillation_map.csv \\
         --design p576 --processes N
+    python scripts/paper/oscillation_map.py results/figures/paper/oscillation_start.csv \\
+        --design p576 --start-ahl 0.1 --flows 0.3,0.4,0.6,0.9,1.2,1.5,2 --processes N
 
 Writes one CSV row per flow, density and seed; ``paper_figures.py --oscillation`` reads it.
 """
@@ -28,20 +34,33 @@ SEEDS = (6348, 6349, 6350, 6351, 6352)
 STEPS, WINDOW, FLAT_RATIO = 300, 200, 1.5
 
 
-def one(job: tuple[str, float, float, int]) -> dict:
+def one(job: tuple[str, float, float, int, float | None]) -> dict:
     import reservoirpy
     from scipy.signal import find_peaks
 
     from bioreservoir.diagnostics import STATE_NAMES
+    from bioreservoir.node import BioReservoir
     from optimization.reservoirs import build_reservoir
     from training.run import load_config, resolve
 
     reservoirpy.verbosity(0)
-    design, flow, density, seed = job
+    design, flow, density, seed, start_ahl = job
     cfg = resolve(load_config(Path("experiments/v0.2/designs") / f"{design}.yaml"))
     params = dict(cfg["reservoir"]["params"], washout_rate=flow, cell_density=density,
                   reservoir_type="bioreservoir")
-    node, _ = build_reservoir(params, seed=seed)
+    draw = BioReservoir._initialize_states
+    if start_ahl is not None:  # the warm-up runs as the node is built, from these states
+
+        def start_high(node):
+            states = draw(node)
+            states[:, :, 2:4] = start_ahl
+            return states
+
+        BioReservoir._initialize_states = start_high
+    try:
+        node, _ = build_reservoir(params, seed=seed)
+    finally:
+        BioReservoir._initialize_states = draw
     node.initialize(np.zeros((1, 1)))
     work = node.copy()
     work.states = work._warmup_states.copy()
@@ -59,6 +78,7 @@ def one(job: tuple[str, float, float, int]) -> dict:
         if len(peaks) >= 2:
             periods.append(np.median(np.diff(peaks)))
     return {"design": design, "flow": flow, "density": density, "seed": seed,
+            "start_ahl": "" if start_ahl is None else start_ahl,
             "units": trace.shape[1], "oscillating": float(np.mean(oscillating)),
             "period": float(np.median(periods)) if periods else float("nan"),
             "ratio": float(np.nanmedian(ratio))}
@@ -70,8 +90,14 @@ def main() -> None:
     parser.add_argument("--design", default="p576",
                         help="Design file in experiments/v0.2/designs/ (default: %(default)s).")
     parser.add_argument("--processes", type=int, default=1)
+    parser.add_argument("--start-ahl", type=float, default=None,
+                        help="Start every colony's internal and external AHL at this level.")
+    parser.add_argument("--flows", default=",".join(f"{f:g}" for f in FLOWS),
+                        help="AHL washout rates (default: %(default)s).")
     args = parser.parse_args()
-    jobs = [(args.design, f, d, s) for f in FLOWS for d in DENSITIES for s in SEEDS]
+    flows = tuple(float(f) for f in args.flows.split(","))
+    jobs = [(args.design, f, d, s, args.start_ahl) for f in flows for d in DENSITIES
+            for s in SEEDS]
     with ProcessPoolExecutor(args.processes) as pool:
         rows = list(pool.map(one, jobs))
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -79,10 +105,10 @@ def main() -> None:
         writer = csv.DictWriter(f, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
-    print("density \\ flow  " + "  ".join(f"{f:>12g}" for f in FLOWS))
+    print("density \\ flow  " + "  ".join(f"{f:>12g}" for f in flows))
     for d in DENSITIES:
         cells = []
-        for f in FLOWS:
+        for f in flows:
             part = [r for r in rows if r["flow"] == f and r["density"] == d]
             cells.append(f"{np.mean([r['oscillating'] for r in part]):4.0%} "
                          f"{np.nanmedian([r['period'] for r in part]):5.0f} min")

@@ -4,15 +4,18 @@ Writes one file per subsection of the SI's Additional Results, following the sta
 design studies (one ``table`` environment per table, labels ``tab:si-*``):
 ``si_evaluation.tex`` (every metric, seeds and folds, per-class F1), ``si_readouts.tex``,
 ``si_comparisons.tex`` (comparisons by seed, ablations and controls), ``si_array.tex``
-(array size, imaging, start and inducer, layout) and ``si_heterogeneity.tex``.
+(array size, imaging, start and inducer, layout), ``si_heterogeneity.tex`` and, with the two
+CSVs of ``oscillation_map.py``, ``si_start.tex`` (oscillation and the starting state).
 
     python scripts/paper/si_tables.py --out <report>/tables/supplementary \
-        --flat-share <flat_share.csv>
+        --flat-share <flat_share.csv> --oscillation-low <oscillation_start_low.csv> \
+        --oscillation-ahl <oscillation_start_ahl.csv>
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import sys
 from pathlib import Path
 
@@ -316,6 +319,52 @@ def heterogeneity_tables(r: Results, d: str, flat_path: Path | None) -> str:
     ])
 
 
+def start_table(low: Path, ahl: Path) -> str:
+    """Share of oscillating colonies from the design's low start and from an AHL start, and
+    the period from the AHL start, over the washout and the cell density."""
+    def read(path):
+        cells: dict[tuple[float, float], list[dict]] = {}
+        with open(path, newline="") as f:
+            for row in csv.DictReader(f):
+                cells.setdefault((float(row["flow"]), float(row["density"])), []).append(row)
+        return cells
+
+    def share(rows):
+        return f"{100 * np.mean([float(r['oscillating']) for r in rows]):.0f}" if rows else "--"
+
+    def period(rows):
+        values = [float(r["period"]) for r in rows if r["period"] not in ("", "nan")]
+        return f"{np.median(values):.0f}" if values else "--"
+
+    low_cells, ahl_cells = read(low), read(ahl)
+    level = {r["start_ahl"] for rows in ahl_cells.values() for r in rows}.pop()
+    flows = sorted({f for f, _ in ahl_cells})
+    densities = sorted({d for _, d in ahl_cells})
+    n = len(densities)
+    rows = [[rf"\multicolumn{{{n + 1}}}{{@{{}}l}}{{\textit{{Colonies that oscillate (\%), "
+             rf"low start / AHL start}}}}"]]
+    rows += [[f"{f:g}"] + [f"{share(low_cells.get((f, d), []))} / "
+                           f"{share(ahl_cells.get((f, d), []))}" for d in densities]
+             for f in flows]
+    rows += [["MIDRULE"], [rf"\multicolumn{{{n + 1}}}{{@{{}}l}}{{\textit{{Median period "
+                           rf"(min), AHL start}}}}"]]
+    rows += [[f"{f:g}"] + [period(ahl_cells.get((f, d), [])) for d in densities] for f in flows]
+    return table("tab:si-start",
+                 "Oscillation of the array over the washout $\\mu$ and the cell density $d$ "
+                 "(the design's other settings), from two starting states of the warm-up: the "
+                 "low random concentrations of the design (low start) and every colony's "
+                 f"internal and external AHL at {float(level):g} (AHL start). Top, the colonies "
+                 "that oscillate after the warm-up (mean over the reporting seeds; a colony "
+                 "oscillates when its LuxI varies at least 1.5-fold over 200\\,min); bottom, "
+                 "the median period of the oscillating colonies from the AHL start (--, no "
+                 "colony oscillates). The map of Figure~2D and the design search use the low "
+                 "start.",
+                 "@{}l" + "c" * n + "@{}", ["Washout $\\mu$"] + [f"{d:g}" for d in densities],
+                 rows, "footnotesize",
+                 top=[rf"& \multicolumn{{{n}}}{{c}}{{Cell density $d$}} \\",
+                      rf"\cmidrule(l){{2-{n + 1}}}"])
+
+
 def traps_table(r: Results, d: str) -> str:
     ridge, forest, ideal = traps(r, d), traps(r, d, forest=True), ideal_traps(r, d)
     rows = [[f"{n:,}", pm(ridge.get(n)), pm(forest.get(n)), pm(ideal.get(n))]
@@ -394,6 +443,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, help="Output folder (default "
                         "results/figures/paper/<design>).")
     parser.add_argument("--flat-share", type=Path, help="CSV of scripts/paper/flat_share.py.")
+    parser.add_argument("--oscillation-low", type=Path,
+                        help="CSV of oscillation_map.py from the design's start.")
+    parser.add_argument("--oscillation-ahl", type=Path,
+                        help="CSV of oscillation_map.py --start-ahl.")
     args = parser.parse_args(argv)
     r, d = Results(), args.design
     out = args.out or config.figures_dir(f"paper/{d}")
@@ -406,6 +459,8 @@ def main(argv: list[str] | None = None) -> int:
         "si_array.tex": [traps_table(r, d), imaging_tables(r, d), start_tables(r, d)],
         "si_heterogeneity.tex": [heterogeneity_tables(r, d, args.flat_share)],
     }
+    if args.oscillation_low and args.oscillation_ahl:
+        files["si_start.tex"] = [start_table(args.oscillation_low, args.oscillation_ahl)]
     for name, tables in files.items():
         (out / name).write_text("\n".join(["% From scripts/paper/si_tables.py", *tables]))
         print(out / name)
