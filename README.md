@@ -189,6 +189,41 @@ A study is stored in `results/optuna/optuna-<name>.db` (or `--storage`). `sample
 grid}` runs every combination, and `categorical` searches choose between values. With
 `reservoir: {states_from: <run>}` a study tunes only the readout on a run's saved states.
 
+### Sweeps
+
+A config with a `sweep` section stands for every combination of its axes, so repeating a
+run over models, tasks or seeds needs one file, not one per run. Each axis is either named
+variants (a config file, or settings merged over the config) or one setting with a list of
+values; later axes win, and `name` is a template of the labels:
+
+```yaml
+base: my-run.yaml
+sweep:
+  name: my-run-{readout}-{task}-s{seed}
+  readout:
+    ridge: {}
+    forest: {readout: {classifier: RF, params: {n_estimators: 500}}}
+  task:
+    five-class: {}
+    binary: {task.labels: binary}
+  seed: {reservoir.seed: [1, 2, 3, 4, 5]}
+```
+
+```bash
+python -m training.run sweep my-sweep.yaml --list                 # the 20 runs it makes
+python -m training.run sweep my-sweep.yaml --processes 8          # run them all
+python -m training.run sweep my-sweep.yaml --only task=binary seed=1
+python -m training.run resolve my-sweep.yaml --only readout=forest seed=1
+```
+
+Each run is an ordinary run in `results/runs/<name>/`, so `compare` and `states_from` find it
+by name; a run already done is skipped, so a stopped sweep resumes. Any text setting can
+use the labels as `name` does (`states_from: my-run-ridge-{task}-s{seed}`), a setting that is
+only `{seed}` takes the value itself, and an axis can also be a plain list of labels used only
+in the templates. A sweep whose configs have a `study` section runs them as studies, and
+`study-table` reads a sweep of studies. `sweep` can also be a list of such blocks, sharing
+axes through YAML anchors.
+
 ### Held-out Evaluation
 
 Three held-out splits of the heartbeat data are kept out of the cross-validation pool:
