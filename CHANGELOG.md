@@ -54,6 +54,8 @@ Each entry is marked **[science]** if it changes a reported number, or
 - [engineering] `pyproject.toml` gives the version as 0.2.1 and pins ruff to CI's 0.15.0; the
   Pillow pin is removed (matplotlib installs it).
 - [engineering] The README and this changelog are shorter.
+- [engineering] The README describes the framework on its own: the reservoir in Python, run
+  and study configs, analysis and figures, each with a worked example, and new figures.
 - [engineering] The P designs no longer list settings they never read (`rc_scaling`,
   `noise_rc`, the distance-kernel settings); their simulations are unchanged.
 - [engineering] The default ridge penalties are written out, so every CPU records the same.
