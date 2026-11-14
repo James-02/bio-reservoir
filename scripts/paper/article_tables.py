@@ -109,8 +109,9 @@ def mechanism_table(r: Results, d: str) -> str:
                  "the ablations change the design without retuning it. The comparisons by seed "
                  "are in Table~\\ref{S-tab:si-comparisons}, and the ablations in "
                  "Table~\\ref{S-tab:si-ablations}. "
-                 "$^{a}$The mean of each colony's LuxI and external AHL over the beat, "
-                 "without noise. $^{b}$The mean of the network's noise-free states over the "
+                 "$^{a}$The noise-free mean of each colony's LuxI and external AHL over the "
+                 "beat, a reference that a device could not image. $^{b}$The mean of the "
+                 "network's noise-free states over the "
                  "beat. $^{c}$A ridge regression from the beat to the array's features. "
                  "$^{d}$The 187 samples of the beat.",
                  "@{}lcc@{}", ["Model", "Ridge", "Random forest"], rows)

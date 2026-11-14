@@ -373,8 +373,9 @@ def traps_table(r: Results, d: str) -> str:
     return table("tab:si-traps",
                  "Macro F1 against the number of traps (balanced task; mean $\\pm$ SD over the "
                  "reporting seeds): ridge on two images (the design), the random forest on "
-                 "four images, and ridge on the ideal reading (the mean of each colony's LuxI "
-                 "and external AHL over the beat, without noise). Figure~\\ref{fig:settings}F compares "
+                 "four images, and ridge on the ideal reading (the noise-free mean of each "
+                 "colony's LuxI and external AHL over the beat, a reference that a device "
+                 "could not image). Figure~\\ref{fig:settings}F compares "
                  "one, two and four images up to 2,500 traps; Table~\\ref{tab:runtime} gives "
                  "the cost of the larger arrays.",
                  "@{}rccc@{}", ["Traps $N$", "Ridge, 2 images", "Forest, 4 images",
