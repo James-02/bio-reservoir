@@ -103,10 +103,11 @@ def mechanism_table(r: Results, d: str) -> str:
     rows += [["MIDRULE"], ["Raw beat$^{d}$", pm(r.f1(RAW["ridge"])), pm(r.f1(RAW["rf"]))]]
     return table("tab:mechanism",
                  "What the colonies contribute (balanced task; macro F1, mean $\\pm$ SD over "
-                 "the reporting seeds), read by ridge on two images and by the random forest "
-                 "on four, unless noted. The comparisons were tuned for ridge "
+                 "the five reservoir seeds), read by ridge on two images and by a random "
+                 "forest on four. Each comparison was tuned for ridge with the same budget "
                  "(Table~\\ref{S-tab:selection}) and read by the forest at the same settings; "
-                 "by seed in Table~\\ref{S-tab:si-comparisons}, and the untuned controls in "
+                 "the ablations change the design without retuning it. The comparisons by seed "
+                 "are in Table~\\ref{S-tab:si-comparisons}, and the ablations in "
                  "Table~\\ref{S-tab:si-ablations}. "
                  "$^{a}$The mean of each colony's LuxI and external AHL over the beat, "
                  "without noise. $^{b}$The mean of the network's noise-free states over the "
