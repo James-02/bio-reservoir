@@ -54,19 +54,14 @@ def tasks_table(r: Results, d: str) -> str:
                                for task in ("balanced", "unbalanced", "binary")]
                     + ["--", "--", test(f"raw-{key}")])
     return table("tab:tasks",
-                 "The three tasks and the held-out splits, read by ridge (macro F1, mean "
-                 "$\\pm$ SD over the five reporting seeds). Validation splits: 803 beats of "
-                 "each of four classes, N, S, V and Q. Test split: 370 beats of each of the "
-                 "same four classes, one seed, scored once; the bootstrap 95\\% confidence "
-                 "intervals, about $\\pm$0.015, are in Table~\\ref{S-tab:si-heldout}. The raw "
-                 "beat has no reservoir seed, so its scores have no SD. On the held-out splits "
-                 "the readout "
-                 "is trained on the whole balanced pool, the macro F1 averages the four "
-                 "classes present, and a beat predicted as F counts as an error "
-                 "(Table~\\ref{S-tab:dataset}). Isolated traps: the array without AHL "
-                 "exchange, tuned with the same budget; ESN: an echo state network of 576 units "
-                 "read like the array or from its clean states (Table~\\ref{tab:mechanism}). "
-                 "--, not run.",
+                 "Scores on the three tasks and on the held-out splits (macro F1 of the ridge "
+                 "readout; mean $\\pm$ SD over the five reservoir seeds; the raw beat has no "
+                 "seed). On the held-out splits the readout is trained on the whole balanced "
+                 "pool and tested on new beats of four classes (N, S, V and Q; no F beats are "
+                 "left outside the pool); the test split was scored once, on one seed (95\\% "
+                 "confidence intervals in Table~\\ref{S-tab:si-heldout}). Isolated traps: the "
+                 "array without AHL exchange; ESN: an echo state network of 576 units "
+                 "(Table~\\ref{tab:mechanism}). --, not run.",
                  "@{}lcccccc@{}", ["Model", "Balanced", "Unbalanced", "Binary", "Validation 1",
                                    "Validation 2", "Test"], rows, "footnotesize", colsep="3pt")
 
