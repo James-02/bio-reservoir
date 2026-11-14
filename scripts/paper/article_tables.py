@@ -100,7 +100,7 @@ def mechanism_table(r: Results, d: str) -> str:
         rows.append([label, ablation(stem, value, False), ablation(stem, value, True)])
     rows.append(["Linear imitation$^{c}$", pm(r.seeds(f"P6-{d}-surrogate-c")),
                  pm(r.seeds(f"P6-{d}-surrogate-e"))])
-    rows += [["MIDRULE"], ["Raw beat$^{d}$", pm(r.f1(RAW["ridge"])), pm(r.f1(RAW["rf"]))]]
+    rows += [["MIDRULE"], ["Raw beat", pm(r.f1(RAW["ridge"])), pm(r.f1(RAW["rf"]))]]
     return table("tab:mechanism",
                  "What the colonies contribute (balanced task; macro F1, mean $\\pm$ SD over "
                  "the five reservoir seeds), read by ridge on two images and by a random "
@@ -112,8 +112,7 @@ def mechanism_table(r: Results, d: str) -> str:
                  "$^{a}$The noise-free mean of each colony's LuxI and external AHL over the "
                  "beat, a reference that a device could not image. $^{b}$The mean of the "
                  "network's noise-free states over the "
-                 "beat. $^{c}$A ridge regression from the beat to the array's features. "
-                 "$^{d}$The 187 samples of the beat.",
+                 "beat. $^{c}$A ridge regression from the beat to the array's features.",
                  "@{}lcc@{}", ["Model", "Ridge", "Random forest"], rows)
 
 
