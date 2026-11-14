@@ -151,7 +151,8 @@ def per_class_table(r: Results, d: str) -> str:
                 rows.append(line + [""] * (6 - len(line)))
     return table("tab:si-per-class",
                  "F1-score of each class, from the confusion matrix pooled over the folds; for "
-                 "the array, the mean $\\pm$ SD over the reporting seeds. N: Normal; S: "
+                 "the array, computed for each reporting seed and given as the mean $\\pm$ SD "
+                 "over the seeds. N: Normal; S: "
                  "Supraventricular ectopic; V: Ventricular ectopic; F: Fusion; Q: Unknown. "
                  "Figure~\\ref{fig:confusion-tasks} shows the confusion matrices of the "
                  "design.",
@@ -220,7 +221,8 @@ def imaging_tables(r: Results, d: str) -> str:
     calibration_rows = [[f"{100 * v:g}"] + [pm(p.get(v)) for p in calibration] for v in errors]
     return "\n".join([
         table("tab:si-noise",
-              "Measurement noise of each image, read by ridge from one image (187\\,min), "
+              "Measurement noise of each image (the standard deviation of the multiplicative "
+              "noise on each trap in each image), read by ridge from one image (187\\,min), "
               "two (the design) or four (balanced task; macro F1, mean $\\pm$ SD over the "
               "reporting seeds).",
               "@{}cccc@{}", ["Noise (\\%)", "One image", "Two images", "Four images"],
@@ -231,7 +233,8 @@ def imaging_tables(r: Results, d: str) -> str:
               "@{}lc@{}", ["Earlier image (min)", "Macro F1"], time_rows),
         table("tab:si-calibration",
               "Calibration error: each trap's gain in the test beats multiplied by "
-              "$1 + c\\,\\varepsilon$, unknown to the readout, with and without the "
+              "$1 + c\\,\\varepsilon$, with $\\varepsilon$ standard normal for each trap and $c$ "
+              "the size of the error, unknown to the readout, with and without the "
               f"reference image ({SWEEP}).",
               "@{}ccc@{}", ["$c$ (\\%)", "Reference", "No reference"], calibration_rows),
     ])
@@ -353,14 +356,17 @@ def start_table(low: Path, ahl: Path) -> str:
                  "Oscillation of the array over the washout $\\mu$ and the cell density $d$ "
                  "(the design's other settings), from two starting states of the warm-up: the "
                  "low random concentrations of the design (low start) and every colony's "
-                 f"internal and external AHL at {float(level):g} (AHL start). Top, the colonies "
+                 f"internal and external AHL at {float(level):g}, its other concentrations "
+                 "drawn as usual (AHL start). Only the oscillation was measured, not the score. "
+                 "Top, the colonies "
                  "that oscillate after the warm-up (mean over the reporting seeds; a colony "
                  "oscillates when its LuxI varies at least 1.5-fold over the last 200 of "
                  "300\\,min after the warm-up); bottom, "
                  "the median period of the oscillating colonies from the AHL start (--, no "
                  "colony oscillates). The map of Figure~2D and the design search use the low "
                  "start.",
-                 "@{}l" + "c" * n + "@{}", ["Washout $\\mu$"] + [f"{d:g}" for d in densities],
+                 "@{}l" + "c" * n + "@{}",
+                 ["Washout $\\mu$ (min$^{-1}$)"] + [f"{d:g}" for d in densities],
                  rows, "footnotesize",
                  top=[rf"& \multicolumn{{{n}}}{{c}}{{Cell density $d$}} \\",
                       rf"\cmidrule(l){{2-{n + 1}}}"])
