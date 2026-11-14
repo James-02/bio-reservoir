@@ -9,6 +9,9 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Added
 
+- [engineering] `scripts/paper/`: the scripts that write the revised paper's numbers, tables
+  and figures from the collected runs, and the simulations behind its oscillation and solver
+  figures; `test_paper_scripts.py` checks that each starts.
 - [engineering] The `v0.2` campaign configs in `experiments/v0.2/` (designs, tracking set,
   Phase 1 grids `P1-*`, Phase 2 searches `P2-*`), checked by `test_experiment_configs.py`.
 - [engineering] Configs can name a `base:` config and list only what differs; studies can
