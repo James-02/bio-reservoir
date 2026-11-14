@@ -6,17 +6,12 @@
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](pyproject.toml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23436888.svg)](https://doi.org/10.5281/zenodo.23436888)
 
-A framework for reservoir computing with simulated bacterial colonies. Each colony carries
-a genetic clock, a quorum-sensing oscillator modelled by delay differential equations. A
-time series drives the colonies, their response is measured, and a simple classifier is
-trained on the measurements. The reservoir is a
-[ReservoirPy](https://github.com/reservoirpy/reservoirpy) `Node`, so it can be used on its
-own in Python or through the framework's YAML configs, which run cross-validated
-classification tasks, Optuna studies, comparisons between runs and figures, and record how
-every result was made.
-
-The built-in task classifies heartbeats from the MIT-BIH arrhythmia database (five AAMI
-classes, or normal against arrhythmia).
+This project classifies heartbeats from ECG recordings with a reservoir of simulated
+bacterial colonies. Each colony carries a genetic clock (a quorum-sensing oscillator,
+modelled by delay differential equations). The heartbeat drives the colonies, their
+response is measured, and a simple classifier reads the arrhythmia class from that
+response. The reservoir is a [ReservoirPy](https://github.com/reservoirpy/reservoirpy)
+`Node`. The paper describes the method and the results.
 
 ![Graphical TOC](.github/static/graphical-toc.png)
 
@@ -24,14 +19,13 @@ classes, or normal against arrhythmia).
 
 1. **Colonies.** Each colony is an oscillator of two genes, luxI and aiiA, and the signal
    molecule AHL inside (Hi) and outside (He) the cells, with a delayed negative feedback.
-2. **Input.** Each sample of the time series is added to the AHL of the colonies it reaches.
-3. **Coupling.** The colonies interact, either through an abstract signed kernel or by
-   exchanging AHL through the medium, for example between neighbouring traps of an array
-   (see [Model Options](#model-options)).
-4. **Measurement.** The colonies' states are read over the series: every variable, or only
-   the fluorescent LuxI reporter in a few noisy images, as a microscope would see it.
-5. **Readout.** A classifier (ridge, logistic regression, SVM, k-nearest neighbours, random
-   forest, gradient boosting and others) is trained on the measurements.
+2. **Input.** Each ECG sample is added to the extracellular AHL of the colonies it reaches.
+3. **Coupling.** The colonies interact, either through an abstract signed kernel (the
+   `v0.1` model) or by exchanging AHL through the medium (see [Model Options](#model-options)).
+4. **Measurement.** The colonies' states are measured over the beat: by default every
+   variable, or only the LuxI reporter in a few images, with noise.
+5. **Readout.** A classifier (ridge, k-nearest neighbours, random forest and others) is
+   trained on the measurements to name the beat's class.
 
 ## Install
 
@@ -48,90 +42,37 @@ python -m utils.preprocessing      # download and prepare the MIT-BIH dataset
 
 Without uv, `pip install -e .[dev]` installs the pinned dependencies.
 
-## Using the Reservoir in Python
-
-`BioReservoir` is a ReservoirPy node: `run` drives the colonies with a series of shape
-`(timesteps, 1)` and returns their states at every step, `units × len(output_variables)`
-columns (A, I, Hi and He by default). `reset` returns the colonies to their warmed-up state,
-so each series starts from the same state. Any classifier can then read the states:
-
-```python
-import numpy as np
-from sklearn.linear_model import RidgeClassifierCV
-
-from bioreservoir import BioReservoir
-from utils.preprocessing import load_ecg_data
-
-X_train, Y_train, X_test, Y_test = load_ecg_data(rows=1000)   # beats: (n, 187, 1)
-reservoir = BioReservoir(units=64, warmup=200, seed=1)
-
-def final_state(beat):
-    reservoir.reset()
-    return reservoir.run(beat)[-1]
-
-F_train = np.array([final_state(x) for x in X_train])
-F_test = np.array([final_state(x) for x in X_test])
-readout = RidgeClassifierCV().fit(F_train, Y_train[:, -1].argmax(axis=1))
-print(readout.score(F_test, Y_test[:, -1].argmax(axis=1)))
-```
-
-`training.cross_validate` runs the same with a ReservoirPy readout over stratified folds and
-returns the metrics of each fold:
-
-```python
-from reservoirpy.nodes import Ridge
-from training import cross_validate
-
-X, Y = np.concatenate([X_train, X_test]), np.concatenate([Y_train, Y_test])
-results = cross_validate(BioReservoir(units=100), Ridge(ridge=1e-6), X, Y, folds=5)
-```
-
-## Running a Config
+## Quick Start
 
 A run is described by a YAML config: the task, the reservoir, what is measured, the readout
-and the cross-validation folds. For example, 256 colonies in a square trap array that
-exchange AHL with their neighbours, read from two noisy images of the LuxI reporter by a
-ridge classifier:
-
-```yaml
-name: my-run
-seed: 1
-task: {labels: five-class, rows: 4015, balance_classes: true, scaler: sequence_zscore}
-reservoir:
-  type: bioreservoir
-  params:
-    units: 256
-    warmup: 500
-    rk4_substeps: 32
-    input_scaling: 0.15
-    input_connectivity: 0.7
-    input_bias: false
-    bias_scaling: 0.1
-    dde_scaling: 0.0006
-    cell_coupling: 12.7
-    noise_in: 0.0144
-    topology_type: lattice
-    coupling: diffusion
-    diffusion_rate: 1.0
-    input_encoding: nonnegative
-    input_sign: positive
-features:
-  variables: [I]
-  aggregation: images:2
-  measurement_noise: 0.01
-readout: {classifier: RidgeCV, scale: true}
-cv: {folds: 5}
-```
+and the cross-validation folds.
 
 ```bash
-python -m training.run resolve my-run.yaml              # print the full config, defaults included
-python -m training.run run my-run.yaml --processes 8    # simulate and cross-validate
+python -m training.run run experiments/benchmarks/v0.1/balanced.yaml --processes 5
+python -m training.run resolve my-config.yaml      # print the full config
+python -m training.run compare RUN_A RUN_B         # pair two runs fold by fold
+python -m utils.provenance list                    # every run so far
 ```
 
 Each run writes a folder `results/runs/<name>-<time>/` with its config, metrics (per fold,
 mean and sample SD), predictions, figures, log and a manifest (code version, data checksums,
 environment), and adds a line to the run registry. Runs from uncommitted code need
 `--allow-dirty` and are marked as not citable.
+
+The same pieces can be used from Python:
+
+```python
+import numpy as np
+from reservoirpy.nodes import Ridge
+
+from bioreservoir import BioReservoir
+from training import cross_validate
+from utils.preprocessing import load_ecg_data
+
+X_train, Y_train, X_test, Y_test = load_ecg_data(rows=1000)
+X, Y = np.concatenate([X_train, X_test]), np.concatenate([Y_train, Y_test])
+results = cross_validate(BioReservoir(units=100), Ridge(ridge=1e-6), X, Y, folds=5)
+```
 
 ## Configs
 
@@ -147,50 +88,50 @@ The main sections of a run config:
 | `test` | A held-out split to score on | `split: validation-1` |
 
 - A config can start from another with `base: <file>` and list only what differs.
-- Each series is simulated once and every fold reads the same features (`cv.simulate: once`).
+- `preset: v0.1` restores the code of the first paper; the `v0.1` headline configs in
+  [experiments/benchmarks/v0.1](experiments/benchmarks/v0.1) use it.
+- Each beat is simulated once and every fold reads the same features (`cv.simulate: once`).
 - Readouts standardise the features on each training fold. `RidgeCV` picks its penalty by
   leave-one-out, and `readout.search` picks hyperparameters on inner folds.
-- `reservoir: {type: esn}` is an echo state network, and `reservoir: {type: none}`
-  classifies the raw series, the baselines without colonies.
-- `aggregation: images_at:155,187` takes an image at each listed step of the series.
-- `reference: start` divides each image by the trap's image of the state every series starts
-  from (F/F0), which cancels a trap's calibration gain.
+- `reservoir: {type: none}` classifies the raw beat, the baseline without a reservoir.
+
+`aggregation: images_at:155,187` takes an image at each listed minute of the beat (the state after that many steps; `images_at:187` is `final` for a 187-step beat).
+
+`reference: start` divides each image by the trap's own image of the state every beat starts from (F/F0). A trap's calibration gain multiplies both and cancels, provided it holds from the reference to the last image; without calibration error the results are unchanged. It needs a bioreservoir, `variables`, an image aggregation and `cv.simulate: once`.
 
 ### Studies
 
 A config with a `study` section is a seeded Optuna search over its own values. Each trial
-runs the same pipeline as a single run and records its full config. For example, a search
-over the input gain and the exchange rate of the run above:
+runs the same pipeline as a single run and records its full config.
 
 ```yaml
-base: my-run.yaml
-name: my-study
 study:
-  trials: 50
+  trials: 300
   metric: f1
-  sampler: {type: tpe, seed: 1}
+  sampler: {type: tpe, seed: 6337, multivariate: true, n_startup_trials: 20}
   search:
-    reservoir.params.input_scaling: {type: float, low: 0.01, high: 0.5, log: true}
-    reservoir.params.diffusion_rate: {type: float, low: 0.1, high: 5, log: true}
+    reservoir.params.input_scaling: {type: float, low: 0.005, high: 0.5, log: true}
+    reservoir.params.units: {type: categorical, choices: [256, 1024]}
 ```
 
 ```bash
-python -m training.run study my-study.yaml --processes 8        # resumes if it exists
+python -m training.run study my-study.yaml --processes 128      # resumes if it exists
 python -m training.run study-table my-study.yaml --group        # one row per point
 python -m training.run study-best my-study.yaml --out best.yaml # best trial as a run config
 ```
 
 A study is stored in `results/optuna/optuna-<name>.db` (or `--storage`). `sampler: {type:
-grid}` runs every combination, and `categorical` searches choose between values. With
-`reservoir: {states_from: <run>}` a study tunes only the readout on a run's saved states.
+grid}` runs every combination. With `reservoir: {states_from: <run>}` a study tunes only the
+readout on a run's saved states. The `v0.2` campaign configs are in
+[experiments/v0.2](experiments/v0.2/README.md).
 
 ### Held-out Evaluation
 
-Three held-out splits of the heartbeat data are kept out of the cross-validation pool:
-`validation-1` and `validation-2` (803 beats per class each) and `test` (370 per class).
-Their beat IDs and checksums are in [data/splits/heldout.json](data/splits/heldout.json),
-and `python -m utils.heldout --check` verifies them. Choose models by cross-validation,
-check them on the validation splits, and use `test` once, for the final result:
+Three held-out splits contain beats that no `v0.1` study used: `validation-1` and
+`validation-2` (803 beats per class each) and `test` (370 per class). Their beat IDs and
+checksums are in [data/splits/heldout.json](data/splits/heldout.json), and
+`python -m utils.heldout --check` verifies them. Choose models by cross-validation, check
+them on the validation splits, and use `test` once, for the final result:
 
 ```yaml
 test:
@@ -206,7 +147,7 @@ config change, so the effect of each change can be measured on its own.
 
 | Option | Effect |
 |---|---|
-| `coupling: abstract` | Default: a signed kernel of the colonies' states adds to their input (not chemically realisable) |
+| `coupling: abstract` | Default (`v0.1` model): a signed kernel of the colonies' states adds to their input |
 | `coupling: diffusion` | Colonies exchange extracellular AHL through the medium; `diffusion_rate` sets the rate |
 | `coupling: none` | Independent colonies |
 | `topology_type: lattice` | Colonies in a square trap array (diffusion only) |
@@ -221,10 +162,10 @@ config change, so the effect of each change can be measured on its own.
 | `heterogeneity_density_cv`, `heterogeneity_dilution_cv` | Variation of cell density and washout |
 | `washout_rate`, `cell_density` | The AHL washout rate set by the flow (µ, default 0.6) and the cell density (d, default 0.7) of every colony |
 | `input_levels: K` | The input reaches the traps at K discrete levels |
-| `reset_noise: cv` | Each series starts from a slightly different state |
+| `reset_noise: cv` | Each beat starts from a slightly different state |
 | `warmup_input: rest` | The colonies warm up at the resting inducer level |
 
-**Controls** ask what the colonies add over simpler feature maps of the series:
+**Controls** ask what the colonies add over simpler feature maps of the beat:
 
 | Control | Config |
 |---|---|
@@ -238,62 +179,91 @@ config change, so the effect of each change can be measured on its own.
 |---|---|
 | No coupling | `reservoir.params.coupling: none` |
 | No feedback delay | `reservoir.params.delay: 0` (default 10 input steps) |
-| Scrambled series | `task.scramble: true` |
+| Scrambled beats | `task.scramble: true` |
 
 Controls and ablations use the same pool, folds and readout as the reservoir, so
-`training.run compare` pairs them sample by sample.
+`training.run compare` pairs them beat by beat.
 
 The colonies are integrated with an explicit RK4 solver. A run refuses a step too long for
 the coupling, and stops with `UnstableIntegrationError` if the states blow up; large
 heterogeneity needs more substeps (`rk4_substeps: 32` or 64).
 `python scripts/analysis/drive_bounds.py <config>` reports a reservoir's drive range.
 
-## Analysing Results
+## Figures
 
-Each run folder holds `metrics.json` (macro F1, accuracy, MCC and others per fold, with the
-mean and SD) and `fold-<k>.npz` (labels, predictions and, with `outputs.save_states`, the
-features). A run is named by its folder, its registry ID or its folder name under
-`results/runs`:
+The figure scripts draw the `v0.1` paper figures from this repository's configs and runs.
+Each saves a PNG under `results/figures/<topic>/` (`--formats pdf,svg` adds more) and warns
+if the figure would break the ACS rules at its printed size.
 
-```bash
-python -m training.run compare RUN_A RUN_B                 # pair two runs fold by fold
-python -m training.run compare RUN_A RUN_B --margin 0.01 --ceiling RUN_C
-python -m training.run study-table my-study.yaml --csv trials.csv
-python -m utils.provenance list                            # every run, its commit and status
-python -m utils.provenance show RUN_ID
-python -m utils.provenance diff RUN_A RUN_B
-python scripts/analysis/analyse_fold_results.py --glob 'results/runs/my-run-*/fold-*.npz'
-```
-
-`compare` recomputes both runs' metrics from their stored predictions. When the runs share
-their folds it pairs them sample by sample: per-fold differences, prediction agreement and a
-paired bootstrap confidence interval; `--margin` adds a non-inferiority test, and `--ceiling`
-the share of the gap from A to a third run C that B closes.
-
-## Visualisations
-
-A run draws its confusion matrix and fold scores into its `figures/` folder, and `compare`
-draws both runs side by side. The scripts below draw the model and the data from a run or
-study config. Each saves a PNG under `results/figures/<topic>/` (`--formats pdf,svg` adds
-more) and warns when text or lines would be too small at the printed size.
-
-| Script | Draws | Input |
+| Script | Draws (`v0.1` figure) | Input |
 |---|---|---|
-| [visualise_dde.py](scripts/figures/visualise_dde.py) | One colony driven by a series at several input gains | Run config |
-| [visualise_reservoir_states.py](scripts/figures/visualise_reservoir_states.py) | The colonies' states over a series; `--drive` adds the drive they receive | Run config |
-| [visualise_topology.py](scripts/figures/visualise_topology.py) | The coupling kernel and its strongest links | Run config |
-| [visualise_dataset.py](scripts/figures/visualise_dataset.py) | The class means, added noise and scalings of the data | Run config |
-| [visualise_heterogeneity.py](scripts/figures/visualise_heterogeneity.py) | Macro F1 against a swept heterogeneity setting | Study config |
-| [analyse_fold_results.py](scripts/analysis/analyse_fold_results.py) | Metric tables; `--plots` adds confusion matrices, scores and PCA | Fold files |
-| [drive_bounds.py](scripts/analysis/drive_bounds.py) | The range of the colonies' drive; `--oscillation` their oscillation amplitudes | Run config |
+| [visualise_dde.py](scripts/figures/visualise_dde.py) | One colony at several input scalings (3b) | Run config |
+| [visualise_reservoir_states.py](scripts/figures/visualise_reservoir_states.py) | The array's states during a beat (4c); `--drive` adds its drive (4a) | Run config |
+| [visualise_topology.py](scripts/figures/visualise_topology.py) | The kernel (4b) and the strongest links (4d) | Run config |
+| [visualise_dataset.py](scripts/figures/visualise_dataset.py) | Class means, noise and scalings (5) | Run config |
+| [visualise_heterogeneity.py](scripts/figures/visualise_heterogeneity.py) | Macro F1 against heterogeneity (S10) | Study config or `--archive v0.1` |
+| [analyse_fold_results.py](scripts/analysis/analyse_fold_results.py) | Metric tables; `--plots` adds confusion, scores and PCA | Fold files |
 
-```bash
-python scripts/figures/visualise_reservoir_states.py my-run.yaml --var I --drive
-python scripts/figures/visualise_dde.py my-run.yaml --formats png,pdf
-python scripts/analysis/analyse_fold_results.py --glob 'results/runs/my-run-*/fold-*.npz' --plots
-```
+### Figures from the `v0.1` Paper
+
+**The model.** (a) One colony: luxI, aiiA and AHL inside (Hi) and outside (He) the cells.
+(b) How the ECG input and the coupling drive gene expression. (c) The reservoir: the ECG
+drives the coupled colonies and a readout classifies their final LuxI levels.
+
+![Biopixel Reservoir Model](.github/static/biopixel-reservoir-model-3-subfigures.png)
+
+**Reservoir dynamics.** The input and coupling drive, the colonies' states over a beat, the
+distance kernel and the strongest links.
 
 ![Reservoir Drive and Topology](.github/static/reservoir_drive_topology_heatmap.png)
+
+**The dataset.** (a) The mean beat of each class with its 10–90% band. (b) A beat with
+added noise. (c) A beat under three scalings.
+
+![ECG Dataset Characterisation](.github/static/samples_noise_scalers-subfigures.png)
+
+**A raw recording.** Ten seconds of a MIT-BIH record before it is cut into beats.
+
+![Raw ECG Segment](.github/static/ecg-10s-segment.png)
+
+**Solver check.** The error of the RK4 solver against the step size.
+
+![Solver Validation](.github/static/solver_validation.png)
+
+**Balanced five-class result.** Confusion matrix over five folds (`P2-distance-best`: 2,000
+colonies, k-nearest-neighbour readout with k = 1).
+
+![Balanced Categorical Confusion Matrix](.github/static/balanced-categorical-confusion-matrix.png)
+
+**Binary result.** Normal against arrhythmia over five folds (`P3-binary-best`: 2,000
+colonies, distance-weighted k-nearest neighbours with k = 4).
+
+![Binary Confusion Matrix](.github/static/binary-confusion-matrix.png)
+
+**Tuning.** Macro F1 of each trial against each parameter, for the reservoir search
+(`P2-distance`) and the readout search (`P4-readout-balanced`).
+
+![Optimisation Slice Plot](.github/static/P2-distance-slice.png)
+![Readout Slice Plot](.github/static/P4-readout-balanced-slice.png)
+
+## Reproducing `v0.1`
+
+`pytest -m benchmark` reruns the `v0.1` headline configs and compares them fold by fold
+with the archived runs (balanced, unbalanced, binary and ESN reproduce exactly). The binary
+run reads the `v0.1` binary file `data/ecg_archive/binary_ecg_data.npz` (checked by its
+SHA-256); without it, the binary tests are skipped.
+
+The `v0.1` studies use the older optimisation command (study names follow Supplementary
+Table S5):
+
+```bash
+python -m optimization.optimize research --type training --study P2-distance --processes 32
+python -m optimization.optimize evaluate --type training --study P2-distance --archive v0.1 --plots slice
+```
+
+[scripts/run_ablation.py](scripts/run_ablation.py) and
+[scripts/run_heterogeneity.py](scripts/run_heterogeneity.py) rerun the `v0.1` ablations and
+heterogeneity grid (`--preset v0.1`).
 
 ## Outputs
 
@@ -325,12 +295,12 @@ python -m optimization.collect --host host1 --study my-study
 |---|---|
 | `bioreservoir/` | The model: DDE solver, `BioReservoir` node, topologies, realism, diagnostics |
 | `training/` | Runs, studies, cross-validation, measurement, comparison |
-| `optimization/` | Control reservoirs, deployment to remote hosts, the older optimisation command |
+| `optimization/` | The `v0.1` optimisation command, controls, deployment |
 | `utils/` | Data preparation, held-out splits, provenance, settings, plotting |
-| `scripts/` | Figure, analysis and experiment scripts |
-| `experiments/` | Run and study configs |
+| `scripts/` | Figure and analysis scripts, `v0.1` experiment scripts |
+| `experiments/` | Run and study configs: `benchmarks/v0.1/`, `v0.2/` |
 | `data/splits/` | Held-out splits (tracked); the rest of `data/` is generated |
-| `tests/` | Unit and integration tests (`pytest`) |
+| `tests/` | Unit and integration tests |
 
 See the [CHANGELOG](CHANGELOG.md) for what changed in each version.
 

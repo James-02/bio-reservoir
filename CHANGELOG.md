@@ -12,9 +12,6 @@ Each entry is marked **[science]** if it changes a reported number, or
 - [engineering] `scripts/paper/`: the scripts that write the revised paper's numbers, tables
   and figures from the collected runs, and the simulations behind its oscillation and solver
   figures; `test_paper_scripts.py` checks that each starts.
-- [engineering] The configs of the final runs behind the revised paper: the designs `p576`,
-  `p576r`, `p1024` and `p1600`, the equal-budget searches at 576 traps, Phases 3–6,
-  `extra-576/`, `trap-ceiling-576/` and the final test (`experiments/v0.2-final-test/`).
 - [engineering] The `v0.2` campaign configs in `experiments/v0.2/` (designs, tracking set,
   Phase 1 grids `P1-*`, Phase 2 searches `P2-*`), checked by `test_experiment_configs.py`.
 - [engineering] Configs can name a `base:` config and list only what differs; studies can
@@ -57,8 +54,6 @@ Each entry is marked **[science]** if it changes a reported number, or
 - [engineering] `pyproject.toml` gives the version as 0.2.1 and pins ruff to CI's 0.15.0; the
   Pillow pin is removed (matplotlib installs it).
 - [engineering] The README and this changelog are shorter.
-- [engineering] The README describes the framework on its own: the reservoir in Python, run
-  and study configs, analysis and figures, each with a worked example.
 - [engineering] The P designs no longer list settings they never read (`rc_scaling`,
   `noise_rc`, the distance-kernel settings); their simulations are unchanged.
 - [engineering] The default ridge penalties are written out, so every CPU records the same.
