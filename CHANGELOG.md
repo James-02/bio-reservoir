@@ -62,6 +62,9 @@ Each entry is marked **[science]** if it changes a reported number, or
   and study configs, analysis and figures, each with a worked example, and new figures.
 - [engineering] The P designs no longer list settings they never read (`rc_scaling`,
   `noise_rc`, the distance-kernel settings); their simulations are unchanged.
+- [engineering] The paper scripts read the runs and studies by the names of the paper configs
+  and have no design option; `paper_figures.py` writes the numbers only, as the tables come
+  from `article_tables.py` and `si_tables.py`.
 - [engineering] The default ridge penalties are written out, so every CPU records the same.
 - [engineering] A readout grid search uses the run's `--processes` when folds run in turn.
 - [engineering] A relaunch with the same `--label` adds to the job log instead of replacing it.

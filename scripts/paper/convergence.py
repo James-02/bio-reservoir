@@ -9,10 +9,10 @@ B. The design itself (576 traps, coupled, kinetic variability, warm-up) and one 
    reference image, against the same run at 128 substeps; the measurement noise (1%) for
    scale.
 
-    python scripts/paper/convergence.py results/figures/paper/p576 --formats png,pdf
+    python scripts/paper/convergence.py results/figures/paper --formats png,pdf
 
 Writes ``convergence.csv`` and ``si_convergence`` to the folder, and prints the errors. Run
-from the repository root (B reads ``experiments/v0.2/designs/p576.yaml``).
+from the repository root (B reads ``experiments/paper/models/array.yaml``).
 """
 
 from __future__ import annotations
@@ -166,13 +166,11 @@ def figure(rows: list[dict]):
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("out", type=Path, help="Output folder.")
-    parser.add_argument("--design", default="p576",
-                        help="Design file in experiments/v0.2/designs/ (default: %(default)s).")
     add_formats_option(parser)
     args = parser.parse_args()
     from training.run import load_config, resolve
 
-    design = Path("experiments/v0.2/designs") / f"{args.design}.yaml"
+    design = Path("experiments/paper/models/array.yaml")
     params = resolve(load_config(design))["reservoir"]["params"]
     rows = colony_errors(float(params["washout_rate"]), float(params["cell_density"]))
     rows += array_errors(design)

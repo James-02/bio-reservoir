@@ -21,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 from paper_figures import (
+    ABLATIONS,
     CONTROLS,
     FOREST,
     HEADLINE,
@@ -82,14 +83,14 @@ def numeric(points: dict) -> list:
     return sorted(k for k in points if k is not None and not isinstance(k, str))
 
 
-def metrics_table(r: Results, d: str) -> str:
+def metrics_table(r: Results) -> str:
     rows = []
     for task, name in TASKS.items():
         if rows:
             rows.append(["MIDRULE"])
         rows.append([rf"\multicolumn{{7}}{{@{{}}l}}{{\textit{{{name} task}}}}"])
-        runs = [("Array (design)", [f"P5-{task}-{d}-headline-s{s}" for s in SEEDS])]
-        runs += [(f"Raw beat, {label}", [f"P5-{task}-raw-{key}"])
+        runs = [("Array (design)", [f"{task}-array-s{s}" for s in SEEDS])]
+        runs += [(f"Raw beat, {label}", [f"{task}-raw-{key}"])
                  for key, label in (("ridge", "ridge"), ("rf", "forest"),
                                     ("histgb", "HistGB"))]
         for label, names in runs:
@@ -104,10 +105,10 @@ def metrics_table(r: Results, d: str) -> str:
                  colsep="3pt")
 
 
-def folds_table(r: Results, d: str) -> str:
+def folds_table(r: Results) -> str:
     rows = []
     for seed in SEEDS:
-        m = r.metrics(f"P5-balanced-{d}-headline-s{seed}")
+        m = r.metrics(f"balanced-array-s{seed}")
         if m is not None:
             f = [fold["f1"] for fold in m["folds"]]
             rows.append([str(seed)] + [f"{v:.3f}" for v in f] + [f"{np.mean(f):.3f}"])
@@ -124,7 +125,7 @@ def folds_table(r: Results, d: str) -> str:
                                    "Mean"], rows)
 
 
-def per_class_table(r: Results, d: str) -> str:
+def per_class_table(r: Results) -> str:
     def row(label, names):
         found = [v for v in (r.per_class(n) for n in names) if v is not None]
         if not found:
@@ -139,12 +140,12 @@ def per_class_table(r: Results, d: str) -> str:
             rows.append(["MIDRULE"])
         rows.append([rf"\multicolumn{{6}}{{@{{}}l}}{{\textit{{{name} task}}}}"])
         rows.append([""] + classes + [""] * (5 - len(classes)))
-        candidates = [("Array, ridge", [f"P5-{task}-{d}-headline-s{s}" for s in SEEDS])]
+        candidates = [("Array, ridge", [f"{task}-array-s{s}" for s in SEEDS])]
         if task == "balanced":
-            candidates.append(("Array, RBF SVM", [f"P4-{d}-c-svm"]
-                               + [f"extra-576-readout-c-svm-s{s}" for s in SEEDS[1:]]))
-        candidates += [("Raw beat, ridge", [f"P5-{task}-raw-ridge"]),
-                       ("Raw beat, HistGB", [f"P5-{task}-raw-histgb"])]
+            candidates.append(("Array, RBF SVM",
+                               [f"readout-two-images-svm-s{s}" for s in SEEDS]))
+        candidates += [("Raw beat, ridge", [f"{task}-raw-ridge"]),
+                       ("Raw beat, HistGB", [f"{task}-raw-histgb"])]
         for label, names in candidates:
             line = row(label, names)
             if line is not None:
@@ -160,20 +161,20 @@ def per_class_table(r: Results, d: str) -> str:
                  rows, "footnotesize")
 
 
-def heldout_table(r: Results, d: str) -> str:
+def heldout_table(r: Results) -> str:
     rows = []
     for label, split_run, seeds, key in (
-            ("Array, ridge (design)", f"{d}-c", SEEDS, "headline"),
-            ("Array, forest on four images", f"{d}-e", SEEDS, "forest"),
-            ("Array, ideal reading", f"{d}-full", SEEDS, "ideal"),
-            ("Isolated traps", "uncoupled-576", SEEDS, "uncoupled-576"),
-            ("ESN, read like the array", "esn-image-576", SEEDS, "esn-image-576"),
-            ("ESN, clean states", "esn-576", SEEDS, "esn-576"),
+            ("Array, ridge (design)", "array", SEEDS, "headline"),
+            ("Array, forest on four images", "array-forest", SEEDS, "forest"),
+            ("Array, ideal reading", None, (), "ideal"),
+            ("Isolated traps", "isolated-traps", SEEDS, "isolated-traps"),
+            ("ESN, read like the array", "esn-image", SEEDS, "esn-image"),
+            ("ESN, clean states", "esn-mean", SEEDS, "esn-mean"),
             ("Raw beat, ridge", None, (), "raw-ridge"),
             ("Raw beat, forest", None, (), "raw-rf"),
             ("Raw beat, HistGB", None, (), "raw-histgb")):
         found = test_split(r, key)
-        rows.append([label] + [pm(r.seeds(f"P3-{s}-{split_run}", seeds)) if split_run else "--"
+        rows.append([label] + [pm(r.seeds(f"{s}-{split_run}", seeds)) if split_run else "--"
                                for s in ("validation-1", "validation-2")]
                     + ([f"{found[0]:.3f}", f"{found[1]:.3f}--{found[2]:.3f}"] if found
                        else ["--", "--"]))
@@ -190,11 +191,11 @@ def heldout_table(r: Results, d: str) -> str:
                                  "Test, 95\\% CI"], rows, "footnotesize")
 
 
-def readouts_table(r: Results, d: str) -> str:
+def readouts_table(r: Results) -> str:
     rows = []
     for key, label in READOUTS:
-        rows.append([label.replace("\n", " "), pm(list(readout(r, d, "c", key).values())),
-                     pm(list(readout(r, d, "e", key).values())), pm(r.f1(RAW[key]))])
+        rows.append([label.replace("\n", " "), pm(list(readout(r, "c", key).values())),
+                     pm(list(readout(r, "e", key).values())), pm(r.f1(RAW[key]))])
     return table("tab:si-readouts",
                  "Every readout on the array's two and four images and on the raw beat "
                  "(balanced task, macro F1; array: mean $\\pm$ SD over the reporting seeds). "
@@ -207,16 +208,16 @@ SWEEP = ("balanced task, ridge on two images; macro F1, mean $\\pm$ SD over the 
          "seeds")
 
 
-def imaging_tables(r: Results, d: str) -> str:
-    noise = [r.sweep(f"P3-{d}-noise", "features.measurement_noise", features__aggregation=agg)
+def imaging_tables(r: Results) -> str:
+    noise = [r.sweep("robustness-noise", "features.measurement_noise", features__aggregation=agg)
              for agg in (ONE, HEADLINE, FOREST)]
     levels = sorted(set().union(*(numeric(p) for p in noise)))
     noise_rows = [[f"{100 * v:g}"] + [pm(p.get(v)) for p in noise] for v in levels]
-    times, final = image_times(r, d)
+    times, final = image_times(r)
     time_rows = [[str(t), pm(times[t])] for t in sorted(times)]
     time_rows += [["MIDRULE"], ["187 only", pm(final)]]
-    calibration = [r.sweep(f"P3-{d}-calibration{sfx}", "features.calibration_error",
-                           features__aggregation=HEADLINE) for sfx in ("", "-noref")]
+    calibration = [r.sweep(f"robustness-calibration{sfx}", "features.calibration_error",
+                           features__aggregation=HEADLINE) for sfx in ("", "-no-reference")]
     errors = sorted(set().union(*(numeric(p) for p in calibration)))
     calibration_rows = [[f"{100 * v:g}"] + [pm(p.get(v)) for p in calibration] for v in errors]
     return "\n".join([
@@ -240,23 +241,23 @@ def imaging_tables(r: Results, d: str) -> str:
     ])
 
 
-def start_tables(r: Results, d: str) -> str:
-    reset = r.sweep(f"P3-{d}-reset", "reservoir.params.reset_noise")
-    warmup = r.sweep(f"P3-{d}-warmup", "reservoir.params.warmup")
-    rest = r.sweep(f"P3-{d}-warmup-input", "reservoir.params.warmup_input").get("rest")
+def start_tables(r: Results) -> str:
+    reset = r.sweep("robustness-reset", "reservoir.params.reset_noise")
+    warmup = r.sweep("robustness-warmup", "reservoir.params.warmup")
+    rest = r.sweep("robustness-warmup-input", "reservoir.params.warmup_input").get("rest")
     warmup_rows = [[f"{v:,}", pm(warmup[v])] for v in numeric(warmup)]
     warmup_rows += [["MIDRULE"], ["900, inducer at rest", pm(rest)]]
-    levels = r.sweep(f"P3-{d}-input-levels", "reservoir.params.input_levels")
+    levels = r.sweep("robustness-input-levels", "reservoir.params.input_levels")
     level_rows = [["1 (equal)" if v == 1 else str(v), pm(levels[v])] for v in numeric(levels)]
     level_rows += [["Continuous", pm(levels.get("continuous"))]]
-    induced = r.grid("extra-576-connectivity", "reservoir.params.input_connectivity",
-                     "reservoir.params.coupling") if d == "p576" else {}
+    induced = r.grid("induced-share", "reservoir.params.input_connectivity",
+                     "reservoir.params.coupling")
     shares = sorted({k[0] for k in induced})
     induced_rows = [[f"{100 * s:g}"] + [pm(list(induced.get((s, c), {}).values()))
                                         for c in ("diffusion", "none")] for s in shares]
-    layout = r.sweep(f"P6-{d}-gaussian", "reservoir.params.interaction_diameters")
+    layout = r.sweep("layout-gaussian", "reservoir.params.interaction_diameters")
     layout_rows = [[f"{v:g}", pm(layout[v])] for v in numeric(layout)]
-    layout_rows += [["MIDRULE"], ["Grid (design)", pm(r.seeds(f"P5-balanced-{d}-headline"))]]
+    layout_rows += [["MIDRULE"], ["Grid (design)", pm(r.seeds("balanced-array"))]]
     return "\n".join([
         table("tab:si-reset",
               "Reset error: the starting state of every beat perturbed with this coefficient "
@@ -285,10 +286,11 @@ def start_tables(r: Results, d: str) -> str:
     ])
 
 
-def heterogeneity_tables(r: Results, d: str, flat_path: Path | None) -> str:
-    kinetic = r.sweep(f"P3-{d}-heterogeneity", "reservoir.params.param_heterogeneity_cv")
-    kinetic.update(r.sweep(f"P3-{d}-heterogeneity-64", "reservoir.params.param_heterogeneity_cv"))
-    flat = {round(cv, 4): v for cv, v in flat_shares(flat_path, d).items()}
+def heterogeneity_tables(r: Results, flat_path: Path | None) -> str:
+    kinetic = r.sweep("heterogeneity-kinetic", "reservoir.params.param_heterogeneity_cv")
+    kinetic.update(r.sweep("heterogeneity-kinetic-64-substeps",
+                           "reservoir.params.param_heterogeneity_cv"))
+    flat = {round(cv, 4): v for cv, v in flat_shares(flat_path).items()}
 
     def colonies(cv):
         counts = [round(576 * share / 100) for share in flat.get(round(cv, 4), [])]
@@ -301,8 +303,9 @@ def heterogeneity_tables(r: Results, d: str, flat_path: Path | None) -> str:
             f"{mean:.0f} ({min(counts)}--{max(counts)})"
 
     kinetic_rows = [[f"{v:.2g}", pm(kinetic[v]), colonies(v)] for v in numeric(kinetic)]
-    spreads = [r.sweep(f"P3-{d}-{key}", f"reservoir.params.heterogeneity_{key}_cv")
-               for key in ("density", "dilution")]
+    spreads = [r.sweep(study, f"reservoir.params.heterogeneity_{key}_cv")
+               for study, key in (("heterogeneity-density", "density"),
+                                  ("heterogeneity-washout", "dilution"))]
     cvs = sorted(set().union(*(numeric(p) for p in spreads)))
     spread_rows = [[f"{v:g}"] + [pm(p.get(v)) for p in spreads] for v in cvs]
     return "\n".join([
@@ -372,8 +375,8 @@ def start_table(low: Path, ahl: Path) -> str:
                       rf"\cmidrule(l){{2-{n + 1}}}"])
 
 
-def traps_table(r: Results, d: str) -> str:
-    ridge, forest, ideal = traps(r, d), traps(r, d, forest=True), ideal_traps(r, d)
+def traps_table(r: Results) -> str:
+    ridge, forest, ideal = traps(r), traps(r, forest=True), ideal_traps(r)
     rows = [[f"{n:,}", pm(ridge.get(n)), pm(forest.get(n)), pm(ideal.get(n))]
             for n in sorted(set(ridge) | set(forest) | set(ideal))]
     return table("tab:si-traps",
@@ -388,13 +391,13 @@ def traps_table(r: Results, d: str) -> str:
                                 "Ideal reading"], rows)
 
 
-def comparisons_table(r: Results, d: str) -> str:
+def comparisons_table(r: Results) -> str:
     rows = []
     for label, values in (
-            ("Array (design)", r.by_seed(f"P5-balanced-{d}-headline")),
-            ("Isolated traps", r.by_seed("P5-balanced-uncoupled-576")),
-            ("ESN, read like the array", r.by_seed("P5-balanced-esn-image-576")),
-            ("ESN, clean states", r.by_seed("P5-balanced-esn-576")),
+            ("Array (design)", r.by_seed("balanced-array")),
+            ("Isolated traps", r.by_seed("balanced-isolated-traps")),
+            ("ESN, read like the array", r.by_seed("balanced-esn-image")),
+            ("ESN, clean states", r.by_seed("balanced-esn-mean")),
             ("Random tanh features", r.report(CONTROLS["random_features"])),
             ("Leaky integrators", r.report(CONTROLS["fading_memories"]))):
         rows.append([label] + [f"{values[s]:.3f}" if s in values else "--" for s in SEEDS]
@@ -413,22 +416,22 @@ def comparisons_table(r: Results, d: str) -> str:
                  top=[r"& \multicolumn{5}{c}{Reservoir seed} & \\", r"\cmidrule(lr){2-6}"])
 
 
-def ablations_table(r: Results, d: str) -> str:
+def ablations_table(r: Results) -> str:
     def score(stem, forest, value):
         key = {"coupling": "reservoir.params.coupling", "delay": "reservoir.params.delay",
                "scramble": "task.scramble"}[stem]
-        study = r.grid(f"P6-{d}-ablation-{stem}{'-forest' if forest else ''}", key)
+        study = r.grid(f"ablation-{ABLATIONS[stem]}{'-forest' if forest else ''}", key)
         return pm(list(study.get((value,), {}).values()))
 
-    ridge, forest = r.by_seed(f"P5-balanced-{d}-headline"), r.by_seed(f"P5-balanced-{d}-forest")
+    ridge, forest = r.by_seed("balanced-array"), r.by_seed("balanced-array-forest")
     rows = [["Array (design)", pm(list(ridge.values())), pm(list(forest.values()))],
             ["MIDRULE"]]
     for label, stem, value in (("No AHL exchange", "coupling", "none"),
                                ("No feedback delay", "delay", 0),
                                ("Beat samples shuffled", "scramble", True)):
         rows.append([label, score(stem, False, value), score(stem, True, value)])
-    rows.append(["Linear imitation$^{a}$", pm(r.seeds(f"P6-{d}-surrogate-c")),
-                 pm(r.seeds(f"P6-{d}-surrogate-e"))])
+    rows.append(["Linear imitation$^{a}$", pm(r.seeds("surrogate-two-images")),
+                 pm(r.seeds("surrogate-four-images"))])
     rows.append(["MIDRULE"])
     for label, name in (("Random tanh features$^{b}$", "random_features"),
                         ("Leaky integrators$^{b}$", "fading_memories")):
@@ -447,25 +450,24 @@ def ablations_table(r: Results, d: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--design", default="p576", help="The design (default p576).")
-    parser.add_argument("--out", type=Path, help="Output folder (default "
-                        "results/figures/paper/<design>).")
+    parser.add_argument("--out", type=Path,
+                        help="Output folder (default results/figures/paper).")
     parser.add_argument("--flat-share", type=Path, help="CSV of scripts/paper/flat_share.py.")
     parser.add_argument("--oscillation-low", type=Path,
                         help="CSV of oscillation_map.py from the design's start.")
     parser.add_argument("--oscillation-ahl", type=Path,
                         help="CSV of oscillation_map.py --start-ahl.")
     args = parser.parse_args(argv)
-    r, d = Results(), args.design
-    out = args.out or config.figures_dir(f"paper/{d}")
+    r = Results()
+    out = args.out or config.figures_dir("paper")
     out.mkdir(parents=True, exist_ok=True)
     files = {
-        "si_evaluation.tex": [metrics_table(r, d), folds_table(r, d), per_class_table(r, d),
-                              heldout_table(r, d)],
-        "si_readouts.tex": [readouts_table(r, d)],
-        "si_comparisons.tex": [comparisons_table(r, d), ablations_table(r, d)],
-        "si_array.tex": [traps_table(r, d), imaging_tables(r, d), start_tables(r, d)],
-        "si_heterogeneity.tex": [heterogeneity_tables(r, d, args.flat_share)],
+        "si_evaluation.tex": [metrics_table(r), folds_table(r), per_class_table(r),
+                              heldout_table(r)],
+        "si_readouts.tex": [readouts_table(r)],
+        "si_comparisons.tex": [comparisons_table(r), ablations_table(r)],
+        "si_array.tex": [traps_table(r), imaging_tables(r), start_tables(r)],
+        "si_heterogeneity.tex": [heterogeneity_tables(r, args.flat_share)],
     }
     if args.oscillation_low and args.oscillation_ahl:
         files["si_start.tex"] = [start_table(args.oscillation_low, args.oscillation_ahl)]

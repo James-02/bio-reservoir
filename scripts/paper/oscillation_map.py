@@ -1,22 +1,23 @@
-"""Do the colonies oscillate, and how fast, over the flow x cell-density grid of the F1 map
-(Fig. 2b and c)?
+"""Do the colonies oscillate, and how fast, over the washout x cell-density grid of the F1 map
+(Fig. 2D)?
 
 Each array is the design's (its gain, coupling rate, kinetic variability and size) at one AHL
-washout rate (flow) and cell density, built and warmed up as a trial builds it, then run on at
+washout rate and cell density, built and warmed up as a trial builds it, then run on at
 the warm-up drive for 300 steps, as ``flat_share.py`` does. A colony oscillates when its LuxI
 trace over the last 200 steps has max / min of at least 1.5; its period is the median spacing
 of its LuxI peaks (one step is one minute).
 
 With ``--start-ahl H``, every colony starts the warm-up with its internal and external AHL
 at ``H`` (the whole delay history) instead of the low random concentrations of the design,
-to test whether the colonies' oscillation depends on where they start (Table S of the start).
+to test whether the colonies' oscillation depends on where they start (the SI table of the
+starting state).
 
     python scripts/paper/oscillation_map.py results/figures/paper/oscillation_map.csv \\
-        --design p576 --processes N
-    python scripts/paper/oscillation_map.py results/figures/paper/oscillation_start.csv \\
-        --design p576 --start-ahl 0.1 --flows 0.3,0.4,0.6,0.9,1.2,1.5,2 --processes N
+        --processes N
+    python scripts/paper/oscillation_map.py results/figures/paper/oscillation_start_ahl.csv \\
+        --start-ahl 0.1 --flows 0.3,0.4,0.6,0.9,1.2,1.5,2 --processes N
 
-Writes one CSV row per flow, density and seed; ``paper_figures.py --oscillation`` reads it.
+Writes one CSV row per washout, density and seed; ``paper_panels.py --oscillation`` reads it.
 """
 
 from __future__ import annotations
@@ -32,9 +33,10 @@ FLOWS = (0.3, 0.4, 0.6, 0.9, 1.2)
 DENSITIES = (0.6, 0.7, 0.75, 0.8, 0.85)
 SEEDS = (6348, 6349, 6350, 6351, 6352)
 STEPS, WINDOW, FLAT_RATIO = 300, 200, 1.5
+MODEL = Path("experiments/paper/models/array.yaml")
 
 
-def one(job: tuple[str, float, float, int, float | None]) -> dict:
+def one(job: tuple[float, float, int, float | None]) -> dict:
     import reservoirpy
     from scipy.signal import find_peaks
 
@@ -44,8 +46,8 @@ def one(job: tuple[str, float, float, int, float | None]) -> dict:
     from training.run import load_config, resolve
 
     reservoirpy.verbosity(0)
-    design, flow, density, seed, start_ahl = job
-    cfg = resolve(load_config(Path("experiments/v0.2/designs") / f"{design}.yaml"))
+    flow, density, seed, start_ahl = job
+    cfg = resolve(load_config(MODEL))
     params = dict(cfg["reservoir"]["params"], washout_rate=flow, cell_density=density,
                   reservoir_type="bioreservoir")
     draw = BioReservoir._initialize_states
@@ -77,7 +79,7 @@ def one(job: tuple[str, float, float, int, float | None]) -> dict:
         peaks, _ = find_peaks(x, prominence=0.3 * (x.max() - x.min()))
         if len(peaks) >= 2:
             periods.append(np.median(np.diff(peaks)))
-    return {"design": design, "flow": flow, "density": density, "seed": seed,
+    return {"flow": flow, "density": density, "seed": seed,
             "start_ahl": "" if start_ahl is None else start_ahl,
             "units": trace.shape[1], "oscillating": float(np.mean(oscillating)),
             "period": float(np.median(periods)) if periods else float("nan"),
@@ -87,8 +89,6 @@ def one(job: tuple[str, float, float, int, float | None]) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("out", type=Path)
-    parser.add_argument("--design", default="p576",
-                        help="Design file in experiments/v0.2/designs/ (default: %(default)s).")
     parser.add_argument("--processes", type=int, default=1)
     parser.add_argument("--start-ahl", type=float, default=None,
                         help="Start every colony's internal and external AHL at this level.")
@@ -96,8 +96,7 @@ def main() -> None:
                         help="AHL washout rates (default: %(default)s).")
     args = parser.parse_args()
     flows = tuple(float(f) for f in args.flows.split(","))
-    jobs = [(args.design, f, d, s, args.start_ahl) for f in flows for d in DENSITIES
-            for s in SEEDS]
+    jobs = [(f, d, s, args.start_ahl) for f in flows for d in DENSITIES for s in SEEDS]
     with ProcessPoolExecutor(args.processes) as pool:
         rows = list(pool.map(one, jobs))
     args.out.parent.mkdir(parents=True, exist_ok=True)

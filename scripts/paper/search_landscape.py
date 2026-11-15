@@ -64,11 +64,11 @@ SECOND = {"color": "#CC79A7", "marker": "D"}
 class Model:
     """A model's two search studies and the setting carried forward."""
 
-    def __init__(self, label: str, prefix: str, style: dict, rename: dict | None = None):
+    def __init__(self, label: str, name: str, style: dict, rename: dict | None = None):
         self.label, self.style, self.rename = label, style, rename or {}
-        self.studies = {w: self._load(f"{prefix}-{w}") for w in "ab"}
+        self.studies = {w: self._load(f"search-{name}-{w}") for w in "ab"}
         scores = defaultdict(list)
-        for t in self._load(f"{prefix}-top"):
+        for t in self._load(f"selection-{name}"):
             scores[self._key(t)].append(t.value)
         self.chosen = max(scores, key=lambda k: np.mean(scores[k])) if scores else None
 
@@ -163,8 +163,8 @@ def legend(fig, models: list[Model], design: bool):
 
 
 def figure_array() -> plt.Figure:
-    models = [Model("Array (design)", "P2-576-lattice", DESIGN),
-              Model("Isolated traps", "P2-576-uncoupled", FIRST)]
+    models = [Model("Array (design)", "array", DESIGN),
+              Model("Isolated traps", "isolated-traps", FIRST)]
     fig = plt.figure(figsize=(21, 11))
     grid = fig.add_gridspec(2, 6, hspace=0.45, wspace=0.9)
     axes = [fig.add_subplot(grid[0, 2 * i:2 * i + 2]) for i in range(3)]
@@ -183,8 +183,8 @@ def figure_array() -> plt.Figure:
 
 def figure_esn() -> plt.Figure:
     rename = {"esn_input_scaling": "input_scaling"}
-    models = [Model("ESN, clean states", "P2-576-esn", DESIGN, rename),
-              Model("ESN, read like the array", "P2-576-esn-image", FIRST, rename)]
+    models = [Model("ESN, clean states", "esn-mean", DESIGN, rename),
+              Model("ESN, read like the array", "esn-image", FIRST, rename)]
     fig, grid = plt.subplots(2, 3, figsize=(21, 11), gridspec_kw={"hspace": 0.45,
                                                                    "wspace": 0.3})
     axes = list(grid.ravel())
@@ -200,9 +200,9 @@ def figure_esn() -> plt.Figure:
 
 
 def figure_controls() -> plt.Figure:
-    features = Model("Random tanh features", "extra-576-random-features", DESIGN,
+    features = Model("Random tanh features", "random-features", DESIGN,
                      {"rf_input_scaling": "input_scaling"})
-    bank = Model("Leaky integrators", "extra-576-leaky-bank", SECOND)
+    bank = Model("Leaky integrators", "leaky-integrators", SECOND)
     fig = plt.figure(figsize=(21, 11))
     grid = fig.add_gridspec(2, 8, hspace=0.55, wspace=0.9)
     top = [fig.add_subplot(grid[0, 2 * i + 1:2 * i + 3]) for i in range(3)]
