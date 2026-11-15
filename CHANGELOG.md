@@ -15,8 +15,9 @@ Each entry is marked **[science]** if it changes a reported number, or
 - [engineering] `scripts/paper/`: the scripts that write the revised paper's numbers, tables
   and figures from the collected runs, and the simulations behind its oscillation and solver
   figures; `test_paper_scripts.py` checks that each starts.
-- [engineering] The `v0.2` campaign configs in `experiments/v0.2/` (designs, tracking set,
-  Phase 1 grids `P1-*`, Phase 2 searches `P2-*`), checked by `test_experiment_configs.py`.
+- [engineering] `experiments/paper/`: the configs of every run and study the paper reports,
+  named after what they test (`balanced-array-s6348`, `robustness-noise`, `search-array-a`)
+  and written as sweeps; `test_experiment_configs.py` checks each run and study.
 - [engineering] Configs can name a `base:` config and list only what differs; studies can
   search the run `seed`.
 - [engineering] `training.run study-table`: one row per study trial (searched values, seed,

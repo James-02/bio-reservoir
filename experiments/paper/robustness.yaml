@@ -1,0 +1,150 @@
+# Robustness and Heterogeneity: the array under measurement noise, calibration error, other
+# image times, discrete inducer levels, an imperfect reset, other warm-ups, variability between
+# colonies and a random layout. Seeded grid studies, each read like the array.
+#    python -m training.run sweep experiments/paper/robustness.yaml --list
+#    python -m training.run sweep experiments/paper/robustness.yaml --only experiment=robustness-noise --processes N
+#    python -m training.run study-table experiments/paper/robustness.yaml --group
+sweep:
+  - name: '{experiment}'
+    model:
+      array: models/array.yaml
+    experiment:
+      robustness-noise:
+        description: Measurement noise 0-10% with one image (187 min), two (140, 187) or four (46, 93, 140, 187),
+          each over the start image; reporting seeds 6348-6352.
+        study:
+          trials: 105
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            features.measurement_noise: {type: categorical, choices: [0.0, 0.005, 0.01, 0.02, 0.03, 0.05, 0.1]}
+            features.aggregation: {type: categorical, choices: [final, 'images_at:140,187', 'images:4']}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      robustness-calibration:
+        description: Calibration error 0-5% with one, two or four images over the start image; run seeds 6348-6352
+          (calibration, noise and reservoir).
+        study:
+          trials: 75
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+            features.aggregation: {type: categorical, choices: [final, 'images_at:140,187', 'images:4']}
+            features.calibration_error: {type: categorical, choices: [0.0, 0.01, 0.02, 0.03, 0.05]}
+      robustness-calibration-no-reference:
+        description: Calibration error 0-5% with one, two or four images, without the start image; run seeds 6348-6352.
+        features: {reference: null}
+        study:
+          trials: 75
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+            features.aggregation: {type: categorical, choices: [final, 'images_at:140,187', 'images:4']}
+            features.calibration_error: {type: categorical, choices: [0.0, 0.01, 0.02, 0.03, 0.05]}
+      robustness-image-time:
+        description: One image at 187 min, or a second image at 124-171 min with it; reporting seeds 6348-6352.
+        study:
+          trials: 40
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            features.aggregation:
+              type: categorical
+              choices: [final, 'images_at:124,187', 'images_at:132,187', 'images_at:140,187', 'images_at:148,187',
+                'images_at:155,187', 'images_at:163,187', 'images_at:171,187']
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      robustness-input-levels:
+        description: The inducer at 1, 2, 3 or 5 levels, or continuous; reporting seeds 6348-6352.
+        study:
+          trials: 25
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.input_levels: {type: categorical, choices: [1, 2, 3, 5, continuous]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      robustness-reset:
+        description: 'An imperfect reset between beats: start-state perturbation CV 0-0.1; reporting seeds 6348-6352.'
+        study:
+          trials: 30
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.reset_noise: {type: categorical, choices: [0.0, 0.001, 0.003, 0.01, 0.03, 0.1]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      robustness-warmup:
+        description: Warm-up 0-2,000 min; reporting seeds 6348-6352.
+        study:
+          trials: 45
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.warmup: {type: categorical, choices: [0, 100, 200, 300, 450, 600, 900, 1300, 2000]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      robustness-warmup-input:
+        description: Warm-up without inducer or at the resting level; reporting seeds 6348-6352.
+        study:
+          trials: 10
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.warmup_input: {type: categorical, choices: [zero, rest]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      heterogeneity-kinetic:
+        description: Kinetic variability between colonies, CV 0-0.2 (mean-preserving); reporting seeds 6348-6352.
+        study:
+          trials: 45
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.param_heterogeneity_cv:
+              type: categorical
+              choices: [0.0, 0.01, 0.018675014409681404, 0.03, 0.05, 0.065, 0.1, 0.15, 0.2]
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      heterogeneity-kinetic-64-substeps:
+        description: Kinetic variability CV 0.3-0.5 at 64 RK4 substeps; reporting seeds 6348-6352.
+        reservoir:
+          params: {rk4_substeps: 64}
+        study:
+          trials: 15
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.param_heterogeneity_cv: {type: categorical, choices: [0.3, 0.4, 0.5]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      heterogeneity-density:
+        description: Cell-density variability between colonies, CV 0-0.3; reporting seeds 6348-6352.
+        study:
+          trials: 25
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.heterogeneity_density_cv: {type: categorical, choices: [0.0, 0.05, 0.1, 0.2, 0.3]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      heterogeneity-washout:
+        description: Washout variability between colonies, CV 0-0.3; reporting seeds 6348-6352.
+        study:
+          trials: 25
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.heterogeneity_dilution_cv: {type: categorical, choices: [0.0, 0.05, 0.1, 0.2, 0.3]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      layout-gaussian:
+        description: Random trap positions with a Gaussian exchange kernel of range 2-8.2 cell diameters, instead
+          of the square lattice; reporting seeds 6348-6352.
+        reservoir:
+          params:
+            topology_type: distance
+            fade_alpha: 2.80278092396274e-05
+            sparsity: 1.0
+            signed: false
+            p_excite: 1.0
+            normalize_after_masks: true
+        study:
+          trials: 25
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.interaction_diameters: {type: categorical, choices: [2.0, 2.6, 3.8, 5.2, 8.2]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}

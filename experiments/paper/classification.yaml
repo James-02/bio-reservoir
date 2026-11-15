@@ -1,0 +1,105 @@
+# Classification Performance: the array on the balanced task (4,015 beats, five folds, reporting
+# seeds 6348-6352), read from two images by ridge, from four by the random forest, or ideally
+# from the clean mean of its observed states; the classifiers on the raw beat; and every
+# readout refitted on the array's saved images (no new simulation).
+#    python -m training.run sweep experiments/paper/classification.yaml --list
+#    python -m training.run sweep experiments/paper/classification.yaml --only model=array --processes N
+# The readouts refit the saved features of balanced-array-s<seed> and balanced-array-forest-s<seed>,
+# so run those first.
+sweep:
+  - name: balanced-{model}-s{seed}
+    description: &run '{model} on the balanced task, reservoir seed {seed}; five folds.'
+    model:
+      array: {base: models/array.yaml, outputs.save_states: true}
+      array-forest: {base: models/array-forest.yaml, outputs.save_states: true}
+      array-ideal: &ideal {base: models/array.yaml, features: {variables: null, aggregation: mean, measurement_noise: 0.0, reference: null}}
+      array-ideal-forest: {<<: *ideal, base: models/array-forest.yaml}
+    seed: &seeds {reservoir.seed: [6348, 6349, 6350, 6351, 6352]}
+
+  - name: balanced-raw-{readout}
+    description: 'Raw-beat baseline: {readout} on the scaled beat; balanced task, five folds.'
+    readout:
+      ridge: &raw
+        seed: 6337
+        task: {labels: five-class, rows: 4015, balance_classes: true, scaler: sequence_zscore, seed: 6337}
+        reservoir: {type: none}
+        readout: {classifier: RidgeCV, scale: true, params: {scoring: f1_macro}}
+        cv: {folds: 5, seed: 6337}
+      rf:
+        <<: *raw
+        readout:
+          classifier: RF
+          scale: false
+          params: {n_estimators: 326, criterion: log_loss, max_depth: 23, max_features: sqrt, min_samples_split: 2, min_samples_leaf: 1, class_weight: balanced, oob_score: true, random_state: 6337, n_jobs: -1}
+      histgb:
+        <<: *raw
+        readout:
+          classifier: HistGB
+          scale: true
+          params: {max_iter: 500, early_stopping: true, class_weight: balanced, random_state: 6337}
+          search: {learning_rate: [0.05, 0.1], max_leaf_nodes: [31, 63]}
+          inner_folds: 3
+      knn:
+        <<: *raw
+        readout:
+          classifier: KNN
+          scale: true
+          params: {n_jobs: -1}
+          search: {n_neighbors: [1, 3, 5, 9], weights: [uniform, distance]}
+          inner_folds: 3
+      lr:
+        <<: *raw
+        readout: {classifier: LR, scale: true, params: {max_iter: 5000}}
+      # gamma 0.3, 1 and 3 over the number of features (187 samples).
+      svm:
+        <<: *raw
+        readout:
+          classifier: SVM
+          scale: true
+          params: {kernel: rbf, class_weight: balanced, cache_size: 2000}
+          search: {C: [1.0, 10.0, 100.0, 1000.0], gamma: [0.0016042780748663102, 0.0053475935828877, 0.016042780748663103]}
+          inner_folds: 3
+
+  # Readouts refitted on the array's saved features: two images or four.
+  - name: readout-{reading}-{readout}-s{seed}
+    description: &refit 'Readout {readout} refitted on the saved features of the array ({reading}, reservoir seed {seed}); balanced task, five folds.'
+    reading: &readings
+      two-images: {seed: 6337, reservoir.states_from: 'balanced-array-s{seed}'}
+      four-images: {seed: 6337, reservoir.states_from: 'balanced-array-forest-s{seed}'}
+    readout:
+      ridge: {readout: {classifier: RidgeCV, scale: true, params: {scoring: f1_macro}}}
+      lr: {readout: {classifier: LR, scale: true, params: {max_iter: 5000}}}
+      knn:
+        readout:
+          classifier: KNN
+          scale: true
+          params: {n_jobs: -1}
+          search: {n_neighbors: [1, 3, 5, 9], weights: [uniform, distance]}
+          inner_folds: 3
+      rf:
+        readout:
+          classifier: RF
+          scale: false
+          params: {n_estimators: 326, criterion: log_loss, max_depth: 23, max_features: sqrt, min_samples_split: 2, min_samples_leaf: 1, class_weight: balanced, oob_score: true, random_state: 6337, n_jobs: -1}
+      histgb:
+        readout:
+          classifier: HistGB
+          scale: true
+          params: {max_iter: 500, early_stopping: true, class_weight: balanced, random_state: 6337}
+          search: {learning_rate: [0.05, 0.1], max_leaf_nodes: [31, 63]}
+          inner_folds: 3
+    seed: &report [6348, 6349, 6350, 6351, 6352]
+
+  # gamma 0.3, 1 and 3 over the number of features: 1,152 (two images) or 2,304 (four).
+  - name: readout-{reading}-svm-s{seed}
+    description: 'Readout svm refitted on the saved features of the array ({reading}, reservoir seed {seed}); balanced task, five folds.'
+    reading:
+      two-images:
+        seed: 6337
+        reservoir.states_from: 'balanced-array-s{seed}'
+        readout: {classifier: SVM, scale: true, params: {kernel: rbf, class_weight: balanced, cache_size: 2000}, search: {C: [1.0, 10.0, 100.0, 1000.0], gamma: [0.00026041666666666666, 0.0008680555555555555, 0.0026041666666666665]}, inner_folds: 3}
+      four-images:
+        seed: 6337
+        reservoir.states_from: 'balanced-array-forest-s{seed}'
+        readout: {classifier: SVM, scale: true, params: {kernel: rbf, class_weight: balanced, cache_size: 2000}, search: {C: [1.0, 10.0, 100.0, 1000.0], gamma: [0.00013020833333333333, 0.00043402777777777775, 0.0013020833333333333]}, inner_folds: 3}
+    seed: *report

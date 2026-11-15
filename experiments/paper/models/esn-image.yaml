@@ -1,0 +1,30 @@
+name: esn-image
+description: Echo state network of 576 units tuned with the array's budget, read like the array (its
+  states at 140 and 187 min with 1% noise), by ridge.
+seed: 6337
+task:
+  labels: five-class
+  rows: 4015
+  balance_classes: true
+  scaler: sequence_zscore
+  seed: 6337
+reservoir:
+  type: esn
+  params:
+    units: 576
+    esn_leak_rate: 0.06431119568330097
+    esn_spectral_radius: 2.261918774863767
+    esn_activation: tanh
+    input_scaling: 0.9086673945833228
+    input_connectivity: 0.6246343669642176
+    input_bias: true
+    bias_scaling: 0.5967821243594292
+    noise_in: 0.005487227657292568
+    noise_rc: 0.0009442056404533605
+    rc_connectivity: 0.11675521798984001
+features: {aggregation: 'images_at:140,187', measurement_noise: 0.01}
+readout:
+  classifier: RidgeCV
+  scale: true
+  params: {scoring: f1_macro}
+cv: {folds: 5, seed: 6337}
