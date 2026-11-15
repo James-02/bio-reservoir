@@ -10,7 +10,7 @@
 
 A config names the task (labels, pool size, balancing, scaling), the reservoir (explicit
 parameters or an Optuna study trial), the state features, the readout (explicit or a
-readout-study trial) and the cross-validation; see ``experiments/benchmarks/`` for
+readout-study trial) and the cross-validation; see ``experiments/paper/`` for
 examples. ``resolve`` turns study references into explicit values, and a run records
 the resolved config, so it can be repeated without the study databases.
 

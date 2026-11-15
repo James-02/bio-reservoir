@@ -9,7 +9,7 @@ figure scales the same beat, raw, by its own minimum and maximum, by the mean an
 pool at each time (``standard``) and by its own mean and SD (``sequence_zscore``), and marks
 the config's scaling as used.
 
-    python scripts/figures/visualise_dataset.py experiments/v0.2/designs/centre.yaml
+    python scripts/figures/visualise_dataset.py experiments/paper/models/array.yaml
 
 It writes ``results/figures/dataset/<name>-beats.png``, ``<name>-noise-beat<N>.png`` and
 ``<name>-scalers-beat<N>.png`` (``--formats pdf,svg`` adds a PDF and an SVG of each), and
@@ -106,7 +106,7 @@ def draw_scalers(scaled: dict[str, np.ndarray], used: str) -> plt.Figure:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Draw the beats of a run config's task.")
     parser.add_argument("config", type=Path,
-                        help="A run config, e.g. experiments/v0.2/designs/centre.yaml.")
+                        help="A run config, e.g. experiments/paper/models/array.yaml.")
     parser.add_argument("--beat", type=int, default=0,
                         help="Index of the beat of the noise and scaler figures in the task's "
                              "pool (default: 0).")

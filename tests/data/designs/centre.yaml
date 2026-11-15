@@ -1,10 +1,6 @@
-# Design: the P centre. Studies name it with base: ../designs/centre.yaml and list only
-# what differs; a run of this file is one reservoir seed (6337).
-name: design-centre
-description: >-
-  The P centre (input x5.6, coupling rate 0.6, input connectivity 0.66, heterogeneity CV
-  0.065 mean-preserving, warm-up 800, N = 1,024 traps, 32 substeps); one image of the
-  LuxI reporter with 1% measurement noise, RidgeCV readout.
+# A test design: a trap lattice exchanging AHL between neighbours.
+name: test-lattice
+description: A lattice of 1,024 traps exchanging AHL, read from one noisy image of the LuxI reporter by ridge.
 seed: 6337
 task: {labels: five-class, rows: 4015, balance_classes: true, scaler: sequence_zscore, seed: 6337}
 reservoir:

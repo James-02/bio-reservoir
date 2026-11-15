@@ -12,8 +12,7 @@ at each level, with a band of one SD (the population SD for the runs, as publish
 sample SD over the seeds of a study), and the dashed line is the mean at the first level.
 
     python scripts/figures/visualise_heterogeneity.py --archive v0.1
-    python scripts/figures/visualise_heterogeneity.py \\
-        experiments/v0.2/checks/realism-options/d3-p-density-ridge.yaml
+    python scripts/figures/visualise_heterogeneity.py my-heterogeneity-study.yaml
 
 It writes ``results/figures/diagnostics/heterogeneity_robustness.png`` from runs, or
 ``results/figures/diagnostics/<study name>.png`` from a study, with ``-<setting><value>`` for

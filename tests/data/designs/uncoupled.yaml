@@ -1,10 +1,6 @@
-# Design: U, the colonies of P without coupling. Studies name it with base: ../designs/uncoupled.yaml and list only
-# what differs; a run of this file is one reservoir seed (6337).
-name: design-uncoupled
-description: >-
-  U, the colonies of P without coupling, exploration TPE trial 68 (N = 1,000, 32
-  substeps, the v0.1 heterogeneity draw); one image of the LuxI reporter with 1%
-  measurement noise, RidgeCV readout.
+# A test design: colonies without coupling.
+name: test-uncoupled
+description: 1,000 colonies without coupling, read from one noisy image of the LuxI reporter by ridge.
 seed: 6337
 task: {labels: five-class, rows: 4015, balance_classes: true, scaler: sequence_zscore, seed: 6337}
 reservoir:

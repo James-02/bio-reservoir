@@ -1,10 +1,6 @@
-# Design: A′, the corrected abstract coupling. Studies name it with base: ../designs/abstract.yaml and list only
-# what differs; a run of this file is one reservoir seed (6337).
-name: design-abstract
-description: >-
-  A', the corrected abstract coupling, exploration TPE trial 109 (N = 1,000, 32
-  substeps, the v0.1 heterogeneity draw); one image of the LuxI reporter with 1%
-  measurement noise, RidgeCV readout.
+# A test design with the abstract coupling (a signed kernel of the colonies' states).
+name: test-abstract
+description: Abstract coupling of 1,000 colonies, read from one noisy image of the LuxI reporter by ridge.
 seed: 6337
 task: {labels: five-class, rows: 4015, balance_classes: true, scaler: sequence_zscore, seed: 6337}
 reservoir:

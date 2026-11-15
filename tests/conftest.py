@@ -55,9 +55,9 @@ def ecg_data(tmp_path, monkeypatch):
 
 @pytest.fixture
 def small_design(tmp_path):
-    """A small copy of a ``v0.2`` design (16 colonies, a warm-up of 5 steps, 100 beats):
-    ``small_design("centre")`` is the path of its config."""
-    designs = Path(__file__).resolve().parents[1] / "experiments" / "v0.2" / "designs"
+    """A small copy of a test design in ``tests/data/designs`` (16 colonies, a warm-up of 5
+    steps, 100 beats): ``small_design("centre")`` is the path of its config."""
+    designs = Path(__file__).resolve().parent / "data" / "designs"
 
     def write(design, **params):
         path = tmp_path / f"{design}.yaml"

@@ -12,7 +12,7 @@ diffusive coupling the conductances through which neighbouring traps exchange AH
 them by default: a lattice gives each trap at most four). ``--units`` draws the design with
 fewer colonies, as ``v0.1`` drew 250 of its 1,000.
 
-    python scripts/figures/visualise_topology.py experiments/v0.2/designs/abstract.yaml --units 250
+    python scripts/figures/visualise_topology.py experiments/paper/models/array.yaml --units 250
 
 It writes ``results/figures/topology/<name>-kernel.png`` and ``<name>-topology.png``
 (``--formats pdf,svg`` adds a PDF and an SVG of each), with ``-<units>`` after the name when
@@ -78,7 +78,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Draw where a run config's colonies sit and "
                                                  "how they are coupled.")
     parser.add_argument("config", type=Path,
-                        help="A run config, e.g. experiments/v0.2/designs/abstract.yaml.")
+                        help="A run config, e.g. experiments/paper/models/array.yaml.")
     parser.add_argument("--units", type=int, help="Draw the design with this many colonies.")
     parser.add_argument("--links", type=int, help="Links drawn for each colony (default: 3, "
                                                   "or all with the diffusive coupling).")

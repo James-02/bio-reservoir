@@ -8,7 +8,7 @@ to bottom: the colony without input; the colony driven by the beat at each input
 receives it (:func:`training.figures.encoded_input`). The end of the warm-up, without
 input, is drawn dashed (its last ``--warmup-steps``), and the beat starts at timestep 0.
 
-    python scripts/figures/visualise_dde.py experiments/v0.2/designs/centre.yaml --beat 0
+    python scripts/figures/visualise_dde.py experiments/paper/models/array.yaml --beat 0
 
 It writes ``results/figures/states/<name>-dde-beat<N>.png`` (``--formats pdf,svg`` adds a PDF
 and an SVG).
@@ -84,7 +84,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Draw one colony of a run config's design "
                                                  "driven by a beat at several input scalings.")
     parser.add_argument("config", type=Path,
-                        help="A run config, e.g. experiments/v0.2/designs/centre.yaml.")
+                        help="A run config, e.g. experiments/paper/models/array.yaml.")
     parser.add_argument("--beat", type=int, default=0,
                         help="Index of the beat in the task's pool (default: 0).")
     parser.add_argument("--scales", help="Input scalings, comma-separated (default: 0.1, 1 and "

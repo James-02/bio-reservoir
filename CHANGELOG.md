@@ -50,18 +50,12 @@ Each entry is marked **[science]** if it changes a reported number, or
   run or study config, in one style, and warn when a figure breaks the ACS rules.
 - [engineering] Run, comparison and fold-analysis figures name the classes and show each
   fold's score with the mean and SD.
-- [engineering] The `v0.2` bioreservoir studies use 32 RK4 substeps and choose ridge penalties
-  by macro F1; `P2-esn-image` reads the ESN from one noisy image.
-- [engineering] New studies: `P1-heterogeneity-64` (kinetic heterogeneity at 64 substeps) and
-  `P2-<design>-top` (the five best Phase 2 trials at three more seeds).
 - [engineering] `optimization/deploy.py` also copies the tests, so the suite runs on a host.
 - [engineering] `pyproject.toml` gives the version as 0.2.1 and pins ruff to CI's 0.15.0; the
   Pillow pin is removed (matplotlib installs it).
 - [engineering] The README and this changelog are shorter.
 - [engineering] The README describes the framework on its own: the reservoir in Python, run
   and study configs, analysis and figures, each with a worked example, and new figures.
-- [engineering] The P designs no longer list settings they never read (`rc_scaling`,
-  `noise_rc`, the distance-kernel settings); their simulations are unchanged.
 - [engineering] The paper scripts read the runs and studies by the names of the paper configs
   and have no design option; `paper_figures.py` writes the numbers only, as the tables come
   from `article_tables.py` and `si_tables.py`.
@@ -71,6 +65,9 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Removed
 
+- [engineering] The campaign configs (`experiments/v0.2/`) and the first version's headline
+  configs (`experiments/benchmarks/v0.1/`), with the benchmark tests that reran them; the
+  designs the unit tests use are in `tests/data/designs/`.
 - [engineering] Unused plotting code: `plot_cv_results.py`, `analyse_fold_diagnostics.py`,
   the t-SNE and bar-chart plots.
 - [engineering] `deploy` no longer stops or starts a service on the hosts: the

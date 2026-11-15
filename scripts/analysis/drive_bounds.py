@@ -12,7 +12,7 @@ reports how many colonies still oscillate (``bioreservoir.diagnostics.oscillatio
 
 Usage
 -----
-    python scripts/analysis/drive_bounds.py experiments/benchmarks/v0.1/balanced.yaml
+    python scripts/analysis/drive_bounds.py experiments/paper/models/array.yaml
     python scripts/analysis/drive_bounds.py CONFIG --beats 20 --bound 5e-3 --json out.json
     python scripts/analysis/drive_bounds.py CONFIG --oscillation 300 \\
         --set reservoir.params.reset_noise=0.3 --set reservoir.seed=6338
