@@ -20,7 +20,6 @@ from training import run as run_module
 from utils import config, provenance
 
 cv_module = importlib.import_module("training.cross_validate")
-BENCHMARKS = Path(__file__).resolve().parents[2] / "experiments" / "benchmarks"
 LOAD_TASK = run_module.load_task
 
 RESERVOIR = {
@@ -185,13 +184,6 @@ class TestResolve:
         assert (resolved["cv"]["noise_rate"], resolved["cv"]["noise_ratio"]) == (0.0825, 0.2348)
         assert resolved["task"]["labels"] == "binary" and resolved["task"]["rows"] == 600
         assert resolved["task"]["max_per_class"] is None
-
-
-@pytest.mark.parametrize("path", sorted(BENCHMARKS.rglob("*.yaml")), ids=lambda p: p.stem)
-def test_benchmark_configs_are_explicit(path):
-    cfg = run_module.load_config(path)
-    assert run_module.resolve(cfg) == cfg
-    assert cfg["reference"].startswith("archive:")
 
 
 def test_a_config_lists_only_what_differs_from_its_base(tmp_path):

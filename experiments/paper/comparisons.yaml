@@ -1,0 +1,383 @@
+# Comparisons and Ablations: the comparisons tuned with the array's budget (isolated traps, the
+# echo state network read from its clean states or like the array, random tanh features, leaky
+# integrators), the controls at standard settings, the linear surrogate of the array, the
+# ablations and the share of traps induced. Balanced task, five folds, reporting seeds
+# 6348-6352. The surrogates refit the saved features of the array's runs in classification.yaml.
+#    python -m training.run sweep experiments/paper/comparisons.yaml --list
+#    python -m training.run sweep experiments/paper/comparisons.yaml --only model=isolated-traps --processes N
+#    python -m training.run study-table experiments/paper/comparisons.yaml --only experiment=ablation-no-delay --group
+sweep:
+  - name: balanced-{model}-s{seed}
+    description: '{model} on the balanced task, reservoir seed {seed}; five folds.'
+    model:
+      isolated-traps: models/isolated-traps.yaml
+      isolated-traps-forest: models/isolated-traps-forest.yaml
+      esn-mean: models/esn-mean.yaml
+      esn-mean-forest: models/esn-mean-forest.yaml
+      esn-image: models/esn-image.yaml
+      esn-image-forest: models/esn-image-forest.yaml
+    seed: {reservoir.seed: [6348, 6349, 6350, 6351, 6352]}
+
+  # A ridge map from the beat to the array's features, fitted in each training fold and
+  # measured like them (1% noise): two images read by ridge, or four read by the forest.
+  - name: surrogate-{reading}-s{seed}
+    description: 'Linear surrogate of the array ({reading}), reservoir seed {seed}.'
+    reading:
+      two-images:
+        seed: 6337
+        reservoir: {states_from: 'balanced-array-s{seed}', surrogate: linear}
+        features: {measurement_noise: 0.01}
+        readout: {classifier: RidgeCV, scale: true, params: {scoring: f1_macro}}
+      four-images:
+        seed: 6337
+        reservoir: {states_from: 'balanced-array-forest-s{seed}', surrogate: linear}
+        features: {measurement_noise: 0.01}
+        readout:
+          classifier: RF
+          scale: false
+          params: {n_estimators: 326, criterion: log_loss, max_depth: 23, max_features: sqrt, min_samples_split: 2, min_samples_leaf: 1, class_weight: balanced, oob_score: true, random_state: 6337, n_jobs: -1}
+    seed: [6348, 6349, 6350, 6351, 6352]
+
+  - name: '{experiment}'
+    experiment:
+      random-features:
+        description: Random tanh features (576 units) at their selected setting, read like the array (two images,
+          ridge); reporting seeds 6348-6352.
+        seed: 6337
+        task:
+          labels: five-class
+          rows: 4015
+          balance_classes: true
+          scaler: sequence_zscore
+          seed: 6337
+        cv: {folds: 5, seed: 6337}
+        reservoir:
+          type: random_features
+          params: {units: 576, activation: tanh}
+          seed: 6337
+        features: {aggregation: 'images_at:140,187', measurement_noise: 0.01}
+        readout:
+          classifier: RidgeCV
+          scale: true
+          params: {scoring: f1_macro}
+        study:
+          trials: 5
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.bias_scaling: {type: categorical, choices: [0.070658073927645]}
+            reservoir.params.input_scaling: {type: categorical, choices: [0.8288312075862199]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      random-features-forest:
+        description: Random tanh features at their selected setting, read from four images by the random forest;
+          reporting seeds 6348-6352.
+        seed: 6337
+        task:
+          labels: five-class
+          rows: 4015
+          balance_classes: true
+          scaler: sequence_zscore
+          seed: 6337
+        cv: {folds: 5, seed: 6337}
+        reservoir:
+          type: random_features
+          params: {units: 576, activation: tanh}
+          seed: 6337
+        features: {aggregation: 'images:4', measurement_noise: 0.01}
+        readout:
+          classifier: RF
+          scale: false
+          params:
+            n_estimators: 326
+            criterion: log_loss
+            max_depth: 23
+            max_features: sqrt
+            min_samples_split: 2
+            min_samples_leaf: 1
+            class_weight: balanced
+            oob_score: true
+            random_state: 6337
+            n_jobs: -1
+        study:
+          trials: 5
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.bias_scaling: {type: categorical, choices: [0.070658073927645]}
+            reservoir.params.input_scaling: {type: categorical, choices: [0.8288312075862199]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      leaky-integrators:
+        description: Leaky integrators at their selected setting, read like the array (two images, ridge); reporting
+          seeds 6348-6352.
+        seed: 6337
+        task:
+          labels: five-class
+          rows: 4015
+          balance_classes: true
+          scaler: sequence_zscore
+          seed: 6337
+        cv: {folds: 5, seed: 6337}
+        reservoir:
+          type: leaky_bank
+          params: {units: 24}
+          seed: 6337
+        features: {aggregation: 'images_at:140,187', measurement_noise: 0.01}
+        readout:
+          classifier: RidgeCV
+          scale: true
+          params: {scoring: f1_macro}
+        study:
+          trials: 5
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.band_pass: {type: categorical, choices: [true]}
+            reservoir.params.tau_max: {type: categorical, choices: [1270.1184669506226]}
+            reservoir.params.units: {type: categorical, choices: [76]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      leaky-integrators-forest:
+        description: Leaky integrators at their selected setting, read from four images by the random forest;
+          reporting seeds 6348-6352.
+        seed: 6337
+        task:
+          labels: five-class
+          rows: 4015
+          balance_classes: true
+          scaler: sequence_zscore
+          seed: 6337
+        cv: {folds: 5, seed: 6337}
+        reservoir:
+          type: leaky_bank
+          params: {units: 24}
+          seed: 6337
+        features: {aggregation: 'images:4', measurement_noise: 0.01}
+        readout:
+          classifier: RF
+          scale: false
+          params:
+            n_estimators: 326
+            criterion: log_loss
+            max_depth: 23
+            max_features: sqrt
+            min_samples_split: 2
+            min_samples_leaf: 1
+            class_weight: balanced
+            oob_score: true
+            random_state: 6337
+            n_jobs: -1
+        study:
+          trials: 5
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.band_pass: {type: categorical, choices: [true]}
+            reservoir.params.tau_max: {type: categorical, choices: [1270.1184669506226]}
+            reservoir.params.units: {type: categorical, choices: [76]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      random-features-standard:
+        description: Random tanh (or linear) features at standard settings, 576 or 8,000 units, read like the
+          array (two images, ridge); reporting seeds 6348-6352.
+        seed: 6337
+        task:
+          labels: five-class
+          rows: 4015
+          balance_classes: true
+          scaler: sequence_zscore
+          seed: 6337
+        cv: {folds: 5, seed: 6337}
+        reservoir:
+          type: random_features
+          params: {units: 1024}
+        features: {aggregation: 'images_at:140,187', measurement_noise: 0.01}
+        readout:
+          classifier: RidgeCV
+          scale: true
+          params: {scoring: f1_macro}
+        study:
+          trials: 20
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.units: {type: categorical, choices: [576, 8000]}
+            reservoir.params.activation: {type: categorical, choices: [tanh, linear]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      random-features-standard-forest:
+        description: Random features at standard settings, read from four images by the random forest; reporting
+          seeds 6348-6352.
+        seed: 6337
+        task:
+          labels: five-class
+          rows: 4015
+          balance_classes: true
+          scaler: sequence_zscore
+          seed: 6337
+        cv: {folds: 5, seed: 6337}
+        reservoir:
+          type: random_features
+          params: {units: 1024}
+        features: {aggregation: 'images:4', measurement_noise: 0.01}
+        readout:
+          classifier: RF
+          scale: false
+          params:
+            n_estimators: 326
+            criterion: log_loss
+            max_depth: 23
+            max_features: sqrt
+            min_samples_split: 2
+            min_samples_leaf: 1
+            class_weight: balanced
+            oob_score: true
+            random_state: 6337
+            n_jobs: -1
+        study:
+          trials: 20
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.units: {type: categorical, choices: [576, 8000]}
+            reservoir.params.activation: {type: categorical, choices: [tanh, linear]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      leaky-integrators-standard:
+        description: 24 leaky integrators with their band-pass differences, alone or mapped to 576 or 8,000 random
+          features, read like the array (two images, ridge); reporting seeds 6348-6352.
+        seed: 6337
+        task:
+          labels: five-class
+          rows: 4015
+          balance_classes: true
+          scaler: sequence_zscore
+          seed: 6337
+        cv: {folds: 5, seed: 6337}
+        reservoir:
+          type: leaky_bank
+          params: {units: 24}
+        features: {aggregation: 'images_at:140,187', measurement_noise: 0.01}
+        readout:
+          classifier: RidgeCV
+          scale: true
+          params: {scoring: f1_macro}
+        study:
+          trials: 15
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.expansion: {type: categorical, choices: [null, 576, 8000]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      leaky-integrators-standard-forest:
+        description: 24 leaky integrators at standard settings, read from four images by the random forest; reporting
+          seeds 6348-6352.
+        seed: 6337
+        task:
+          labels: five-class
+          rows: 4015
+          balance_classes: true
+          scaler: sequence_zscore
+          seed: 6337
+        cv: {folds: 5, seed: 6337}
+        reservoir:
+          type: leaky_bank
+          params: {units: 24}
+        features: {aggregation: 'images:4', measurement_noise: 0.01}
+        readout:
+          classifier: RF
+          scale: false
+          params:
+            n_estimators: 326
+            criterion: log_loss
+            max_depth: 23
+            max_features: sqrt
+            min_samples_split: 2
+            min_samples_leaf: 1
+            class_weight: balanced
+            oob_score: true
+            random_state: 6337
+            n_jobs: -1
+        study:
+          trials: 15
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.expansion: {type: categorical, choices: [null, 576, 8000]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+
+  - name: '{experiment}'
+    model:
+      array: models/array.yaml
+    experiment:
+      ablation-no-exchange:
+        description: 'Ablation: no AHL exchange between traps, against the intact array at the same seeds, read
+          like the array (two images, ridge); reporting seeds 6348-6352.'
+        study:
+          trials: 10
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.coupling: {type: categorical, choices: [diffusion, none]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      ablation-no-delay:
+        description: 'Ablation: no feedback delay, against the intact array at the same seeds, read like the array
+          (two images, ridge); reporting seeds 6348-6352.'
+        study:
+          trials: 10
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.delay: {type: categorical, choices: [10, 0]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      ablation-scrambled:
+        description: 'Ablation: the minutes of each beat in a random order, against the intact array at the same
+          seeds, read like the array (two images, ridge); reporting seeds 6348-6352.'
+        study:
+          trials: 10
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            task.scramble: {type: categorical, choices: [false, true]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      induced-share:
+        description: A share 0.1, 0.25, 0.5 or 1 of the traps induced, with and without AHL exchange; reporting
+          seeds 6348-6352.
+        study:
+          trials: 40
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.input_connectivity: {type: categorical, choices: [0.1, 0.25, 0.5, 1.0]}
+            reservoir.params.coupling: {type: categorical, choices: [diffusion, none]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+
+  - name: '{experiment}'
+    model:
+      array: models/array-forest.yaml
+    experiment:
+      ablation-no-exchange-forest:
+        description: 'Ablation: no AHL exchange between traps, against the intact array at the same seeds, read
+          from four images by the random forest; reporting seeds 6348-6352.'
+        study:
+          trials: 10
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.coupling: {type: categorical, choices: [diffusion, none]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      ablation-no-delay-forest:
+        description: 'Ablation: no feedback delay, against the intact array at the same seeds, read from four
+          images by the random forest; reporting seeds 6348-6352.'
+        study:
+          trials: 10
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.delay: {type: categorical, choices: [10, 0]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      ablation-scrambled-forest:
+        description: 'Ablation: the minutes of each beat in a random order, against the intact array at the same
+          seeds, read from four images by the random forest; reporting seeds 6348-6352.'
+        study:
+          trials: 10
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            task.scramble: {type: categorical, choices: [false, true]}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}

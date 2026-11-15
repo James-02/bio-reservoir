@@ -12,7 +12,7 @@ log scale, above the beat as the colonies receive it
 without it, the drive is the input term and only that is drawn.
 
     python scripts/figures/visualise_reservoir_states.py \\
-        experiments/v0.2/designs/abstract.yaml --drive
+        experiments/paper/models/array.yaml --drive
 
 It writes ``results/figures/states/<name>-states-beat<N>-<var>.png`` and
 ``<name>-drive-beat<N>.png`` (``--formats pdf,svg`` adds a PDF and an SVG).
@@ -84,7 +84,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Draw the states of a run config's array "
                                                  "during one beat, and the drive terms.")
     parser.add_argument("config", type=Path,
-                        help="A run config, e.g. experiments/v0.2/designs/centre.yaml.")
+                        help="A run config, e.g. experiments/paper/models/array.yaml.")
     parser.add_argument("--beat", type=int, default=0,
                         help="Index of the beat in the task's pool (default: 0).")
     parser.add_argument("--var", default="I", choices=VARIABLES,

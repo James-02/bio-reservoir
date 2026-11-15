@@ -28,16 +28,15 @@ def test_paper_script_prints_its_usage(name):
 
 
 def _oscillation_csv(path, rows, start_ahl=""):
-    fields = ["design", "flow", "density", "seed", "start_ahl", "units", "oscillating",
-              "period", "ratio"]
+    fields = ["flow", "density", "seed", "start_ahl", "units", "oscillating", "period", "ratio"]
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
         for flow, density, share, period in rows:
             for seed in (1, 2):
-                writer.writerow({"design": "p576", "flow": flow, "density": density,
-                                 "seed": seed, "start_ahl": start_ahl, "units": 576,
-                                 "oscillating": share, "period": period, "ratio": 2.0})
+                writer.writerow({"flow": flow, "density": density, "seed": seed,
+                                 "start_ahl": start_ahl, "units": 576, "oscillating": share,
+                                 "period": period, "ratio": 2.0})
 
 
 def test_start_table_compares_the_two_starts(tmp_path, monkeypatch):

@@ -1,4 +1,4 @@
-"""Draw the figures of the revised paper (design p576) in the style of the v0.1 figures.
+"""Draw the figures of the paper.
 
 Reads the collected results through ``paper_figures.py`` (``BIORESERVOIR_RESULTS_DIR``) and,
 for the panels of one beat, ``simulated.npz``, written by ``simulate``:
@@ -7,11 +7,11 @@ for the panels of one beat, ``simulated.npz``, written by ``simulate``:
     python scripts/paper/paper_panels.py figures --oscillation oscillation_map.csv \\
         --flat-share flat_share.csv --formats png,pdf
 
-Main text: ``fig1_design`` (A is a placeholder for the colony circuit of the v0.1 figure; C
-is a drawn sketch of the chip), ``fig2_dynamics``, ``fig3_classification``,
-``fig4_requirements``. SI: ``si_class_images``, ``si_confusion_tasks``, ``si_settings``. Run
-from the repository root: ``simulate`` reads ``experiments/v0.2/designs/<design>.yaml``, and
-Fig. 3 and the SI class images read the task's beats.
+Main text: ``fig1_design`` (A is a placeholder for the colony circuit; C is a drawn sketch
+of the chip), ``fig2_dynamics``, ``fig3_classification``, ``fig4_requirements``. SI:
+``si_class_images``, ``si_confusion_tasks``, ``si_settings``. Run from the repository root:
+``simulate`` reads ``experiments/paper/models/array.yaml``, and Fig. 3 and the SI class images
+read the task's beats.
 
 Every figure uses one scheme: the design in blue circles and solid lines, a first
 alternative in orange squares and dashed lines, a second in pink diamonds and dotted lines,
@@ -35,7 +35,6 @@ from matplotlib.patches import FancyBboxPatch, Polygon, Rectangle  # noqa: E402
 from matplotlib.ticker import FuncFormatter, NullLocator  # noqa: E402
 from paper_figures import (  # noqa: E402
     DANINO_PERIODS,
-    DESIGNS,
     FOREST,
     HEADLINE,
     ONE,
@@ -71,7 +70,7 @@ LW = 3.2  # line width on the figures as drawn (up to 18 in wide, printed at 7 i
 THIN = 2.7  # reference lines: 1 pt once printed
 SMALL = 13  # legends and labels inside the axes (about 5.5 pt printed)
 GRID = 0.22
-# The line styles of the v0.1 figures (scripts/figures/visualise_dde.py).
+# The line styles of scripts/figures/visualise_dde.py.
 LINES = {"I": {"color": OKABE_ITO[0], "lw": LW, "ls": "-"},
          "A": {"color": OKABE_ITO[1], "lw": LW, "ls": (0, (4, 2))}}
 WARMUP = {"color": "black", "lw": THIN, "ls": "--"}
@@ -167,10 +166,10 @@ def task_beats(r: Results) -> tuple[np.ndarray, np.ndarray] | None:
             np.argmax(np.asarray(Y).reshape(len(Y), -1), axis=1))
 
 
-def saved_features(d: str, seed: int = SEEDS[0], fold: int | None = None):
+def saved_features(seed: int = SEEDS[0], fold: int | None = None):
     """The array's saved features (two images per trap) of the headline run: the training
     and held-out beats of ``fold``, or (``fold=None``) the held-out beats of every fold."""
-    run = config.runs_dir() / f"P5-balanced-{d}-headline-s{seed}"
+    run = config.runs_dir() / f"balanced-array-s{seed}"
     paths = sorted(run.glob("fold-*.npz")) if fold is None else [run / f"fold-{fold}.npz"]
     parts = []
     for path in paths:
@@ -228,7 +227,7 @@ def simulate(design: Path, seed: int = SEEDS[0], beat_class: int = 0, before: in
     X = np.asarray(X, dtype=float).reshape(len(X), -1)
     labels = np.argmax(np.asarray(Y).reshape(len(Y), -1), axis=1)
     members = np.flatnonzero(labels == beat_class)
-    correct = correctly_classified(f"P5-balanced-{design.stem}-headline-s{seed}")
+    correct = correctly_classified(f"balanced-array-s{seed}")
     if correct:
         members = np.array([m for m in members if m in correct])
     index = int(members[np.argmin(((X[members] - X[members].mean(axis=0)) ** 2).sum(1))])
@@ -270,7 +269,7 @@ def simulate(design: Path, seed: int = SEEDS[0], beat_class: int = 0, before: in
 
 def colony_panel(axes, sim: dict):
     """One colony alone: LuxI and AiiA at the end of the warm-up and during the beat, with no
-    inducer and at three input gains; the inducer below (the v0.1 Fig. 3b)."""
+    inducer and at three input gains; the inducer below."""
     warm, rest = sim["colony_warm"], sim["colony_rest"]
     w, gain = len(warm), float(sim["gain"])
     t = np.arange(-w, len(rest))
@@ -453,7 +452,7 @@ def draw_circuit(ax):
     arrow((0.75, 6.55), (0.75, 5.15), "#E69F00", ls="--")
 
 
-def beat_readout(d: str, sim: dict, seed: int = SEEDS[0]) -> dict | None:
+def beat_readout(sim: dict, seed: int = SEEDS[0]) -> dict | None:
     """The simulated beat as the readout received it in the headline run (its two images,
     with noise, over the reference) and the ridge's score for each class: ridge refitted with
     the run's penalty on the training beats of the fold that held the beat out."""
@@ -462,7 +461,7 @@ def beat_readout(d: str, sim: dict, seed: int = SEEDS[0]) -> dict | None:
     from sklearn.preprocessing import StandardScaler
 
     index = int(sim["beat_index"])
-    for path in sorted((config.runs_dir() / f"P5-balanced-{d}-headline-s{seed}")
+    for path in sorted((config.runs_dir() / f"balanced-array-s{seed}")
                        .glob("fold-*.npz")):
         with np.load(path, allow_pickle=True) as z:
             held_out = list(z["test_index"])
@@ -480,7 +479,7 @@ def beat_readout(d: str, sim: dict, seed: int = SEEDS[0]) -> dict | None:
     return None
 
 
-def figure_design(sim: dict | None, d: str):
+def figure_design(sim: dict | None):
     """Fig. 1: the colony circuit, one colony during a beat, and the chip with its readout."""
     fig = plt.figure(figsize=(16, 13.5))
     outer = fig.add_gridspec(2, 1, height_ratios=[6.4, 5.6], hspace=0.12)
@@ -496,7 +495,7 @@ def figure_design(sim: dict | None, d: str):
         colony_panel(axes, sim)
     panel(axes[0], "B")
     ax = fig.add_subplot(outer[1])
-    draw_chip(ax, beat_readout(d, sim) if sim is not None else None)
+    draw_chip(ax, beat_readout(sim) if sim is not None else None)
     panel(ax, "C")
     return fig
 
@@ -505,7 +504,7 @@ def figure_design(sim: dict | None, d: str):
 # Fig. 2: the array during a beat and the operating point
 # ---------------------------------------------------------------------------------------
 
-def figure_dynamics(sim: dict | None, r: Results, d: str, oscillation: Path | None):
+def figure_dynamics(sim: dict | None, r: Results, oscillation: Path | None):
     fig = plt.figure(figsize=(17, 13.5))
     outer = fig.add_gridspec(2, 2, width_ratios=[1.1, 1], hspace=0.3, wspace=0.28)
     upper = outer[0, 0].subgridspec(2, 1, height_ratios=[2.2, 1.2], hspace=0.08)
@@ -557,15 +556,15 @@ def figure_dynamics(sim: dict | None, r: Results, d: str, oscillation: Path | No
                         fontsize=SMALL - 2, color="white" if dark else "black")
         fig.colorbar(image, ax=dx, label="Macro F1")
         handles = []
-        o_flows, o_densities, share, _ = oscillation_map(oscillation, d)
+        o_flows, o_densities, share, _ = oscillation_map(oscillation)
         if o_flows == flows and o_densities == densities:
             for i, j in zip(*np.nonzero(share < 50), strict=True):
                 dx.add_patch(Rectangle((j - 0.5, i - 0.5), 1, 1, fill=False, hatch="///",
                                        ec="white", lw=0))
             handles.append(Rectangle((0, 0), 1, 1, fc="#777777", hatch="///", ec="white",
                                      label="< 50% oscillating"))
-        point = design_point(r, d)
-        headline = r.seeds(f"P5-balanced-{d}-headline")
+        point = design_point(r)
+        headline = r.seeds("balanced-array")
         if point is not None:
             dx.plot(np.interp(point[0], flows, range(len(flows))),
                     np.interp(point[1], densities, range(len(densities))), **STAR)
@@ -587,7 +586,7 @@ def figure_dynamics(sim: dict | None, r: Results, d: str, oscillation: Path | No
 # Fig. 3: classification
 # ---------------------------------------------------------------------------------------
 
-def projection(r: Results, d: str, seed: int = SEEDS[0]) -> dict:
+def projection(r: Results, seed: int = SEEDS[0]) -> dict:
     """Held-out beats of fold 0 projected on two linear discriminants fitted on the fold's
     training beats, for the array's features and the raw beat."""
     from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
@@ -599,7 +598,7 @@ def projection(r: Results, d: str, seed: int = SEEDS[0]) -> dict:
         lda.fit(scaler.transform(train), y_train)
         return lda.transform(scaler.transform(test))
 
-    parts, beats = saved_features(d, seed, fold=0), task_beats(r)
+    parts, beats = saved_features(seed, fold=0), task_beats(r)
     if parts is None or beats is None:
         return {}
     fold, (X, labels) = parts[0], beats
@@ -613,13 +612,13 @@ def projection(r: Results, d: str, seed: int = SEEDS[0]) -> dict:
             "raw": (project(X[rest], labels[rest], X[held_out]), labels[held_out])}
 
 
-def figure_classification(r: Results, d: str):
+def figure_classification(r: Results):
     fig = plt.figure(figsize=(15.5, 14))
     grid = fig.add_gridspec(2, 3, width_ratios=[1, 1, 0.05], hspace=0.3, wspace=0.12)
     top = [fig.add_subplot(grid[0, i]) for i in range(2)]
     bottom = [fig.add_subplot(grid[1, i]) for i in range(2)]
     image = None
-    for ax, title, runs in ((top[0], "Array", [f"P5-balanced-{d}-headline-s{s}"
+    for ax, title, runs in ((top[0], "Array", [f"balanced-array-s{s}"
                                                for s in SEEDS]),
                             (top[1], "Raw beat", [RAW["ridge"]])):
         matrices = [m for m in (r.confusion(run) for run in runs) if m is not None]
@@ -630,7 +629,7 @@ def figure_classification(r: Results, d: str):
     top[1].tick_params(labelleft=False)
     if image is not None:
         fig.colorbar(image, cax=fig.add_subplot(grid[0, 2]), label="Fraction of the class")
-    found = projection(r, d)
+    found = projection(r)
     for ax, key in ((bottom[0], "array"), (bottom[1], "raw")):
         if key in found:
             points, labels = found[key]
@@ -655,11 +654,11 @@ def figure_classification(r: Results, d: str):
 # Fig. 4: what a chip needs
 # ---------------------------------------------------------------------------------------
 
-def figure_requirements(r: Results, d: str, flat_share: Path | None):
+def figure_requirements(r: Results, flat_share: Path | None):
     fig, axes = plt.subplots(2, 3, figsize=(18, 11), gridspec_kw={"hspace": 0.35,
                                                                  "wspace": 0.38})
     ax = axes[0, 0]
-    curve = traps(r, d)
+    curve = traps(r)
     line(ax, curve, DESIGN)
     star(ax, curve, 576)
     ax.set_xscale("log")
@@ -669,7 +668,7 @@ def figure_requirements(r: Results, d: str, flat_share: Path | None):
     ax = axes[0, 1]
     for agg, label, style in ((HEADLINE, "2 images", DESIGN), (ONE, "1 image", FIRST),
                               (FOREST, "4 images", SECOND)):
-        points = scaled(r.sweep(f"P3-{d}-noise", "features.measurement_noise",
+        points = scaled(r.sweep("robustness-noise", "features.measurement_noise",
                                 features__aggregation=agg))
         line(ax, points, style, label)
         if agg == HEADLINE:
@@ -678,8 +677,8 @@ def figure_requirements(r: Results, d: str, flat_share: Path | None):
     ax.legend(loc="lower left", fontsize=SMALL)
 
     ax = axes[0, 2]
-    table = r.grid("extra-576-connectivity", "reservoir.params.input_connectivity",
-                   "reservoir.params.coupling") if d == "p576" else {}
+    table = r.grid("induced-share", "reservoir.params.input_connectivity",
+                   "reservoir.params.coupling")
     shares = sorted({k[0] for k in table})
     for coupling, label, style in (("diffusion", "Exchange", DESIGN),
                                    ("none", "No exchange", FIRST)):
@@ -694,8 +693,9 @@ def figure_requirements(r: Results, d: str, flat_share: Path | None):
     ax.legend(loc="lower right", fontsize=SMALL)
 
     ax = axes[1, 0]
-    for study, label, style in ((f"P3-{d}-calibration", "Reference image", DESIGN),
-                                (f"P3-{d}-calibration-noref", "No reference", FIRST)):
+    for study, label, style in (("robustness-calibration", "Reference image", DESIGN),
+                                ("robustness-calibration-no-reference", "No reference",
+                                 FIRST)):
         points = scaled(r.sweep(study, "features.calibration_error",
                                 features__aggregation=HEADLINE))
         line(ax, points, style, label)
@@ -705,10 +705,11 @@ def figure_requirements(r: Results, d: str, flat_share: Path | None):
     ax.legend(loc="lower left", fontsize=SMALL)
 
     ax = axes[1, 1]
-    points = r.sweep(f"P3-{d}-heterogeneity", "reservoir.params.param_heterogeneity_cv")
-    points.update(r.sweep(f"P3-{d}-heterogeneity-64", "reservoir.params.param_heterogeneity_cv"))
+    points = r.sweep("heterogeneity-kinetic", "reservoir.params.param_heterogeneity_cv")
+    points.update(r.sweep("heterogeneity-kinetic-64-substeps",
+                          "reservoir.params.param_heterogeneity_cv"))
     points = scaled(points)
-    flat = flat_shares(flat_share, d)
+    flat = flat_shares(flat_share)
     if flat:
         x, m, _ = ordered(scaled(flat))
         bars = ax.twinx()
@@ -725,8 +726,8 @@ def figure_requirements(r: Results, d: str, flat_share: Path | None):
 
     ax = axes[1, 2]
     for study, key, label, style in (
-            (f"P3-{d}-density", "density", "Cell density", FIRST),
-            (f"P3-{d}-dilution", "dilution", "Washout", SECOND)):
+            ("heterogeneity-density", "density", "Cell density", FIRST),
+            ("heterogeneity-washout", "dilution", "Washout", SECOND)):
         spread = scaled(r.sweep(study, f"reservoir.params.heterogeneity_{key}_cv"))
         line(ax, spread, style, label)
     star(ax, spread, 0.0)
@@ -750,11 +751,11 @@ def figure_requirements(r: Results, d: str, flat_share: Path | None):
 # SI figures
 # ---------------------------------------------------------------------------------------
 
-def figure_class_images(r: Results, d: str):
-    """SI: for each class, its beats (mean and middle 80%, as the v0.1 Fig. 5a) and what the
+def figure_class_images(r: Results):
+    """SI: for each class, its beats (mean and middle 80%) and what the
     camera records: the class's average image at 140 and 187 min (log2 of each trap's image
     over its reference), and that average minus the average over all classes."""
-    beats, parts = task_beats(r), saved_features(d)
+    beats, parts = task_beats(r), saved_features()
     if beats is None or parts is None:
         return None
     X, labels = beats
@@ -809,15 +810,15 @@ def figure_class_images(r: Results, d: str):
     return fig
 
 
-def figure_confusion_tasks(r: Results, d: str):
+def figure_confusion_tasks(r: Results):
     """SI: the array's confusion matrices on the three tasks (ridge on two images)."""
     fig = plt.figure(figsize=(20, 7))
     grid = fig.add_gridspec(1, 4, width_ratios=[1, 1, 1, 0.05], wspace=0.2)
     image = None
     for i, (title, runs) in enumerate((
-            ("Balanced", [f"P5-balanced-{d}-headline-s{s}" for s in SEEDS]),
-            ("Unbalanced", [f"P5-unbalanced-{d}-headline-s{s}" for s in SEEDS]),
-            ("Binary", [f"P5-binary-{d}-headline-s{s}" for s in SEEDS]))):
+            ("Balanced", [f"balanced-array-s{s}" for s in SEEDS]),
+            ("Unbalanced", [f"unbalanced-array-s{s}" for s in SEEDS]),
+            ("Binary", [f"binary-array-s{s}" for s in SEEDS]))):
         ax = fig.add_subplot(grid[i])
         matrices = [m for m in (r.confusion(run) for run in runs) if m is not None]
         if matrices:
@@ -833,7 +834,7 @@ def figure_confusion_tasks(r: Results, d: str):
     return fig
 
 
-def figure_settings(r: Results, d: str):
+def figure_settings(r: Results):
     """SI: the other settings of the array, ridge on two images (mean and SD over the
     reporting seeds); the design's setting as a red star."""
     fig = plt.figure(figsize=(21, 11))
@@ -855,40 +856,40 @@ def figure_settings(r: Results, d: str):
         ax.set_xticks(range(len(order)), labels)
         ax.set_xlim(-0.6, len(order) - 0.4)
 
-    reset = r.sweep(f"P3-{d}-reset", "reservoir.params.reset_noise")
+    reset = r.sweep("robustness-reset", "reservoir.params.reset_noise")
     order = sorted(k for k in reset if k is not None)
     categories(axes[0], reset, order, [f"{100 * k:g}" for k in order], 0.0)
     axes[0].set_xlabel("Reset error (%)")
 
-    warmup = r.sweep(f"P3-{d}-warmup", "reservoir.params.warmup")
+    warmup = r.sweep("robustness-warmup", "reservoir.params.warmup")
     order = sorted(warmup)
     categories(axes[1], warmup, order, [str(k) for k in order], 900)
     axes[1].set_xlabel("Warm-up (min)")
     axes[1].tick_params(axis="x", labelrotation=45)
 
-    rest = r.sweep(f"P3-{d}-warmup-input", "reservoir.params.warmup_input")
+    rest = r.sweep("robustness-warmup-input", "reservoir.params.warmup_input")
     categories(axes[2], rest, ["zero", "rest"], ["None", "Rest"], "zero")
     axes[2].set_xlabel("Inducer in warm-up")
 
-    levels = r.sweep(f"P3-{d}-input-levels", "reservoir.params.input_levels")
+    levels = r.sweep("robustness-input-levels", "reservoir.params.input_levels")
     order = sorted(levels, key=lambda k: (isinstance(k, str), k))
     categories(axes[3], levels, order, [str(k) if k != "continuous" else "Cont." for k in order],
                1)
     axes[3].set_xlabel("Inducer strengths")
 
-    layout = r.sweep(f"P6-{d}-gaussian", "reservoir.params.interaction_diameters")
+    layout = r.sweep("layout-gaussian", "reservoir.params.interaction_diameters")
     order = sorted(layout)
     categories(axes[4], layout, order, [f"{k:g}" for k in order], None)
-    headline = r.seeds(f"P5-balanced-{d}-headline")
+    headline = r.seeds("balanced-array")
     if headline:
         axes[4].axhline(np.mean(headline), color="#999999", ls="--", lw=THIN)
     axes[4].set_xlabel("Exchange range (traps)")
 
     ax = axes[5]
-    sizes = sorted({row["reservoir.params.units"] for row in r.trials(f"P6-{d}-units-images")})
+    sizes = sorted({row["reservoir.params.units"] for row in r.trials("array-size-images")})
     for agg, label, style, shift in ((ONE, "1", FIRST, -0.15), (HEADLINE, "2", DESIGN, 0.0),
                                      (FOREST, "4", SECOND, 0.15)):
-        x, m, s = ordered(r.sweep(f"P6-{d}-units-images", "reservoir.params.units",
+        x, m, s = ordered(r.sweep("array-size-images", "reservoir.params.units",
                                   features__aggregation=agg))
         ax.errorbar([sizes.index(v) + shift for v in x], m, yerr=s, lw=THIN, ms=8, capsize=4,
                     label=label, **style)
@@ -896,7 +897,7 @@ def figure_settings(r: Results, d: str):
     ax.set_xlabel("Traps")
     ax.legend(title="Images", loc="lower right", fontsize=SMALL, title_fontsize=SMALL, ncol=3)
 
-    times, final = image_times(r, d)
+    times, final = image_times(r)
     order = sorted(times)
     categories(axes[6], times, order, [str(t) for t in order], 140)
     if final:
@@ -918,22 +919,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("command", choices=("simulate", "figures"),
                         help="simulate runs one beat through the design; figures draws.")
-    parser.add_argument("--design", choices=sorted(DESIGNS), default="p576",
-                        help="The design (default p576).")
-    parser.add_argument("--out", type=Path, help="Output folder (default "
-                        "results/figures/paper/<design>).")
+    parser.add_argument("--out", type=Path,
+                        help="Output folder (default results/figures/paper).")
     parser.add_argument("--flat-share", type=Path,
                         help="CSV of scripts/paper/flat_share.py (Fig. 4E).")
     parser.add_argument("--oscillation", type=Path,
                         help="CSV of scripts/paper/oscillation_map.py (Fig. 2D).")
     add_formats_option(parser)
     args = parser.parse_args(argv)
-    d = args.design
-    out = args.out or config.figures_dir(f"paper/{d}")
+    out = args.out or config.figures_dir("paper")
     out.mkdir(parents=True, exist_ok=True)
     simulated = out / "simulated.npz"
     if args.command == "simulate":
-        data = simulate(Path("experiments/v0.2/designs") / f"{d}.yaml")
+        data = simulate(Path("experiments/paper/models/array.yaml"))
         np.savez(simulated, **data)
         print(f"{simulated}: beat {data['beat_index']} ({CLASS_NAMES[data['beat_class']]}); "
               f"period at rest {data['period']:.1f} min (Danino et al.: "
@@ -942,13 +940,13 @@ def main(argv: list[str] | None = None) -> int:
     r = Results()
     sim = load(simulated)
     with plt.style.context(STYLE):
-        drawn = {"fig1_design": figure_design(sim, d),
-                 "fig2_dynamics": figure_dynamics(sim, r, d, args.oscillation),
-                 "fig3_classification": figure_classification(r, d),
-                 "fig4_requirements": figure_requirements(r, d, args.flat_share),
-                 "si_class_images": figure_class_images(r, d),
-                 "si_confusion_tasks": figure_confusion_tasks(r, d),
-                 "si_settings": figure_settings(r, d)}
+        drawn = {"fig1_design": figure_design(sim),
+                 "fig2_dynamics": figure_dynamics(sim, r, args.oscillation),
+                 "fig3_classification": figure_classification(r),
+                 "fig4_requirements": figure_requirements(r, args.flat_share),
+                 "si_class_images": figure_class_images(r),
+                 "si_confusion_tasks": figure_confusion_tasks(r),
+                 "si_settings": figure_settings(r)}
         for name, fig in drawn.items():
             if fig is not None:
                 for path in save_figure(fig, name, folder=out, formats=args.formats):

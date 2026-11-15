@@ -13,14 +13,14 @@ import argparse
 import sys
 from pathlib import Path
 
-from paper_figures import CONTROLS, RAW, READOUTS, Results, readout, test_split
+from paper_figures import ABLATIONS, CONTROLS, RAW, READOUTS, Results, readout, test_split
 from si_tables import pm, table
 
 from utils import config
 
 
-def readouts_table(r: Results, d: str) -> str:
-    rows = [[label.replace("\n", " "), pm(list(readout(r, d, "c", key).values())),
+def readouts_table(r: Results) -> str:
+    rows = [[label.replace("\n", " "), pm(list(readout(r, "c", key).values())),
              pm(r.f1(RAW[key]))] for key, label in READOUTS]
     return table("tab:readouts",
                  "Each readout on the array's two images and on the 187 samples of the raw "
@@ -32,25 +32,24 @@ def readouts_table(r: Results, d: str) -> str:
                  "@{}lcc@{}", ["Readout", "Array, 2 images", "Raw beat"], rows)
 
 
-def tasks_table(r: Results, d: str) -> str:
+def tasks_table(r: Results) -> str:
     def test(key):
         found = test_split(r, key)
         return "--" if found is None else f"{found[0]:.3f}"
 
     rows = []
     for label, run, key in (
-            ("Array (design)", f"{d}-headline", "headline"),
-            ("Isolated traps", "uncoupled-576", "uncoupled-576"),
-            ("ESN, read like the array", "esn-image-576", "esn-image-576"),
-            ("ESN, clean states", "esn-576", "esn-576")):
-        split = f"{d}-c" if key == "headline" else run
-        rows.append([label, pm(r.seeds(f"P5-balanced-{run}"))]
-                    + [pm(r.seeds(f"P5-{task}-{run}")) for task in ("unbalanced", "binary")]
-                    + [pm(r.seeds(f"P3-{s}-{split}")) for s in ("validation-1", "validation-2")]
+            ("Array (design)", "array", "headline"),
+            ("Isolated traps", "isolated-traps", "isolated-traps"),
+            ("ESN, read like the array", "esn-image", "esn-image"),
+            ("ESN, clean states", "esn-mean", "esn-mean")):
+        rows.append([label, pm(r.seeds(f"balanced-{run}"))]
+                    + [pm(r.seeds(f"{task}-{run}")) for task in ("unbalanced", "binary")]
+                    + [pm(r.seeds(f"{s}-{run}")) for s in ("validation-1", "validation-2")]
                     + [test(key)])
     rows.append(["MIDRULE"])
     for key, label in (("ridge", "Raw beat, ridge"), ("histgb", "Raw beat, HistGB")):
-        rows.append([label] + [pm(r.f1(f"P5-{task}-raw-{key}"))
+        rows.append([label] + [pm(r.f1(f"{task}-raw-{key}"))
                                for task in ("balanced", "unbalanced", "binary")]
                     + ["--", "--", test(f"raw-{key}")])
     return table("tab:tasks",
@@ -66,27 +65,26 @@ def tasks_table(r: Results, d: str) -> str:
                                    "Validation 2", "Test"], rows, "footnotesize", colsep="3pt")
 
 
-def mechanism_table(r: Results, d: str) -> str:
+def mechanism_table(r: Results) -> str:
     def ablation(stem, value, forest):
         key = {"coupling": "reservoir.params.coupling", "delay": "reservoir.params.delay",
                "scramble": "task.scramble"}[stem]
-        study = r.grid(f"P6-{d}-ablation-{stem}{'-forest' if forest else ''}", key)
+        study = r.grid(f"ablation-{ABLATIONS[stem]}{'-forest' if forest else ''}", key)
         return pm(list(study.get((value,), {}).values()))
 
-    rows = [["Array (design)", pm(r.seeds(f"P5-balanced-{d}-headline")),
-             pm(r.seeds(f"P5-balanced-{d}-forest"))],
-            ["Array, ideal reading$^{a}$", pm(r.seeds(f"P5-balanced-{d}-full")),
-             pm(r.seeds(f"P5-balanced-{d}-full-forest"))], ["MIDRULE"],
+    rows = [["Array (design)", pm(r.seeds("balanced-array")),
+             pm(r.seeds("balanced-array-forest"))],
+            ["Array, ideal reading$^{a}$", pm(r.seeds("balanced-array-ideal")),
+             pm(r.seeds("balanced-array-ideal-forest"))], ["MIDRULE"],
             [r"\multicolumn{3}{@{}l}{\textit{Tuned with the same budget}}"]]
-    forest = {"random_features": "extra-576-random-features-report-forest",
-              "fading_memories": "extra-576-leaky-bank-report-forest"}
+    forest = {name: f"{study}-forest" for name, study in CONTROLS.items()}
     for label, values, forest_values in (
-            ("Isolated traps", r.seeds("P5-balanced-uncoupled-576"),
-             r.seeds("P5-balanced-uncoupled-576-forest")),
-            ("ESN, read like the array", r.seeds("P5-balanced-esn-image-576"),
-             r.seeds("P5-balanced-esn-image-576-forest")),
-            ("ESN, clean states$^{b}$", r.seeds("P5-balanced-esn-576"),
-             r.seeds("P5-balanced-esn-576-forest")),
+            ("Isolated traps", r.seeds("balanced-isolated-traps"),
+             r.seeds("balanced-isolated-traps-forest")),
+            ("ESN, read like the array", r.seeds("balanced-esn-image"),
+             r.seeds("balanced-esn-image-forest")),
+            ("ESN, clean states$^{b}$", r.seeds("balanced-esn-mean"),
+             r.seeds("balanced-esn-mean-forest")),
             ("Random tanh features", list(r.report(CONTROLS["random_features"]).values()),
              list(r.report(forest["random_features"]).values())),
             ("Leaky integrators", list(r.report(CONTROLS["fading_memories"]).values()),
@@ -98,8 +96,8 @@ def mechanism_table(r: Results, d: str) -> str:
                                ("No feedback delay", "delay", 0),
                                ("Beat samples shuffled", "scramble", True)):
         rows.append([label, ablation(stem, value, False), ablation(stem, value, True)])
-    rows.append(["Linear imitation$^{c}$", pm(r.seeds(f"P6-{d}-surrogate-c")),
-                 pm(r.seeds(f"P6-{d}-surrogate-e"))])
+    rows.append(["Linear imitation$^{c}$", pm(r.seeds("surrogate-two-images")),
+                 pm(r.seeds("surrogate-four-images"))])
     rows += [["MIDRULE"], ["Raw beat", pm(r.f1(RAW["ridge"])), pm(r.f1(RAW["rf"]))]]
     return table("tab:mechanism",
                  "What the colonies contribute (balanced task; macro F1, mean $\\pm$ SD over "
@@ -118,16 +116,15 @@ def mechanism_table(r: Results, d: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--design", default="p576", help="The design (default p576).")
-    parser.add_argument("--out", type=Path, help="Output folder (default "
-                        "results/figures/paper/<design>).")
+    parser.add_argument("--out", type=Path,
+                        help="Output folder (default results/figures/paper).")
     args = parser.parse_args(argv)
-    r, d = Results(), args.design
-    out = args.out or config.figures_dir(f"paper/{d}")
+    r = Results()
+    out = args.out or config.figures_dir("paper")
     out.mkdir(parents=True, exist_ok=True)
-    for name, text in (("table2_readouts.tex", readouts_table(r, d)),
-                       ("table3_tasks.tex", tasks_table(r, d)),
-                       ("table4_mechanism.tex", mechanism_table(r, d))):
+    for name, text in (("table2_readouts.tex", readouts_table(r)),
+                       ("table3_tasks.tex", tasks_table(r)),
+                       ("table4_mechanism.tex", mechanism_table(r))):
         (out / name).write_text("% From scripts/paper/article_tables.py\n" + text)
         print(out / name)
     if r.missing:

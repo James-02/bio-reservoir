@@ -67,7 +67,8 @@ conventions and integrate with them rather than reinventing.
   builds the `v0.1` reference outputs for the regression tests.
 - `data/splits/heldout.json` — the held-out validation and test splits (beat IDs and
   checksums; tracked, never edited).
-- `experiments/benchmarks/v0.1/` — run configs of the `v0.1` headline runs.
+- `experiments/paper/` — the configs of every run and study the paper reports (sweeps
+  over models, tasks and seeds; `models/` holds the design and the comparisons).
 
 ## Workspace data layout (all gitignored)
 
@@ -116,19 +117,16 @@ All paths and settings come from `utils/config.py` (environment variable, then
   `--preset v0.1` in the ablation and heterogeneity scripts) restores the
   v0.1 code path. When a fix changes numbers, add its v0.1 setting to that preset
   (`PRESETS` in `training/run.py`) and to `_SHARED` in `tests/regression_reference.py`,
-  regenerate the benchmark configs, and write a `[science]` CHANGELOG entry.
+  and write a `[science]` CHANGELOG entry.
 - Check behaviour before and after every change with the regression tests, and
   explain any change in a reported number. Use figures to check that the model
   behaves as designed.
 
 ## Tests
 
-- Three tiers: `tests/unit/` (fast, every PR), `tests/integration/` (real dataset), and
-  benchmarks marked `@pytest.mark.benchmark` (full-size headline reruns on a capable
-  host; skipped unless run with `pytest -m benchmark`). The benchmarks
-  (`tests/integration/test_benchmarks.py`) run the configs in
-  `experiments/benchmarks/v0.1/` and compare them fold by fold with the archived runs
-  (binary-full reads the `v0.1` binary file, `data/ecg_archive/binary_ecg_data.npz`).
+- Two tiers: `tests/unit/` (fast, every PR) and `tests/integration/` (real dataset).
+  `tests/unit/test_experiment_configs.py` checks every run and study in
+  `experiments/paper/`.
 - Unit-test as much as possible: fast, no dataset, no network. Integration tests use
   the real dataset (`data/`) and are skipped without it.
 - The archive tests (`tests/integration/test_archive.py`) check the frozen `v0.1`

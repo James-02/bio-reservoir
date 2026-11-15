@@ -1,37 +1,31 @@
-"""Checks of the campaign configs in ``experiments/v0.2/``.
+"""Checks of the configs of the paper's runs and studies in ``experiments/paper/``.
 
-Every config resolves; every search path names a setting that its run reads; names are
-unique and start with their folder's prefix (``P<k>-`` in ``phase-<k>/``, ``design-`` in
-``designs/``, ``tracking-`` in ``tracking/``); every study is seeded, grids run each point
-once, and the RK4 step check refuses no trial of a bioreservoir, which would waste it.
+Every run and study (each of a sweep) resolves, and only ``test.yaml`` scores the test split;
+every search path names a setting that its run reads; names are unique; every study is
+seeded, grids run each point once, and the RK4 step check refuses no trial of a bioreservoir,
+which would waste it.
 """
 
 import itertools
 import math
-import re
 from pathlib import Path
 
 import pytest
 
 from optimization.reservoirs import build_reservoir
 from training import study as study_module
-from training.run import load_config, resolve
+from training.run import resolve
+from training.sweep import expand, select
 
-ROOT = Path(__file__).resolve().parents[2] / "experiments" / "v0.2"
-CONFIGS = sorted(ROOT.rglob("*.yaml"))
-STUDIES = [p for p in CONFIGS if "study" in load_config(p)]
+ROOT = Path(__file__).resolve().parents[2] / "experiments" / "paper"
+# Every run or study, a sweep expanded into its runs: (file, config).
+CONFIGS = [(path, cfg) for path in sorted(ROOT.rglob("*.yaml"))
+           for cfg in select(expand(path), None)]
+STUDIES = [(path, cfg) for path, cfg in CONFIGS if "study" in cfg]
 
 
-def _ids(paths):
-    return [str(p.relative_to(ROOT)) for p in paths]
-
-
-def _prefix(path: Path) -> str:
-    folder = path.relative_to(ROOT).parts[0]
-    phase = re.fullmatch(r"phase-(\d)", folder)
-    if folder == "designs":
-        return "design-"
-    return f"P{phase[1]}-" if phase else re.escape(folder) + "-"
+def _ids(entries):
+    return [f"{path.relative_to(ROOT)}:{cfg['name']}" for path, cfg in entries]
 
 
 def _get(cfg, path):
@@ -75,33 +69,33 @@ def _points(study):
     return corners + list(study.get("enqueue") or [])
 
 
-def test_the_campaign_configs_are_found():
-    assert {p.relative_to(ROOT).parts[0] for p in CONFIGS} >= {"tracking", "phase-1", "phase-2"}
+def test_the_paper_configs_are_found():
+    names = {cfg["name"] for _, cfg in CONFIGS}
+    assert {"balanced-array-s6348", "test-array", "robustness-noise",
+            "search-array-a"} <= names
 
 
-@pytest.mark.parametrize("path", CONFIGS, ids=_ids(CONFIGS))
-def test_each_config_resolves_and_never_scores_the_test_split(path):
-    cfg = load_config(path)
+@pytest.mark.parametrize("path, cfg", CONFIGS, ids=_ids(CONFIGS))
+def test_each_config_resolves_and_only_the_test_runs_score_the_test_split(path, cfg):
     if "study" in cfg:
         run_cfg, study = study_module.split(cfg)
         study_module.check(run_cfg, study)
     else:
         run_cfg = cfg
     resolved = resolve(run_cfg)
-    assert resolved.get("test", {}).get("split") != "test"
+    assert (resolved.get("test", {}).get("split") == "test") == (path.name == "test.yaml")
 
 
-@pytest.mark.parametrize("path", CONFIGS, ids=_ids(CONFIGS))
-def test_each_config_sets_only_reservoir_settings_its_model_reads(path):
-    cfg = load_config(path)
+@pytest.mark.parametrize("path, cfg", CONFIGS, ids=_ids(CONFIGS))
+def test_each_config_sets_only_reservoir_settings_its_model_reads(path, cfg):
     reservoir = resolve(study_module.split(cfg)[0] if "study" in cfg else cfg)["reservoir"]
     unread = [key for key in reservoir.get("params", {}) if not _read_by_builder(reservoir, key)]
     assert unread == []
 
 
-@pytest.mark.parametrize("path", STUDIES, ids=_ids(STUDIES))
-def test_every_point_puts_its_values_where_the_run_reads_them(path):
-    run_cfg, study = study_module.split(load_config(path))
+@pytest.mark.parametrize("path, cfg", STUDIES, ids=_ids(STUDIES))
+def test_every_point_puts_its_values_where_the_run_reads_them(path, cfg):
+    run_cfg, study = study_module.split(cfg)
     for point in _points(study):
         resolved = resolve(study_module.apply(run_cfg, point))
         for key, value in point.items():
@@ -110,19 +104,17 @@ def test_every_point_puts_its_values_where_the_run_reads_them(path):
                 assert _read_by_builder(resolved["reservoir"], key.rsplit(".", 1)[-1]), key
 
 
-def test_names_are_unique_and_carry_their_experiment_prefix():
+def test_names_are_unique():
     names = {}
-    for path in CONFIGS:
-        cfg = load_config(path)
+    for path, cfg in CONFIGS:
         for name in {cfg["name"], study_module.name(cfg) if "study" in cfg else cfg["name"]}:
-            assert re.match(_prefix(path), name), (path, name)
             assert name not in names, (path, names.get(name))
             names[name] = path
 
 
-@pytest.mark.parametrize("path", STUDIES, ids=_ids(STUDIES))
-def test_each_study_is_seeded_and_runs_its_intended_trials(path):
-    study = load_config(path)["study"]
+@pytest.mark.parametrize("path, cfg", STUDIES, ids=_ids(STUDIES))
+def test_each_study_is_seeded_and_runs_its_intended_trials(path, cfg):
+    study = cfg["study"]
     sampler = study["sampler"]
     assert "seed" in sampler
     if sampler["type"] == "grid":
@@ -159,13 +151,13 @@ def _stiffest_points(study):
             for values in itertools.product(*each.values())]
 
 
-SUBSTEP = [p for p in STUDIES
-           if resolve(study_module.split(load_config(p))[0])["reservoir"]["type"] == "bioreservoir"]
+SUBSTEP = [(path, cfg) for path, cfg in STUDIES
+           if resolve(study_module.split(cfg)[0])["reservoir"]["type"] == "bioreservoir"]
 
 
-@pytest.mark.parametrize("path", SUBSTEP, ids=_ids(SUBSTEP))
-def test_no_trial_is_refused_by_the_rk4_stability_check(path):
-    run_cfg, study = study_module.split(load_config(path))
+@pytest.mark.parametrize("path, cfg", SUBSTEP, ids=_ids(SUBSTEP))
+def test_no_trial_is_refused_by_the_rk4_stability_check(path, cfg):
+    run_cfg, study = study_module.split(cfg)
     for point in _stiffest_points(study):
         reservoir = resolve(study_module.apply(run_cfg, point))["reservoir"]
         # Building without warm-up runs the check without simulating.

@@ -1,17 +1,16 @@
-"""Share of colonies that do not oscillate, for each kinetic variability (CV) of the
-robustness grid (P3-<design>-heterogeneity and -64), each design and reservoir seed.
+"""Share of the array's colonies that do not oscillate, for each kinetic variability (CV) of
+the heterogeneity studies and each reporting seed.
 
 Each array is built and warmed up as a trial builds it, then run on without input for 300
 steps (with ``--warmup-input rest``: warmed up and run on at the resting inducer level of a
 beat). A colony is flat when its LuxI trace over the last 200 of those steps has max / min
-below 1.5 (the "explainer" definition of investigation I14), or, by the stricter definition,
-when (max - min) / mean over the 300 steps is at most 0.1
-(:func:`bioreservoir.diagnostics.oscillation_amplitudes`). CV 0.3 and above use 64 substeps,
-as the -64 studies do.
+below 1.5, or, by the stricter definition, when (max - min) / mean over the 300 steps is at
+most 0.1 (:func:`bioreservoir.diagnostics.oscillation_amplitudes`). CV 0.3 and above use 64
+substeps, as the study heterogeneity-kinetic-64-substeps does.
 
     python scripts/paper/flat_share.py results/figures/paper/flat_share.csv --processes N
 
-Writes one CSV row per design, CV and seed; ``paper_figures.py`` reads it for Fig. 5d.
+Writes one CSV row per CV and seed; ``paper_figures.py`` reads it for Fig. 4E.
 """
 
 from __future__ import annotations
@@ -25,11 +24,11 @@ import numpy as np
 
 CVS = (0.0, 0.01, 0.018675014409681404, 0.03, 0.05, 0.065, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5)
 SEEDS = (6348, 6349, 6350, 6351, 6352)
-DESIGNS = ("p1024", "p1600")
+MODEL = Path("experiments/paper/models/array.yaml")
 STEPS, WINDOW, FLAT_RATIO, FLAT_REL = 300, 200, 1.5, 0.1
 
 
-def one(job: tuple[str, float, int, str]) -> dict:
+def one(job: tuple[float, int, str]) -> dict:
     import reservoirpy
 
     from bioreservoir.diagnostics import STATE_NAMES, oscillation_amplitudes
@@ -37,8 +36,8 @@ def one(job: tuple[str, float, int, str]) -> dict:
     from training.run import load_config, resolve
 
     reservoirpy.verbosity(0)
-    design, cv, seed, warmup_input = job
-    cfg = resolve(load_config(Path("experiments/v0.2/designs") / f"{design}.yaml"))
+    cv, seed, warmup_input = job
+    cfg = resolve(load_config(MODEL))
     params = dict(cfg["reservoir"]["params"], param_heterogeneity_cv=cv,
                   rk4_substeps=64 if cv >= 0.3 else 32, reservoir_type="bioreservoir",
                   warmup_input=warmup_input)
@@ -53,7 +52,7 @@ def one(job: tuple[str, float, int, str]) -> dict:
     trace = np.array([work._step(work._warmup_drive)[:, index] for _ in range(STEPS)])[-WINDOW:]
     with np.errstate(all="ignore"):
         ratio = trace.max(axis=0) / trace.min(axis=0)
-    return {"design": design, "cv": cv, "seed": seed, "units": len(relative),
+    return {"cv": cv, "seed": seed, "units": len(relative),
             "flat": float(np.mean(~(ratio >= FLAT_RATIO))),
             "flat_strict": float(np.mean(~(relative > FLAT_REL)))}
 
@@ -62,13 +61,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("out", type=Path)
     parser.add_argument("--processes", type=int, default=1)
-    parser.add_argument("--designs", nargs="+", default=list(DESIGNS),
-                        help="Design files in experiments/v0.2/designs/ (default: %(default)s).")
     parser.add_argument("--warmup-input", choices=("zero", "rest"), default="zero",
                         help="Drive during the warm-up and the run after it: no inducer "
                              "(default) or the resting inducer level of a beat.")
     args = parser.parse_args()
-    jobs = [(d, cv, s, args.warmup_input) for d in args.designs for cv in CVS for s in SEEDS]
+    jobs = [(cv, s, args.warmup_input) for cv in CVS for s in SEEDS]
     with ProcessPoolExecutor(args.processes) as pool:
         rows = list(pool.map(one, jobs))
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -76,11 +73,10 @@ def main() -> None:
         writer = csv.DictWriter(f, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
-    for d in args.designs:
-        for cv in CVS:
-            part = [r for r in rows if r["design"] == d and r["cv"] == cv]
-            print(f"{d} CV {cv:<6.3g} flat {np.mean([r['flat'] for r in part]):6.1%}  "
-                  f"strict {np.mean([r['flat_strict'] for r in part]):6.1%}")
+    for cv in CVS:
+        part = [r for r in rows if r["cv"] == cv]
+        print(f"CV {cv:<6.3g} flat {np.mean([r['flat'] for r in part]):6.1%}  "
+              f"strict {np.mean([r['flat_strict'] for r in part]):6.1%}")
 
 
 if __name__ == "__main__":

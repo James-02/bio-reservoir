@@ -1,0 +1,90 @@
+# Array size: square arrays of 100-36,864 traps, read from the images or, without imaging,
+# from the clean mean of their observed states (the ideal reading); RidgeCV above 4,096 traps
+# with a wider penalty grid (1e-4 to 1e8). The largest arrays run one study per reporting seed.
+#    python -m training.run sweep experiments/paper/array-size.yaml --list
+#    python -m training.run sweep experiments/paper/array-size.yaml --only experiment=array-size --processes N
+#    python -m training.run study-table experiments/paper/array-size.yaml --group
+sweep:
+  - name: '{experiment}'
+    model:
+      array: models/array.yaml
+    experiment:
+      array-size:
+        description: Square arrays of 100-4,096 traps, read like the array (two images, ridge); reporting seeds
+          6348-6352.
+        study:
+          trials: 60
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.units:
+              type: categorical
+              choices: [100, 196, 256, 400, 576, 784, 1024, 1600, 2025, 2500, 3136, 4096]
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+      array-size-images:
+        description: Square arrays of 256-2,500 traps with one, two or four images; reporting seeds 6348-6350.
+        study:
+          trials: 45
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.units: {type: categorical, choices: [256, 576, 1024, 1600, 2500]}
+            features.aggregation: {type: categorical, choices: [final, 'images_at:140,187', 'images:4']}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350]}
+
+  - name: '{experiment}'
+    model:
+      array: models/array-forest.yaml
+    experiment:
+      array-size-forest:
+        description: Square arrays of 100-4,096 traps, read from four images by the random forest; reporting seeds
+          6348-6352.
+        study:
+          trials: 60
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.units:
+              type: categorical
+              choices: [100, 196, 256, 400, 576, 784, 1024, 1600, 2025, 2500, 3136, 4096]
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+  - name: array-size{reading}-{units}
+    description: &large 'Array of {units} traps{reading}, otherwise the design; reporting seeds 6348-6352.'
+    model: &array {array: models/array.yaml}
+    reading: &images
+      '': &large-study
+        readout:
+          params:
+            alphas: [0.0001, 0.00031622776601683794, 0.001, 0.0031622776601683794, 0.01, 0.03162277660168379, 0.1, 0.31622776601683794, 1.0, 3.1622776601683795, 10.0, 31.622776601683793, 100.0, 316.22776601683796, 1000.0, 3162.2776601683795, 10000.0, 31622.776601683792, 100000.0, 316227.7660168379, 1000000.0, 3162277.6601683795, 10000000.0, 31622776.60168379, 100000000.0]
+        study:
+          trials: 5
+          metric: f1
+          sampler: {type: grid, seed: 6337}
+          search:
+            reservoir.params.units: {type: categorical, choices: ['{units}']}
+            reservoir.seed: {type: categorical, choices: [6348, 6349, 6350, 6351, 6352]}
+    units: [6400, 9216, 12544]
+
+  # The ideal reading: the clean mean of every observed state over the beat, no imaging.
+  - name: array-size{reading}-{units}
+    description: *large
+    model: *array
+    reading: &ideal
+      -ideal: {<<: *large-study, features: {variables: null, aggregation: mean, measurement_noise: 0.0, reference: null}}
+    units: [4096]
+
+  - name: array-size{reading}-{units}-s{seed}
+    description: *large
+    model: *array
+    reading: {<<: [*images, *ideal]}
+    units: [16384]
+    seed: &seeds [6348, 6349, 6350, 6351, 6352]
+    one: &one-seed {each: {study: {trials: 1, search: {reservoir.seed: {choices: ['{seed}']}}}}}
+
+  - name: array-size{reading}-{units}-s{seed}
+    description: *large
+    model: *array
+    reading: *images
+    units: [25600, 36864]
+    seed: *seeds
+    one: *one-seed

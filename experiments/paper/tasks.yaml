@@ -1,0 +1,60 @@
+# Other Tasks and Validation: the array and the comparisons on the unbalanced task (at most
+# 4,015 beats per class) and the binary task (normal against arrhythmia, 37,714 beats), and
+# fitted on the balanced pool and scored on the two validation splits. Reporting seeds
+# 6348-6352; the array read by the forest at the first seed only on the other tasks.
+#    python -m training.run sweep experiments/paper/tasks.yaml --list
+#    python -m training.run sweep experiments/paper/tasks.yaml --only task=binary --processes N
+sweep:
+  - name: '{task}-{model}-s{seed}'
+    description: &run '{model} on the {task} task, reservoir seed {seed}; five folds.'
+    model: &models
+      array: models/array.yaml
+      isolated-traps: models/isolated-traps.yaml
+      esn-mean: models/esn-mean.yaml
+      esn-image: models/esn-image.yaml
+    task: &tasks
+      unbalanced:
+        task: {labels: five-class, rows: 50000, balance_classes: true, max_per_class: 4015, cap_includes_test: true, scaler: sequence_zscore, seed: 6337}
+      binary:
+        task: {labels: binary, rows: 50000, balance_classes: true, max_per_class: null, cap_includes_test: false, scaler: sequence_zscore, data_file: ecg_archive/binary_ecg_data.npz, data_sha256: d0a083a8002b6567b02ae8fd18d9328f4a22cbabacc4669dca0ff4cf4b3782ed, seed: 6337}
+    seed: {reservoir.seed: [6348, 6349, 6350, 6351, 6352]}
+
+  - name: '{task}-{model}-s{seed}'
+    description: *run
+    model: {array-forest: models/array-forest.yaml}
+    task: *tasks
+    seed: {reservoir.seed: [6348]}
+
+  - name: '{task}-raw-{readout}'
+    description: 'Raw-beat baseline: {readout} on the scaled beat; {task} task, five folds.'
+    readout:
+      ridge: &raw
+        seed: 6337
+        reservoir: {type: none}
+        readout: {classifier: RidgeCV, scale: true, params: {scoring: f1_macro}}
+        cv: {folds: 5, seed: 6337}
+      rf:
+        <<: *raw
+        readout:
+          classifier: RF
+          scale: false
+          params: {n_estimators: 326, criterion: log_loss, max_depth: 23, max_features: sqrt, min_samples_split: 2, min_samples_leaf: 1, class_weight: balanced, oob_score: true, random_state: 6337, n_jobs: -1}
+      histgb:
+        <<: *raw
+        readout:
+          classifier: HistGB
+          scale: true
+          params: {max_iter: 500, early_stopping: true, class_weight: balanced, random_state: 6337}
+          search: {learning_rate: [0.05, 0.1], max_leaf_nodes: [31, 63]}
+          inner_folds: 3
+    task: *tasks
+
+  # Fitted on the balanced pool, scored on a validation split (one image: 187 min only).
+  - name: '{split}-{model}-s{seed}'
+    description: '{model} fitted on the balanced pool and scored on {split}, reservoir seed {seed}.'
+    model:
+      <<: *models
+      array-forest: models/array-forest.yaml
+      array-one-image: {base: models/array.yaml, features.aggregation: final}
+    split: {test.split: [validation-1, validation-2]}
+    seed: {reservoir.seed: [6348, 6349, 6350, 6351, 6352]}

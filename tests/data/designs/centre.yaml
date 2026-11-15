@@ -1,0 +1,35 @@
+# A test design: a trap lattice exchanging AHL between neighbours.
+name: test-lattice
+description: A lattice of 1,024 traps exchanging AHL, read from one noisy image of the LuxI reporter by ridge.
+seed: 6337
+task: {labels: five-class, rows: 4015, balance_classes: true, scaler: sequence_zscore, seed: 6337}
+reservoir:
+  type: bioreservoir
+  params:
+    units: 1024
+    warmup: 800
+    rk4_substeps: 32
+    input_scaling: 0.155113
+    input_connectivity: 0.66
+    input_bias: false
+    bias_scaling: 0.1
+    dde_scaling: 0.0006439480590749527
+    cell_coupling: 12.74579065885262
+    noise_in: 0.01442
+    output_variables: IHe
+    param_heterogeneity_cv: 0.065
+    param_heterogeneity_seed: null
+    heterogeneity_mean_preserving: true
+    topology_type: lattice
+    geometry: per_node
+    delay_scheme: substep
+    coupling: diffusion
+    diffusion_rate: 0.6
+    input_encoding: nonnegative
+    input_sign: positive
+features:
+  variables: [I]
+  aggregation: final
+  measurement_noise: 0.01
+readout: {classifier: RidgeCV, scale: true, params: {scoring: f1_macro}}
+cv: {folds: 5, seed: 6337}
