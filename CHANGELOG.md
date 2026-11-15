@@ -9,6 +9,9 @@ Each entry is marked **[science]** if it changes a reported number, or
 
 ### Added
 
+- [engineering] Sweeps (`training.sweep`): a config with a `sweep` section stands for every
+  combination of its axes (models, tasks, seeds, ...); `training.run sweep` runs them into
+  `results/runs/<name>/` and skips those already done.
 - [engineering] `scripts/paper/`: the scripts that write the revised paper's numbers, tables
   and figures from the collected runs, and the simulations behind its oscillation and solver
   figures; `test_paper_scripts.py` checks that each starts.

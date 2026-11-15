@@ -6,6 +6,7 @@
     python -m training.run compare RUN_A RUN_B [--out DIR] [--margin M] [--ceiling RUN_C]
     python -m training.run study CONFIG.yaml [--processes N] [--trials N]
     python -m training.run study-best CONFIG.yaml [--out BEST.yaml]
+    python -m training.run sweep SWEEP.yaml [--list] [--only AXIS=LABEL ...] [--processes N]
 
 A config names the task (labels, pool size, balancing, scaling), the reservoir (explicit
 parameters or an Optuna study trial), the state features, the readout (explicit or a
@@ -33,6 +34,11 @@ multiplicative measurement noise and the calibration error of the test fold's co
 A config with a ``study`` section defines an Optuna search over its own values:
 ``study`` runs the trials through this runner's pipeline and ``study-best`` writes the best
 trial as a plain config (:mod:`training.study`).
+
+A config with a ``sweep`` section stands for many runs or studies: every combination of its
+axes, such as models, tasks and seeds (:mod:`training.sweep`). ``sweep`` runs them, each
+into ``results/runs/<name>/``, and skips those already done; ``--list`` names them and
+``--only task=binary`` picks some.
 
 With ``test: {split: <name>}`` the run fits the readout on the whole pool and evaluates it
 on a held-out split instead of cross-validating (``utils.heldout``: ``validation-1``,
@@ -1059,8 +1065,10 @@ def main(argv: list[str] | None = None) -> None:
     p_run.add_argument("--final-test", action="store_true",
                        help="Allow a config that evaluates on the test split (the final test "
                             "set, evaluated once at the end).")
-    p_res = sub.add_parser("resolve", help="Print the explicit config.")
+    p_res = sub.add_parser("resolve", help="Print the explicit config (each run of a sweep).")
     p_res.add_argument("config")
+    p_res.add_argument("--only", nargs="+", metavar="AXIS=LABEL",
+                       help="The runs of a sweep with these labels.")
     p_cmp = sub.add_parser("compare", help="Compare two runs.")
     p_cmp.add_argument("run_a", help="Run folder, registry run id, or archive:<version>/<run>.")
     p_cmp.add_argument("run_b")
@@ -1095,12 +1103,40 @@ def main(argv: list[str] | None = None) -> None:
     p_tbl.add_argument("--csv", help="Also write the table to this CSV file.")
     p_tbl.add_argument("--storage",
                        help="Optuna storage URL (default results/optuna/optuna-<study>.db).")
+    p_swp = sub.add_parser("sweep", help="Run every run and study of a sweep config "
+                                          "(training.sweep).")
+    p_swp.add_argument("config")
+    p_swp.add_argument("--list", action="store_true", help="Only name the runs and studies.")
+    p_swp.add_argument("--only", nargs="+", metavar="AXIS=LABEL",
+                       help="Only the runs with these labels, e.g. task=binary seed=6348 "
+                            "(several labels of one axis: any of them).")
+    p_swp.add_argument("--out-dir", help="Folder of the run folders (default results/runs).")
+    p_swp.add_argument("--processes", type=int, default=1,
+                       help="Worker processes of each run or trial, as for run.")
+    p_swp.add_argument("--allow-dirty", action="store_true",
+                       help="Run from uncommitted code; the runs are marked non-citable.")
+    p_swp.add_argument("--final-test", action="store_true",
+                       help="Allow runs that evaluate on the test split.")
     args = parser.parse_args(argv)
 
     setup_logging(level=logging.INFO)
-    if args.command == "resolve":
-        print(dump_config(resolve(load_config(args.config))), end="")
-    elif args.command == "run":
+    if args.command in ("resolve", "sweep"):
+        from training.sweep import expand, run_sweep, select
+
+        configs = select(expand(args.config), args.only)
+        if args.command == "resolve":
+            print("---\n".join(dump_config(resolve(cfg)) for cfg in configs), end="")
+        elif args.list:
+            for cfg in configs:
+                print(f"{'study' if 'study' in cfg else 'run'}  {cfg['name']}")
+        else:
+            for line in run_sweep(configs, out_dir=args.out_dir, processes=args.processes,
+                                  allow_dirty=args.allow_dirty, final_test=args.final_test):
+                print(line)
+        return
+    if getattr(args, "config", None) and "sweep" in load_config(args.config):
+        raise SystemExit(f"{args.config} is a sweep: run it with `python -m training.run sweep`.")
+    if args.command == "run":
         cfg = load_config(args.config)
         if args.save_states:
             cfg.setdefault("outputs", {})["save_states"] = True
@@ -1122,9 +1158,10 @@ def main(argv: list[str] | None = None) -> None:
         print(write_best(load_config(args.config), args.out, args.storage), end="")
     elif args.command == "study-table":
         from training.study import format_table, study_table
+        from training.sweep import expand, select
 
-        frame = study_table([load_config(path) for path in args.configs], args.storage,
-                            group=args.group)
+        frame = study_table([cfg for path in args.configs for cfg in select(expand(path), None)],
+                            args.storage, group=args.group)
         if args.csv:
             frame.to_csv(args.csv, index=False)
         print(format_table(frame))
