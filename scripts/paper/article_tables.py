@@ -28,7 +28,7 @@ def readouts_table(r: Results) -> str:
                  "raw beat has no reservoir seed). Ridge is the design's readout. kNN, "
                  "$k$-nearest neighbors; HistGB, histogram-based gradient boosting; RBF SVM, "
                  "support vector machine with a radial basis function kernel. Settings in "
-                 "Table~\\ref{S-tab:readouts}; four images in Table~\\ref{S-tab:si-readouts}.",
+                 "Table~S3; four images in Table~S12.",
                  "@{}lcc@{}", ["Readout", "Array, 2 images", "Raw beat"], rows)
 
 
@@ -58,7 +58,7 @@ def tasks_table(r: Results) -> str:
                  "seed). On the held-out splits the readout is trained on the whole balanced "
                  "pool and tested on new beats of four classes (N, S, V and Q; no F beats are "
                  "left outside the pool); the test split was scored once, on one seed (95\\% "
-                 "confidence intervals in Table~\\ref{S-tab:si-heldout}). Isolated traps: the "
+                 "confidence intervals in Table~S11). Isolated traps: the "
                  "array without AHL exchange; ESN: an echo state network of 576 units "
                  "(Table~\\ref{tab:mechanism}). --, not run.",
                  "@{}lcccccc@{}", ["Model", "Balanced", "Unbalanced", "Binary", "Validation 1",
@@ -103,10 +103,9 @@ def mechanism_table(r: Results) -> str:
                  "What the colonies contribute (balanced task; macro F1, mean $\\pm$ SD over "
                  "the five reservoir seeds), read by ridge on two images and by a random "
                  "forest on four. Each comparison was tuned for ridge with the same budget "
-                 "(Table~\\ref{S-tab:selection}) and read by the forest at the same settings; "
+                 "(Table~S6) and read by the forest at the same settings; "
                  "the ablations change the design without retuning it. The comparisons by seed "
-                 "are in Table~\\ref{S-tab:si-comparisons}, and the ablations in "
-                 "Table~\\ref{S-tab:si-ablations}. "
+                 "are in Table~S13, and the ablations in Table~S14. "
                  "$^{a}$The noise-free mean of each colony's LuxI and external AHL over the "
                  "beat, a reference that a device could not image. $^{b}$The mean of the "
                  "network's noise-free states over the "
